@@ -292,7 +292,7 @@ export function agentLauncher(opts: LauncherOptions): Launcher {
         // environment (its config, the gate) never arrives.
         // A variant is part of the model's name (`provider/model#variant`): none without a model.
         const named = effortArgs("opencode", req.effort, req.model).model;
-        const rest = named ? ["-m", named] : [];
+        const rest: string[] = [];
         if (req.mode !== "manual") rest.push("--auto");   // OpenCode has one switch: approve what is not denied
         if (req.resume) rest.push("--session", req.resume);   // OpenCode cannot fork: always the same session
         let own = env;
@@ -305,7 +305,14 @@ export function agentLauncher(opts: LauncherOptions): Launcher {
           writeFileSync(config, JSON.stringify({ ...base, ...mcp, ...(browser ? { instructions: [told] } : {}) }, null, 2), { mode: 0o600 });
           own = { ...env, OPENCODE_CONFIG: config };
         }
-        const companion = opts.opencodeServer ? new OpenCodeCompanion({ binary: file, cwd: req.cwd, env: own, args: rest, asks: req.mode === "manual" }) : undefined;
+        // The model is configuration, not a flag: the main command of OpenCode 2.0.25 takes no `-m` (it prints its usage
+        // and exits; `run` and `mini` still do). `model` in OPENCODE_CONFIG_CONTENT is what the TUI opens on, above the
+        // folder's own `opencode.json` as the flag was — in the OPENCODE_CONFIG file it would be below it
+        // (scripts/opencode_model_probe.ts). What the user's own environment had there stays, but for its model.
+        if (named) own = { ...own, OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...inlineConfig(own.OPENCODE_CONFIG_CONTENT), model: named }) };
+        // A session gone on with keeps the model it was on, whatever the configuration names: the companion sets it there.
+        const onto = req.resume && req.model ? { model: req.model, variant: named && named !== req.model ? named.slice(req.model.length + 1) : null } : null;
+        const companion = opts.opencodeServer ? new OpenCodeCompanion({ binary: file, cwd: req.cwd, env: own, args: rest, asks: req.mode === "manual", ...(onto ? { model: onto } : {}) }) : undefined;
         return { file, args: ["--standalone", ...rest], env: own, hooks: false, ...(companion ? { companion } : {}) };
       }
       case "pi": {
@@ -337,6 +344,15 @@ export function codexPermissions(base: ":read-only" | ":workspace", prot?: Prote
   if (o.denyReads ?? true) for (const p of (prot?.readDenied ?? []).flatMap(rootSpellings)) filesystem[p] = "deny";
   const profile = `{ extends = ${JSON.stringify(base)}, filesystem = ${tomlInline(filesystem)} }`;
   return ["-c", 'default_permissions="agentswitch"', "-c", `permissions.agentswitch=${profile}`];
+}
+
+/** OpenCode's inline configuration (OPENCODE_CONFIG_CONTENT) as an object; nothing where it is not one. */
+function inlineConfig(text: string | undefined): Record<string, unknown> {
+  if (!text) return {};
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch { return {}; }
 }
 
 /** OPENCODE_CONFIG for one terminal: only the refusals of the managed executors' table (reads by path, commands by

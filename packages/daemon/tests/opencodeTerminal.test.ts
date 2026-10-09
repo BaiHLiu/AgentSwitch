@@ -102,10 +102,10 @@ describe("OpenCode terminal companion", () => {
   it("attaches the TUI to its server with the password, never the user's own server password", async () => {
     const { url } = await fakeServer("pw1");
     const started: { env?: Readonly<Record<string, string>> } = {};
-    const c = new OpenCodeCompanion({ binary: "/bin/opencode", cwd: tmpdir(), env: { PATH: "/bin", OPENCODE_SERVER_PASSWORD: "users", OPENCODE_CONFIG: "/x.json" }, args: ["-m", "m1", "--auto"], asks: false, serve: fakeServe(url, "pw1", started) });
+    const c = new OpenCodeCompanion({ binary: "/bin/opencode", cwd: tmpdir(), env: { PATH: "/bin", OPENCODE_SERVER_PASSWORD: "users", OPENCODE_CONFIG: "/x.json" }, args: ["--auto"], asks: false, serve: fakeServe(url, "pw1", started) });
     closers.push(() => c.stop());
     const plan = await c.start();
-    expect(plan!.args).toEqual(["--server", url, "-m", "m1", "--auto"]);
+    expect(plan!.args).toEqual(["--server", url, "--auto"]);
     expect(plan!.env).toEqual({ PATH: "/bin", OPENCODE_CONFIG: "/x.json", OPENCODE_PASSWORD: "pw1" });
     expect(started.env?.OPENCODE_CONFIG).toBe("/x.json");   // the server runs with the terminal's config and gate
   });
@@ -181,6 +181,52 @@ describe("OpenCode terminal companion", () => {
     expect(state.switches.at(-1)).toEqual({ session: "ses_old", model: { id: "space-bunny", providerID: "opencode", variant: "low" } });
   });
 
+  it("a session gone on with is put on the model the terminal was started on, once its server lists its models", async () => {
+    const { state, url } = await fakeServer("pw6");
+    const models = state.models;
+    state.models = [];   // as the real server just after it starts
+    state.sessions.push({ id: "ses_old", time: { created: 1 }, model: { id: "ling-flash", providerID: "opencode" } });
+    const lines: string[] = [];
+    const make = (model: { model: string; variant: string | null }, args = ["--session", "ses_old"]) => {
+      const c = new OpenCodeCompanion({ binary: "/bin/opencode", cwd: tmpdir(), env: {}, args, asks: true, pollMs: 10, model, log: (l) => lines.push(l), serve: fakeServe(url, "pw6") });
+      closers.push(() => c.stop());
+      return c;
+    };
+    const c = make({ model: "opencode/space-bunny", variant: "high" });
+    await c.start();
+    const screens = fakeLink();
+    c.attach(screens.link);
+    await until(() => screens.last() === "idle");
+    await new Promise((r) => setTimeout(r, 60));
+    expect(state.switches).toEqual([]);   // no models listed yet: it waits
+    state.models = models;
+    await until(() => state.switches.length === 1);
+    expect(state.switches[0]).toEqual({ session: "ses_old", model: { id: "space-bunny", providerID: "opencode", variant: "high" } });
+    await new Promise((r) => setTimeout(r, 60));
+    expect(state.switches).toHaveLength(1);   // once
+    c.stop();
+    // Already on it: nothing is sent (its TUI would say "Switched model" for nothing).
+    const same = make({ model: "opencode/space-bunny", variant: "high" });
+    await same.start();
+    same.attach(fakeLink().link);
+    await new Promise((r) => setTimeout(r, 80));
+    expect(state.switches).toHaveLength(1);
+    same.stop();
+    // Not a model of its: said in the log, the session stays where it was.
+    const wrong = make({ model: "opencode/no-such", variant: null });
+    await wrong.start();
+    wrong.attach(fakeLink().link);
+    await until(() => lines.find((l) => /was not set: not a model of its: opencode\/no-such/.test(l)));
+    expect(state.switches).toHaveLength(1);
+    wrong.stop();
+    // A new session (no `--session`) opens on what the configuration names: nothing to set here.
+    const fresh = make({ model: "opencode/ling-flash", variant: null }, []);
+    await fresh.start();
+    fresh.attach(fakeLink().link);
+    await new Promise((r) => setTimeout(r, 80));
+    expect(state.switches).toHaveLength(1);
+  });
+
   it("withdraws a card answered in the TUI, and allows once", async () => {
     const { state, url } = await fakeServer("pw3");
     const c = new OpenCodeCompanion({ binary: "/bin/opencode", cwd: tmpdir(), env: {}, args: [], asks: true, pollMs: 10, serve: fakeServe(url, "pw3") });
@@ -232,8 +278,19 @@ describe("OpenCode terminal companion", () => {
     const launch = agentLauncher({ binaries: { opencode: "/bin/opencode" }, hookUrl: () => "http://127.0.0.1:1", stateDir: tmpdir(), env: {}, opencodeServer: true });
     const plan = launch({ id: "o1", harness: "opencode", cwd: tmpdir(), mode: "manual", hookToken: "tok", model: "m1" });
     expect(plan.companion).toBeInstanceOf(OpenCodeCompanion);
-    expect(plan.args).toEqual(["--standalone", "-m", "m1"]);
+    // The model is configuration: OpenCode 2.0.25's main command takes no `-m`.
+    expect(plan.args).toEqual(["--standalone"]);
+    expect(JSON.parse(plan.env.OPENCODE_CONFIG_CONTENT!)).toEqual({ model: "m1" });
     expect(plan.hooks).toBe(false);
+    // With a level it is part of the name; what the environment had inline stays, but for its model.
+    const own = agentLauncher({ binaries: { opencode: "/bin/opencode" }, hookUrl: () => "http://127.0.0.1:1", stateDir: tmpdir(), env: { OPENCODE_CONFIG_CONTENT: '{"theme":"x","model":"a/old"}' }, opencodeServer: true });
+    const leveled = own({ id: "o2", harness: "opencode", cwd: tmpdir(), mode: "auto", hookToken: "tok", model: "opencode/space-bunny", effort: "high", resume: "ses_old" });
+    expect(leveled.args).toEqual(["--standalone", "--auto", "--session", "ses_old"]);
+    expect(JSON.parse(leveled.env.OPENCODE_CONFIG_CONTENT!)).toEqual({ theme: "x", model: "opencode/space-bunny#high" });
+    // No model named: nothing inline of ours, and no flag.
+    const plain = launch({ id: "o3", harness: "opencode", cwd: tmpdir(), mode: "manual", hookToken: "tok" });
+    expect(plain.args).toEqual(["--standalone"]);
+    expect(plain.env.OPENCODE_CONFIG_CONTENT).toBeUndefined();
   });
 });
 

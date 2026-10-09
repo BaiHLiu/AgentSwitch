@@ -16,6 +16,8 @@ const POLL_MS = 500;
 const CALL_TIMEOUT_MS = 5_000;
 /** Failed looks in a row before the companion gives up (the server is gone). */
 const MAX_FAILURES = 10;
+/** Looks at a server that lists no models yet before the model a terminal was started on is tried all the same. */
+const MODEL_LOOKS = 20;
 const DENIED = "在 AgentSwitch 上被拒绝。";
 
 type Json = Record<string, unknown>;
@@ -25,8 +27,11 @@ export type OpenCodeCompanionOptions = {
   readonly cwd: string;
   /** The terminal's environment: the server gets it (the commands it runs), the TUI gets it with the password. */
   readonly env: Record<string, string>;
-  /** The TUI's arguments besides the server choice (model, --auto, --session). */
+  /** The TUI's arguments besides the server choice (--auto, --session). */
   readonly args: readonly string[];
+  /** The model a session gone on with (`--session`) is to be on. A new session opens on the one the configuration
+   *  names (launch.ts); one gone on with keeps its own, so it is set on the server, once that lists its models. */
+  readonly model?: { readonly model: string; readonly variant: string | null };
   /** Permission requests go to the screens (the terminal asks: manual). */
   readonly asks: boolean;
   readonly pollMs?: number;
@@ -67,9 +72,13 @@ export class OpenCodeCompanion implements Companion {
   private readonly open = new Map<string, AbortController>();
   private readonly handled = new Set<string>();
   private readonly loc: string;
+  /** The model still to be set on the session gone on with, and the looks that found no models listed yet. */
+  private wanted: { readonly model: string; readonly variant: string | null } | null;
+  private modelLooks = 0;
 
   constructor(private readonly o: OpenCodeCompanionOptions) {
     this.loc = `directory=${encodeURIComponent(o.cwd)}`;
+    this.wanted = o.model && o.args.includes("--session") ? o.model : null;
   }
 
   async start(): Promise<{ args: string[]; env: Record<string, string> } | null> {
@@ -125,6 +134,8 @@ export class OpenCodeCompanion implements Companion {
       return;
     }
     if (this.stopped) return;
+    if (this.wanted) await this.settle();
+    if (this.stopped) return;
     const running = Object.keys(active);
     if (running.length) this.lastActive = running[running.length - 1]!;
     const listed = new Set(requests.map((r) => r.id));
@@ -148,6 +159,27 @@ export class OpenCodeCompanion implements Companion {
       .filter((s) => s.id && s.made >= this.since - 2_000)
       .sort((a, b) => b.made - a.made);
     return mine[0]?.id ?? null;
+  }
+
+  /** The model the terminal was started on, for the session it goes on with: once, when the server lists its models
+   *  (it loads them after it starts), and only where the session is on another. What cannot be set is said in the log;
+   *  the session stays on its own. */
+  private async settle(): Promise<void> {
+    const want = this.wanted;
+    if (!want) return;
+    const log = this.o.log ?? ((l: string) => console.error(l));
+    try {
+      const models = (await this.call("GET", `/api/model?${this.loc}`))?.data;
+      if (!(Array.isArray(models) && models.length) && ++this.modelLooks < MODEL_LOOKS) return;
+      this.wanted = null;
+      const session = await this.session();
+      const now = session ? ((await this.call("GET", `/api/session/${encodeURIComponent(session)}?${this.loc}`))?.data as Json | undefined)?.model as Json | undefined : undefined;
+      if (now && `${String(now.providerID)}/${String(now.id)}` === want.model && (now.variant ?? null) === want.variant) return;
+      await this.setModel(want);
+    } catch (err) {
+      this.wanted = null;
+      log(`opencode terminal: the model it was started on was not set: ${(err as Error).message}`);
+    }
   }
 
   /** Another model, or another variant (how hard it thinks), for the session the TUI is on — OpenCode's own
