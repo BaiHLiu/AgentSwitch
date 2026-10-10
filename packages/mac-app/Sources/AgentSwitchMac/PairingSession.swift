@@ -13,6 +13,8 @@ final class PairingSession {
     private(set) var paired: Device?
     private(set) var problem: String?
     private(set) var busy = false
+    /// Another node that pairs with the code is used back (docs/mesh-v0.md §2.2); the next code is made so.
+    var back = true
     @ObservationIgnored private var baseline: Set<String> = []
     @ObservationIgnored private var watcher: Task<Void, Never>?
     @ObservationIgnored private var clipboardExpiry: Task<Void, Never>?
@@ -24,7 +26,7 @@ final class PairingSession {
         defer { busy = false }
         do {
             await model.refreshDevices()
-            let fresh = try await model.client.createPairing()
+            let fresh = try await model.client.createPairing(back: back)
             baseline = Set(model.devices.map(\.id))
             pairing = fresh
             qr = QRCodeRenderer.image(for: fresh.link)
@@ -38,9 +40,10 @@ final class PairingSession {
 
     /// 复制链接: this Mac only, hidden from clipboard history, and gone from the clipboard when the code expires
     /// unless something else was copied in the meantime (SensitiveClipboard).
-    func copyLink() {
+    /// `shared`: left to Universal Clipboard, for the user's other Mac to paste (still concealed, still cleared).
+    func copyLink(shared: Bool = false) {
         guard let pairing else { return }
-        let written = SensitiveClipboard.copy(pairing.link)
+        let written = SensitiveClipboard.copy(pairing.link, shared: shared)
         let expiry = pairing.expiresAt
         clipboardExpiry?.cancel()
         clipboardExpiry = Task {

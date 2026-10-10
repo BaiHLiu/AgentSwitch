@@ -28,8 +28,10 @@ final class NativeTerminalsPage: NSObject, TerminalsPage {
     private var keyMonitor: Any?
     private var stopped = false
 
-    init(model appModel: AppModel) {
-        model = TerminalsModel(client: { appModel.client }, defaults: Self.defaults)
+    /// `node`: the node whose terminals these are (docs/mesh-v0.md §5.2); nil: this Mac's. Another node's page keeps
+    /// nothing of its layout: what is remembered is this Mac's own page.
+    init(model appModel: AppModel, node: String? = nil) {
+        model = TerminalsModel(client: { appModel.client(on: node) }, defaults: node == nil ? Self.defaults : nil)
         host = NSHostingView(rootView: TerminalsPageView(model: model))
         host.sizingOptions = []
         super.init()

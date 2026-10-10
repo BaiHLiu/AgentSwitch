@@ -21,6 +21,10 @@ struct MainBarActions {
     /// The bar's own traffic lights while the window is full screen.
     var closeWindow: () -> Void = {}
     var exitFullScreen: () -> Void = {}
+    /// The bar's node menu and the strip's way back: the window's pages become that node's (nil: this Mac's).
+    var useNode: (NodeStatus?) -> Void = { _ in }
+    /// Settings › Nodes.
+    var openNodes: () -> Void = {}
 }
 
 /// The window's content in three parts (docs/dispatch-v0.md §1, 左侧图标栏与整窗状态栏; demo
@@ -44,11 +48,17 @@ struct MainWindowRoot: View {
         GeometryReader { proxy in
             let side = sideEdge(windowWidth: proxy.size.width)
             VStack(spacing: 0) {
-                MainBar(state: state, head: head, actions: actions)
+                MainBar(state: state, head: head, actions: actions, nodes: model.nodes.nodes,
+                        ownName: model.nodes.list?.own.name ?? model.remote?.name ?? "This Mac")
                     .frame(height: state.barHeight)
                     .background(BarGround(side: side))
                 // The bar's edge, while there is an outline to draw (BarRule).
                 BarRule(shown: side > 0)
+                // Another node's pages: whose they are, said across the window, with the way back.
+                if let node = state.node {
+                    NodeStrip(node: model.nodes.node(node.id) ?? node, known: model.nodes.node(node.id) != nil) { actions.useNode(nil) }
+                    HairRule(color: Look.line)
+                }
                 HStack(spacing: 0) {
                     // The rail; put away it leaves no column (docs/dispatch-v0.md §1 图标栏可以收起): the page runs to
                     // the window's edge.
@@ -152,6 +162,9 @@ struct MainBar: View {
     let state: MainWindowState
     let head: TerminalHead
     let actions: MainBarActions
+    /// The nodes this Mac uses and its own name, for the node menu (docs/mesh-v0.md §5.2).
+    var nodes: [NodeStatus] = []
+    var ownName = "This Mac"
     @Environment(\.interfaceLook) private var look
 
     var body: some View {
@@ -160,7 +173,8 @@ struct MainBar: View {
             // (docs/dispatch-v0.md §1 单独的窗口; the list's menu has it too).
             WindowDragArea()
                 .contextMenu {
-                    if state.page == .terminals, !head.name.isEmpty {
+                    // A terminal of another node stays in this window: its own windows are this Mac's terminals'.
+                    if state.page == .terminals, !head.name.isEmpty, state.node == nil {
                         Button("Open in New Window", action: actions.detach)
                     }
                 }
@@ -172,6 +186,7 @@ struct MainBar: View {
             HStack(spacing: 4) {
                 ToolbarPixelButton(rows: PixelArt.toolbarList, help: state.page.hasList ? "List ⌘B" : "No List on This Page",
                                    enabled: state.page.hasList, action: actions.toggleList)
+                NodeChoice(state: state, nodes: nodes, ownName: ownName, actions: actions)
                 Spacer(minLength: 0)
                 // The page's own actions, side by side in the classic look (ToolbarPixelButton).
                 HStack(spacing: look.isClassic ? 0 : 4) {
@@ -205,6 +220,93 @@ struct MainBar: View {
             case .clash:
                 DispatchTitleView(title: BarTitle("Clash Integration"), back: false, action: {})
             }
+        }
+    }
+}
+
+/// The node the window is on (docs/mesh-v0.md §5.2; demo `docs/design/concepts/mesh.html` §2), after the list's button:
+/// this Mac's name, or `@ <node>` in the signal colour while the pages are another node's. Its menu lists this Mac and
+/// the nodes it uses — what waits for you there, or how each is reached; one that does not answer cannot be chosen —
+/// then the way to Settings › Nodes. Not there until this Mac uses a node.
+struct NodeChoice: View {
+    let state: MainWindowState
+    let nodes: [NodeStatus]
+    let ownName: String
+    let actions: MainBarActions
+
+    var body: some View {
+        if !nodes.isEmpty || state.node != nil {
+            Menu {
+                Section("Use AgentSwitch On") {
+                    Button(item(ownName, detail: "This Mac", current: state.node == nil)) { actions.useNode(nil) }
+                    ForEach(nodes) { node in
+                        Button(item(node.name, detail: NodeText.menuDetail(node), current: state.nodeId == node.id)) { actions.useNode(node) }
+                            .disabled(node.state != .online)
+                    }
+                }
+                Divider()
+                Button("Pair Another Node…", action: actions.openNodes)
+                Button("Nodes…", action: actions.openNodes)
+            } label: {
+                HStack(spacing: 5) {
+                    Text(state.node.map { "@ \($0.name)" } ?? ownName).foregroundStyle(state.node == nil ? Look.ink2 : Color.signal)
+                    Text("▾").foregroundStyle(Look.ink2)
+                }
+                .mono(12)
+                .lineLimit(1)
+                .padding(.horizontal, 6)
+                .frame(height: 22)
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Use AgentSwitch on Another Node")
+            .accessibilityLabel("Node")
+        }
+    }
+
+    private func item(_ name: String, detail: String, current: Bool) -> String {
+        "\(current ? "✓ " : "    ")\(name)\(detail.isEmpty ? "" : "  ·  \(detail)")"
+    }
+}
+
+/// Under the bar while the window's pages are another node's (demo mesh.html §2): whose they are and how it is
+/// reached, and the way back — a task on the Mac mini is not to be taken for one of this Mac's.
+struct NodeStrip: View {
+    let node: NodeStatus
+    /// This Mac still has the node in its book (false: it was removed while the window was on it).
+    let known: Bool
+    let back: () -> Void
+
+    static let height: CGFloat = 24
+
+    var body: some View {
+        HStack(spacing: 8) {
+            PixelSprite(rows: PixelArt.square, pixel: 2, color: trouble ? .failed : .signal)
+            Text("正在使用").foregroundStyle(Look.ink2)
+            Text(node.name).foregroundStyle(Color.signal)
+            Text(words).foregroundStyle(trouble ? Color.failed : Look.ink2)
+            Spacer(minLength: 12)
+            Button(action: back) { BracketLabel(word: "Back to This Mac") }
+                .buttonStyle(BracketButtonStyle(size: 12))
+        }
+        .mono(12)
+        .lineLimit(1)
+        .padding(.horizontal, 12)
+        .frame(height: Self.height)
+        .background(Color.signal.opacity(0.07))
+    }
+
+    private var trouble: Bool { !known || node.state != .online }
+
+    private var words: String {
+        if !known { return "· 已从这台 Mac 的节点中移除" }
+        switch node.state {
+        case .online: return "· " + [NodeText.path(node.address), node.address].compactMap { $0 }.joined(separator: " · ")
+        case .offline: return "· Offline · 连接不上，恢复后自动继续"
+        case .revoked: return "· Removed There · 对方已移除这台 Mac，需重新配对"
         }
     }
 }

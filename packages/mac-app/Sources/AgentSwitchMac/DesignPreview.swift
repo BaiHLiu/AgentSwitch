@@ -36,6 +36,20 @@ enum DesignPreview {
                     FileHandle.standardError.write(Data("design preview (the browsers) written to \(directory.path)\n".utf8))
                     exit(0)
                 }
+                if UserDefaults.standard.string(forKey: "designPreviewOnly") == "nodes" {
+                    // docs/mesh-v0.md: Settings › Nodes with two nodes and a phone, and the link sheet with a link read back.
+                    model.loadDemoNodes()
+                    let link = try PairingLink.make(PairingPayload(name: "Mac mini", port: 4713, fp: DemoData.nodeList.nodes[0].fingerprint, code: "K7QD-2M9F",
+                                                                   lan: ["192.168.1.30"], tailnet: ["mac-mini.tail2c41.ts.net"], bonjour: "AgentSwitch on Mac mini", gate: nil))
+                    for (suffix, appearance) in [("", NSAppearance.Name.aqua), ("-dark", .darkAqua)] {
+                        let look = NSAppearance(named: appearance)
+                        try await renderSettings(.nodes, model: model, appearance: look, to: directory.appendingPathComponent("settings-nodes\(suffix).png"))
+                        try await renderSheet(PairWithLinkSheet(link: link), model: model, appearance: look, to: directory.appendingPathComponent("nodes-link\(suffix).png"))
+                    }
+                    try await MainWindowPreview.renderNodes(model: model, into: directory)
+                    FileHandle.standardError.write(Data("design preview (nodes) written to \(directory.path)\n".utf8))
+                    exit(0)
+                }
                 if UserDefaults.standard.string(forKey: "designPreviewOnly") == "profiles" {
                     // A profile's own proxy (docs/profiles-v0.md §4): the sheet once it was applied and checked, and
                     // one whose proxy let nothing out.
@@ -113,7 +127,7 @@ enum DesignPreview {
                         try await renderSettings(tab, model: model, appearance: look, to: file)
                     }
                     model.errorMessage = "无法打开网页控制台：无法连接服务：127.0.0.1:4711 Could not connect to the server."
-                    try await renderSettings(.devices, model: model, appearance: look,
+                    try await renderSettings(.nodes, model: model, appearance: look,
                                              to: directory.appendingPathComponent("settings-error\(suffix).png"))
                     model.errorMessage = nil
                     try await renderDispatchVariants(model: model, appearance: look, suffix: suffix, into: directory)

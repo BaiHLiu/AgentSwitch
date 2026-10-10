@@ -25,7 +25,7 @@ struct MainRail: View {
 
     var body: some View {
         VStack(spacing: Self.gap) {
-            ForEach(MainPage.allCases, id: \.self) { page in
+            ForEach(state.pages, id: \.self) { page in
                 RailButton(rows: page.railIcon, help: page.railHelp, current: state.page == page,
                            mark: state.activity(of: page).mark) { switchPage(page) }
                     .accessibilityLabel(page.title)
@@ -114,7 +114,7 @@ struct RailStrip: View {
 
     var body: some View {
         VStack(spacing: MainRail.gap) {
-            ForEach(MainPage.allCases, id: \.self) { page in
+            ForEach(state.pages, id: \.self) { page in
                 StripBar(bar: .of(current: state.page == page, activity: state.activity(of: page).mark), help: page.railHelp) { switchPage(page) }
                     .accessibilityLabel(page.title)
             }

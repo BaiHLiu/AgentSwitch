@@ -79,6 +79,31 @@ public struct DaemonClient: Sendable {
         return copy
     }
 
+    /// Which node the routes are asked of (docs/mesh-v0.md §5.2): empty for this Mac's own service; for another node
+    /// this Mac is paired with, `/nodes/<id>`, put before every address — this Mac's service passes the request on to
+    /// that node as it is and hands back its answer, streams included.
+    public private(set) var nodePrefix = ""
+
+    /// The same client, its routes those of node `id`; nil: this Mac's own. `device`: this Mac's device at that node,
+    /// which its screens there are named after (TerminalSizeHolder.screen).
+    public func onNode(_ id: String?, as device: String? = nil) -> DaemonClient {
+        var copy = self
+        copy.nodePrefix = id.map { "/nodes/\(Self.segment($0))" } ?? ""
+        copy.screenOwner = id.map { id in device.flatMap { $0.isEmpty ? nil : $0 } ?? id }
+        return copy
+    }
+
+    /// What this Mac's screens on the node's terminals and tabs are named after; nil on this Mac's own service.
+    public private(set) var screenOwner: String?
+
+    /// True when the routes are another node's.
+    public var isRemote: Bool { !nodePrefix.isEmpty }
+
+    /// The nodes key (daemon nodes/book.ts): beside the local token, `nodes/key`. The routes that act on another node
+    /// ask for it as well as the token; it is shown to those routes only.
+    public static let nodesKeyHeader = "x-agentswitch-nodes"
+    private var nodesKeyFile: URL? { tokenFile?.deletingLastPathComponent().appendingPathComponent("nodes").appendingPathComponent("key") }
+
     public init(port: Int, transport: HTTPTransport = URLSessionTransport.shared, tokenFile: URL? = nil) {
         baseURL = URL(string: "http://127.0.0.1:\(port)")!
         self.transport = transport
@@ -101,9 +126,10 @@ public struct DaemonClient: Sendable {
         try decode(Health.self, try await call("GET", "/healthz"))
     }
 
-    /// `POST /pairing`: a one-time code (8 Crockford base32, 5 minutes, one use).
-    public func createPairing() async throws -> Pairing {
-        try decode(Pairing.self, try await call("POST", "/pairing", body: Data("{}".utf8)))
+    /// `POST /pairing`: a one-time code (8 Crockford base32, 5 minutes, one use). `back`: another node that pairs with
+    /// it and offers itself in return is used back (docs/mesh-v0.md §2.2); a phone has nothing to offer either way.
+    public func createPairing(back: Bool = true) async throws -> Pairing {
+        try decode(Pairing.self, try await call("POST", "/pairing", body: Data((back ? "{}" : #"{"back":false}"#).utf8)))
     }
 
     public func devices() async throws -> [Device] {
@@ -196,9 +222,13 @@ public struct DaemonClient: Sendable {
     /// A request to `path` with the local token (read afresh: the daemon may have written it since).
     func request(_ method: String, _ path: String) -> URLRequest {
         let scoped = !browserPrefix.isEmpty && path.hasPrefix("/browser/") && !path.hasPrefix("/browser/engine")
-        var request = URLRequest(url: URL(string: baseURL.absoluteString + (scoped ? browserPrefix : "") + path) ?? baseURL)
+        let full = nodePrefix + (scoped ? browserPrefix : "") + path
+        var request = URLRequest(url: URL(string: baseURL.absoluteString + full) ?? baseURL)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if full.hasPrefix("/nodes"), let nodesKeyFile, let key = try? String(contentsOf: nodesKeyFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty {
+            request.setValue(key, forHTTPHeaderField: Self.nodesKeyHeader)
+        }
         if let tokenFile, let token = try? String(contentsOf: tokenFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }

@@ -224,6 +224,33 @@ enum MainWindowPreview {
         window.close()
     }
 
+    /// docs/mesh-v0.md §5.2 (`-designPreviewOnly nodes`, after `model.loadDemoNodes()`): the bar's node choice on this
+    /// Mac's own pages (`main-nodes-own`), and the window on another node — `@ Mac mini` in the bar, the strip under it,
+    /// the rail without Clash — on Dispatch and on Terminals (`main-nodes-dispatch`, `main-nodes-terminals`), and with
+    /// the node gone quiet (`main-nodes-offline`).
+    static func renderNodes(model: AppModel, into directory: URL) async throws {
+        let dark = NSAppearance(named: .darkAqua)
+        func picture(_ name: String, page: MainPage, node: NodeStatus?, system: NSAppearance?) async throws {
+            let state = state(on: page)
+            state.use(node: node)
+            let browser = BrowserPageModel(service: { BrowserDemoService(empty: true) }, state: state, defaults: nil)
+            let (window, _) = makeWindow(model: model, state: state, page: page, system: system, browser: browser)
+            try await DesignPreview.settle()
+            try await DesignPreview.settle()
+            try DesignPreview.write(window.contentView?.superview ?? window.contentView!, to: directory.appendingPathComponent("\(name).png"))
+            browser.stop()
+            window.close()
+        }
+        let mini = DemoData.nodeList.nodes[0]
+        try await picture("main-nodes-own", page: .dispatch, node: nil, system: dark)
+        try await picture("main-nodes-dispatch", page: .dispatch, node: mini, system: dark)
+        try await picture("main-nodes-dispatch-light", page: .dispatch, node: mini, system: NSAppearance(named: .aqua))
+        try await picture("main-nodes-terminals", page: .terminals, node: mini, system: dark)
+        model.nodes.loadDemo(NodeList(own: DemoData.nodeList.own, nodes: [NodeStatus(id: mini.id, name: mini.name, state: .offline, deviceId: mini.deviceId, inbound: mini.inbound)]))
+        try await picture("main-nodes-offline", page: .terminals, node: mini, system: dark)
+        model.nodes.loadDemo(DemoData.nodeList)
+    }
+
     /// The tab on screen zoomed in to `percent` a step at a time, as `+` does it, then its picture as the daemon would
     /// send it for the size this Mac asks for now (the made-up browser's pictures are of one size).
     private static func zoomIn(_ browser: BrowserPageModel, to percent: Int) async throws {

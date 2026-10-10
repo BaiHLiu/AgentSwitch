@@ -75,11 +75,16 @@ final class BrowserPageModel {
     private(set) var zoomSteps: [Int]
 
     var current: BrowserTab? { list.tab(selectedID) }
-    var screenID: String { BrowserDefaults.screen }
+    /// The holder name this page takes tabs over with: this Mac's main window, or — on another node's browser — a name
+    /// after this Mac's device there.
+    @ObservationIgnored var screenID = BrowserDefaults.screen
+    /// Another node's browser (docs/mesh-v0.md §5.2): its windows are on that machine, so here its tabs are always a
+    /// picture, as on a phone.
+    @ObservationIgnored var streamOnly = false
 
     /// The browser's tabs have windows of their own (docs/browser-v0.md §7.2): the page lists them and shows what
     /// AgentSwitch adds to the selected one; its picture is in its window, and nothing here takes or sizes it.
-    var windows: Bool { list.windows }
+    var windows: Bool { !streamOnly && list.windows }
 
     /// This Mac holds the tab on screen.
     var holding: Bool { current.map { BrowserTabText.holder($0, screen: screenID) == .thisMac } ?? false }

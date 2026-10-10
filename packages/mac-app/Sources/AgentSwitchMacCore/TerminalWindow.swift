@@ -447,6 +447,7 @@ public enum TerminalWindowText {
         switch place {
         case "iphone": ("On iPhone", "这个终端正在 iPhone 上使用。")
         case "mac": ("On Mac", "这个终端正在 Mac 的另一个窗口中使用。")
+        case "node": ("On Another Node", "这个终端正在另一个节点上使用。")
         default: ("On Web", "这个终端正在浏览器中使用。")
         }
     }

@@ -86,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// a running service (TerminalProbe.swift, DispatchProbe.swift, BrowserProbe.swift).
     static var probeOnly: Bool {
         #if DEBUG
-        return TerminalProbe.directory != nil || DispatchProbe.directory != nil || BrowserProbe.directory != nil || PerfProbe.directory != nil
+        return TerminalProbe.directory != nil || DispatchProbe.directory != nil || BrowserProbe.directory != nil || PerfProbe.directory != nil || NodesProbe.directory != nil
         #else
         return false
         #endif
@@ -128,6 +128,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             BrowserProbe.run(main, model: model, into: dir)
             return
         }
+        if let dir = NodesProbe.directory {
+            NSApp.setActivationPolicy(.accessory)
+            NodesProbe.run(main, model: model, into: dir)
+            return
+        }
         if let dir = PerfProbe.directory {
             NSApp.setActivationPolicy(.accessory)
             PerfProbe.run(main, model: model, into: dir)
@@ -144,6 +149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.onVisibilityChange = { [weak self] open in self?.windowVisibility("settings", open) }
         main.onVisibilityChange = { [weak self] open in self?.windowVisibility("main", open) }
         main.openSettings = { [weak self] in self?.settings.show(nil) }
+        main.openNodes = { [weak self] in self?.settings.show(.nodes) }
         wireWindows()
         windows.onVisibilityChange = { [weak self] open in self?.windowVisibility("terminal-windows", open) }
         settings.openTask = { [weak self] id in self?.main.show(task: id) }

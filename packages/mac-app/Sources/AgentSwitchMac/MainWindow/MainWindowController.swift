@@ -24,6 +24,12 @@ final class MainWindowController: NSObject {
     var onVisibilityChange: (Bool) -> Void = { _ in }
     /// The rail's settings and ⌘,.
     var openSettings: () -> Void = {}
+    /// Settings › Nodes (the bar's node menu).
+    var openNodes: () -> Void = {}
+    /// What `GET /live` last said of this Mac: the rail's marks again once the window is back from another node.
+    private var ownLive: LiveSnapshot?
+    /// Another node's `GET /live`, asked while the window's pages are that node's.
+    private var nodeWatch: Task<Void, Never>?
     /// The terminals in windows of their own (docs/dispatch-v0.md §1 单独的窗口): one of them is not shown here too.
     var windows: TerminalWindows?
     private var terminals: (any TerminalsPage)?
@@ -46,7 +52,7 @@ final class MainWindowController: NSObject {
     func probeToggleView() { barActions.toggleView() }
     var probeBrowser: BrowserPageModel? { browser }
     var probeHead: TerminalHead? { terminals?.head }
-    var probeClient: DaemonClient { model.client }
+    var probeClient: DaemonClient { model.client(on: state.nodeId) }
     /// The status bar's lock, as a click on it.
     func probeSeal() { barActions.seal() }
     #endif
@@ -88,6 +94,8 @@ final class MainWindowController: NSObject {
     func show(terminal id: String) {
         // In a window of its own: that one comes forward.
         if windows?.raise(id) == true { return }
+        // The Live Activity's terminals are this Mac's.
+        use(node: nil)
         let watched = inUse
         if window == nil { open(terminal: id) } else { terminals?.show(terminal: id) }
         go(to: .terminals, animated: watched)
@@ -97,6 +105,7 @@ final class MainWindowController: NSObject {
     /// One task's page on Dispatch (the Live Activity): the window asks the page to open it (`requestedTask`).
     func show(task id: String) {
         let watched = inUse
+        use(node: nil)
         open()
         state.request(task: id)
         go(to: .dispatch, animated: watched)
@@ -121,8 +130,65 @@ final class MainWindowController: NSObject {
         return state.openTask
     }
 
-    /// What `GET /live` said (the Live Activity's poll): the pages' marks and Dispatch's counts.
-    func liveChanged(_ snapshot: LiveSnapshot?) { state.liveChanged(snapshot) }
+    /// What `GET /live` said (the Live Activity's poll): the pages' marks and Dispatch's counts — this Mac's, so not
+    /// while the window's pages are another node's.
+    func liveChanged(_ snapshot: LiveSnapshot?) {
+        ownLive = snapshot
+        if state.node == nil { state.liveChanged(snapshot) }
+    }
+
+    // MARK: the node
+
+    /// The window's pages become another node's, or this Mac's again (the bar's node menu, the strip's way back;
+    /// docs/mesh-v0.md §5.2). Every page is one node's — the terminals' streams, the browser's picture, Dispatch's
+    /// record — so they are made anew for it, and drawn in as a page change is.
+    func use(node: NodeStatus?) {
+        guard node?.id != state.nodeId else { return }
+        let watched = inUse
+        container?.refresh.cancel()
+        terminals?.stop()
+        terminals = nil
+        browser?.stop()
+        browser = nil
+        container = nil
+        dispatchHost = nil
+        state.use(node: node)
+        watchNode()
+        guard let window else { return }
+        let frame = window.frame
+        build(in: window, terminal: nil)
+        window.setFrame(frame, display: true)
+        // Clash is this Mac's own: from it, another node's window opens on its terminals.
+        let page = state.pages.contains(state.page) ? state.page : .terminals
+        swap(to: page)
+        windowChanged()
+        if watched, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            container?.drawIn(page)
+            if page == .terminals { terminals?.pageDrawsIn() }
+        }
+    }
+
+    /// While the pages are another node's: what goes on there for the rail's marks, asked of that node; and its line in
+    /// this Mac's list of nodes kept fresh (the strip says how it is reached, or that it stopped answering).
+    private func watchNode() {
+        if nodeWatch != nil { model.nodes.watched -= 1 }
+        nodeWatch?.cancel()
+        nodeWatch = nil
+        guard let id = state.nodeId, window != nil else {
+            if state.node == nil { state.liveChanged(ownLive) }
+            return
+        }
+        model.nodes.watched += 1
+        nodeWatch = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let snapshot = try? await self.model.client(on: id).live()
+                guard !Task.isCancelled, self.state.nodeId == id else { return }
+                self.state.liveChanged(snapshot)
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
 
     /// The window is in front of the user: a page change there is one they see.
     private var inUse: Bool {
@@ -154,34 +220,7 @@ final class MainWindowController: NSObject {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
-        // The Terminals page is native (2026-10-05); the daemon's page in a web view stays behind a hidden default for now.
-        let terminals: any TerminalsPage = UserDefaults.standard.bool(forKey: "terminalsPageWeb")
-            ? TerminalsPageController(model: model, size: Self.contentSize) : NativeTerminalsPage(model: model)
-        terminals.window = window
-        terminals.onTitle = { [weak self] in self?.updateTitle() }
-        terminals.setDetached(windows?.ids ?? [])
-        terminals.onDetach = { [weak self] id in self?.windows?.show(id) }
-        terminals.onRaise = { [weak self] id in self?.windows?.raise(id) }
-        // Taken back: its window closes (the page hears it is no longer out), then it is shown here.
-        terminals.onAttach = { [weak self] id in
-            self?.windows?.close(id)
-            self?.terminals?.show(terminal: id)
-        }
-        let dispatch = NSHostingView(rootView: DispatchRoot(model: model, state: state))
-        let browser = BrowserPageModel(service: { [model] in model.client }, state: state,
-                                       sealer: { [model] request in try await model.gateCLI.seal(request) })
-        browser.onTitle = { [weak self] in self?.updateTitle() }
-        browser.activateBrowser = { [model] in
-            model.browserFront.asked()
-            // The browser on the page: the shared one, or the profile's own that was chosen (docs/profiles-v0.md §5.2).
-            BrowserFront.activate(agentswitchHome: model.paths.agentswitchHome, browser: browser.browserKey)
-        }
-        let container = PageContainer(pages: [.dispatch: dispatch, .terminals: terminals.pageView, .browser: BrowserPage.host(browser),
-                                              .clash: NSHostingView(rootView: ClashPage(state: state).environment(model))])
-        let host = NSHostingController(rootView: MainWindowRoot(state: state, head: terminals.head, model: model,
-                                                                content: container, actions: barActions, browser: browser))
-        host.sizingOptions = []
-        window.contentViewController = host
+        build(in: window, terminal: id)
         window.setContentSize(Self.contentSize)
         // The title bar's height and where the traffic lights end, for the bar drawn in that row.
         state.barHeight = max(28, window.frame.height - window.contentLayoutRect.height)
@@ -196,19 +235,64 @@ final class MainWindowController: NSObject {
         if !window.setFrameUsingName(Self.frameName), !window.setFrameUsingName(Self.terminalFrameName) { window.center() }
         window.setFrameAutosaveName(Self.frameName)
         self.window = window
+        observe(window)
+        watchKeys()
+        // A window closed on another node opens on it again: its marks are asked of it.
+        watchNode()
+        swap(to: state.pages.contains(state.page) ? state.page : .terminals)
+        onVisibilityChange(true)
+    }
+
+    /// The window's pages, for the node the window is on (this Mac, or another node through this Mac's service:
+    /// docs/mesh-v0.md §5.2), as the window's content. `id`: the terminal the Terminals page opens on.
+    private func build(in window: NSWindow, terminal id: String?) {
+        let node = state.nodeId
+        // The Terminals page is native (2026-10-05); the daemon's page in a web view stays behind a hidden default for now.
+        let terminals: any TerminalsPage = node == nil && UserDefaults.standard.bool(forKey: "terminalsPageWeb")
+            ? TerminalsPageController(model: model, size: Self.contentSize) : NativeTerminalsPage(model: model, node: node)
+        terminals.window = window
+        terminals.onTitle = { [weak self] in self?.updateTitle() }
+        // Windows of their own are this Mac's terminals': another node's stay in this window.
+        terminals.setDetached(node == nil ? windows?.ids ?? [] : [])
+        terminals.onDetach = { [weak self] id in if node == nil { self?.windows?.show(id) } }
+        terminals.onRaise = { [weak self] id in if node == nil { _ = self?.windows?.raise(id) } }
+        // Taken back: its window closes (the page hears it is no longer out), then it is shown here.
+        terminals.onAttach = { [weak self] id in
+            self?.windows?.close(id)
+            self?.terminals?.show(terminal: id)
+        }
+        let dispatch = NSHostingView(rootView: DispatchRoot(model: model, state: state))
+        // Fill Ciphertext's `New…` seals with this Mac's gate, for this Mac's gate: not on another node's browser.
+        let ownSealer: BrowserSealer = { [model] request in try await model.gateCLI.seal(request) }
+        let sealer: BrowserSealer? = node == nil ? ownSealer : nil
+        let kept: UserDefaults? = node == nil ? .standard : nil
+        let browser = BrowserPageModel(service: { [model] in model.client(on: node) }, state: state, defaults: kept, sealer: sealer)
+        if node != nil {
+            browser.streamOnly = true
+            browser.screenID = TerminalSizeHolder.screen(onNodeAs: model.client(on: node).screenOwner, unique: "main")
+        }
+        browser.onTitle = { [weak self] in self?.updateTitle() }
+        browser.activateBrowser = { [model] in
+            guard node == nil else { return }
+            model.browserFront.asked()
+            // The browser on the page: the shared one, or the profile's own that was chosen (docs/profiles-v0.md §5.2).
+            BrowserFront.activate(agentswitchHome: model.paths.agentswitchHome, browser: browser.browserKey)
+        }
+        let container = PageContainer(pages: [.dispatch: dispatch, .terminals: terminals.pageView, .browser: BrowserPage.host(browser),
+                                              .clash: NSHostingView(rootView: ClashPage(state: state).environment(model))])
+        let host = NSHostingController(rootView: MainWindowRoot(state: state, head: terminals.head, model: model,
+                                                                content: container, actions: barActions, browser: browser))
+        host.sizingOptions = []
+        window.contentViewController = host
         self.terminals = terminals
         self.browser = browser
         self.container = container
         dispatchHost = dispatch
         // The terminal screen's own refresh (another terminal) gives way to the page's, drawn in over it.
         terminals.pageRefreshing = { [weak container] in container?.refresh.playing ?? false }
-        observe(window)
-        watchKeys()
         followRecord()
         // Signed in before it is shown: a window opened on Dispatch has its terminals ready behind it.
         terminals.load(terminal: id)
-        swap(to: state.page)
-        onVisibilityChange(true)
     }
 
     private func observe(_ window: NSWindow) {
@@ -302,6 +386,9 @@ final class MainWindowController: NSObject {
         responderObservation = nil
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
+        if nodeWatch != nil { model.nodes.watched -= 1 }
+        nodeWatch?.cancel()
+        nodeWatch = nil
         terminals?.stop()
         terminals = nil
         browser?.stop()
@@ -329,7 +416,8 @@ final class MainWindowController: NSObject {
     /// The page goes in at once, then is drawn in from the top; a refresh under way gives way to it (nothing of it
     /// left). The page already on screen: nothing (a refresh drawing it in plays on).
     private func go(to page: MainPage, animated: Bool) {
-        guard page != state.page else { return }
+        // A page the node on screen does not have (Clash on another node): not gone to.
+        guard page != state.page, state.pages.contains(page) else { return }
         container?.refresh.cancel()
         swap(to: page)
         guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
@@ -399,7 +487,9 @@ final class MainWindowController: NSObject {
             detach: { [weak self] in self?.terminals?.detachShown() },
             toggleView: { [weak self] in self?.terminals?.toggleView() },
             closeWindow: { [weak self] in self?.window?.performClose(nil) },
-            exitFullScreen: { [weak self] in self?.window?.toggleFullScreen(nil) })
+            exitFullScreen: { [weak self] in self?.window?.toggleFullScreen(nil) },
+            useNode: { [weak self] node in self?.use(node: node) },
+            openNodes: { [weak self] in self?.openNodes() })
     }
 
     // MARK: keys

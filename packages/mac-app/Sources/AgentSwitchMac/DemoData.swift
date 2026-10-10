@@ -93,6 +93,20 @@ enum DemoData {
                 lastSeenAt: now.addingTimeInterval(-21 * 86_400), revokedAt: now.addingTimeInterval(-20 * 86_400), online: false)]
     }
 
+    /// docs/mesh-v0.md: this Mac with two nodes — a Mac mini, both ways, with something waiting there; a Studio that
+    /// went offline, which this Mac uses and which does not use it back — and the devices that go with them.
+    static let nodeList = NodeList(own: NodeSelf(name: computerName, fingerprint: fingerprint, port: 4713), nodes: [
+        NodeStatus(id: "7f3a19c2e804", name: "Mac mini", fingerprint: "7f3a19c2e80455b1" + String(repeating: "0", count: 48), lan: ["192.168.1.30"],
+                   tailnet: ["mac-mini.tail2c41.ts.net"], state: .online, address: "192.168.1.30", waiting: 1, deviceId: "d-there", inbound: "dev-3"),
+        NodeStatus(id: "0937184ad0d9", name: "Mac Studio", fingerprint: "0937184ad0d9" + String(repeating: "1", count: 52), lan: ["192.168.1.41"],
+                   state: .offline, deviceId: "d-studio", inbound: nil),
+    ])
+
+    static func nodeDevices(now: Date) -> [Device] {
+        [Device(id: "dev-3", name: "Mac mini", platform: "macos", createdAt: now.addingTimeInterval(-2 * 86_400),
+                lastSeenAt: now.addingTimeInterval(-20), revokedAt: nil, online: true)] + devices(now: now)
+    }
+
     static func path(home: String) -> String {
         "/opt/homebrew/bin:\(home)/.local/bin:\(home)/.opencode/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     }
@@ -251,6 +265,8 @@ final class DemoBackend: @unchecked Sendable {
     private var workDirProblem: String?
     /// Devices the phone list shows; empty on a fresh Mac.
     private var pairedDevices = true
+    /// Other nodes are paired with this Mac (the nodes' pictures).
+    private var nodes = false
 
     init(home: String) {
         self.home = home
@@ -262,6 +278,8 @@ final class DemoBackend: @unchecked Sendable {
     func set(pairedDevices: Bool) { locked { self.pairedDevices = pairedDevices } }
 
     var hasPairedDevices: Bool { locked { pairedDevices } }
+    func set(nodes: Bool) { locked { self.nodes = nodes } }
+    var hasNodes: Bool { locked { nodes } }
 
     var policy: [String: Any] {
         locked { ["policy": ["mode": mode, "human": human], "categories": DemoData.categories] }
@@ -314,7 +332,9 @@ struct DemoTransport: HTTPTransport {
         case ("GET", "/browser/engine"):
             body = ["camoufox": ["installed": ["version": "156.0.1-beta.34"], "ready": true],
                     "playwright": ["active": "bundled", "version": "1.64.0"], "update": ["running": false]]
-        case ("GET", "/devices"): body = backend.hasPairedDevices ? DemoData.devices(now: now).map(Self.json) : []
+        case ("GET", "/devices"): body = backend.hasNodes ? DemoData.nodeDevices(now: now).map(Self.json) : backend.hasPairedDevices ? DemoData.devices(now: now).map(Self.json) : []
+        case ("GET", "/nodes"): body = Self.nodes(backend.hasNodes ? DemoData.nodeList.nodes : [])
+        case ("GET", "/settings/mesh"), ("PUT", "/settings/mesh"): body = ["keyboard": sent["keyboard"] as? Bool ?? true]
         case ("GET", "/settings/models"): body = DemoData.modelSettings
         // A fresh Mac has no paired phone; its usage has no readings either.
         case ("GET", "/quota"): body = DemoData.quotaJSON(now: now, fresh: !backend.hasPairedDevices)
@@ -336,6 +356,14 @@ struct DemoTransport: HTTPTransport {
         func ms(_ date: Date?) -> Any { date.map { $0.timeIntervalSince1970 * 1000 } ?? NSNull() }
         return ["id": d.id, "name": d.name, "platform": d.platform, "createdAt": ms(d.createdAt), "lastSeenAt": ms(d.lastSeenAt),
                 "revokedAt": ms(d.revokedAt), "online": d.online ?? false]
+    }
+
+    private static func nodes(_ list: [NodeStatus]) -> [String: Any] {
+        ["self": ["name": DemoData.computerName, "kind": "mac", "fingerprint": DemoData.fingerprint, "port": 4713, "listening": true],
+         "nodes": list.map { n in
+             ["id": n.id, "name": n.name, "kind": n.kind ?? "mac", "fingerprint": n.fingerprint, "port": n.port, "lan": n.lan, "tailnet": n.tailnet,
+              "state": n.state.rawValue, "address": n.address ?? NSNull(), "waiting": n.waiting ?? NSNull(), "deviceId": n.deviceId, "inbound": n.inbound ?? NSNull()] as [String: Any]
+         }]
     }
 
     private static func pairing(now: Date) throws -> [String: Any] {

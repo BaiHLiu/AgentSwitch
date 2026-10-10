@@ -297,13 +297,16 @@ final class PaneRecord {
         Task { [weak self] in
             defer { self?.sending = false }
             do {
-                var refs = files.compactMap { file in file.path.map { TerminalReplyFile(token: file.token, path: $0) } }
+                // On this Mac a file is named by its path; another node cannot read this Mac's disk, so there every
+                // file is sent, as a phone sends its own (docs/mesh-v0.md §5.2).
+                let remote = client().isRemote
+                var refs = remote ? [] : files.compactMap { file in file.path.map { TerminalReplyFile(token: file.token, path: $0) } }
                 // A picture off the clipboard has no path yet: the service keeps it with the terminal's files.
-                let pasted = files.filter { $0.path == nil }
-                if !pasted.isEmpty {
-                    let staged = try await client().upload(pasted.compactMap(\.pasted))
-                    guard staged.count == pasted.count else { throw DaemonError.unreachable("图片未能送达") }
-                    refs += zip(pasted, staged).map { TerminalReplyFile(token: $0.token, upload: $1.id) }
+                let sent = files.filter { remote || $0.path == nil }
+                if !sent.isEmpty {
+                    let staged = try await client().upload(try sent.map(Self.upload))
+                    guard staged.count == sent.count else { throw DaemonError.unreachable("文件未能送达") }
+                    refs += zip(sent, staged).map { TerminalReplyFile(token: $0.token, upload: $1.id) }
                 }
                 try await client().typeIntoTerminal(id: terminal, text: text, files: refs)
                 guard let self else { return }
@@ -431,6 +434,20 @@ final class PaneRecord {
         guard picture.data.count <= DispatchUploadFile.maxFileBytes else { error = "图片超过 50 MB"; return }
         guard let token = add(name: picture.name, image: true, thumbnail: RecordPictureStore.image(picture.data, side: 104), path: nil, pasted: picture) else { return }
         type([token])
+    }
+
+    /// A reply's file as what is sent: the picture off the clipboard, or the file read from this Mac's disk (a folder
+    /// cannot be sent).
+    private static func upload(_ file: DraftFile) throws -> DispatchUploadFile {
+        if let pasted = file.pasted { return pasted }
+        guard let path = file.path else { throw DaemonError.unreachable("\(file.name) 无法读取") }
+        var folder: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &folder), !folder.boolValue else {
+            throw DaemonError.http(status: 400, message: "\(file.name) 是文件夹，无法发送到另一个节点")
+        }
+        guard let data = FileManager.default.contents(atPath: path) else { throw DaemonError.unreachable("\(file.name) 无法读取") }
+        guard data.count <= DispatchUploadFile.maxFileBytes else { throw DaemonError.http(status: 400, message: "\(file.name) 超过 50 MB") }
+        return DispatchUploadFile(name: file.name, type: file.isImage ? "image/*" : "application/octet-stream", data: data)
     }
 
     /// `Files…`: the system's open panel, several files or folders.

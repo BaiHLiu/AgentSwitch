@@ -71,6 +71,29 @@ final class MainWindowState {
     /// The task you are looking at: its result needs no telling (the Live Activity).
     var watchingTask: String? { dispatchShown && windowKey && windowVisible ? openTask : nil }
 
+    // MARK: the node (docs/mesh-v0.md §5.2)
+
+    /// The node the window's pages are of; nil: this Mac's own service.
+    private(set) var node: NodeStatus?
+    var nodeId: String? { node?.id }
+    /// The pages the rail offers: Clash is this Mac's own.
+    var pages: [MainPage] { node == nil ? MainPage.allCases : MainPage.allCases.filter { $0 != .clash } }
+
+    /// The pages are another node's from now on: what the ones before put in the bars is gone with them.
+    func use(node: NodeStatus?) {
+        guard node?.id != self.node?.id else { return }
+        self.node = node
+        dispatchTitle = nil
+        showsBack = false
+        openTask = nil
+        browserTitle = nil
+        dispatchRouter = nil
+        dispatchTopics = 0
+        dispatchActivity = .none
+        terminalsActivity = .none
+        browserActivity = .none
+    }
+
     // MARK: the bar's row
 
     /// The title bar's height (the bar fills that row) and where the traffic lights start and end.

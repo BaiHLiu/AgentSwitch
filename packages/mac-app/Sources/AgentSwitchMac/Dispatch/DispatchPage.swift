@@ -83,7 +83,9 @@ struct DispatchPage: View {
     }
 
     private func attach() {
-        guard let demo else { return model.attach(app.client, gate: app.gateCLI, demo: false) }
+        // Another node's Dispatch (docs/mesh-v0.md §5.2): its service through this Mac's own. A ciphertext is for the
+        // gate of the node it was made for, and this Mac's gate cannot make one for another: no New Ciphertext there.
+        guard let demo else { return model.attach(app.client(on: window.nodeId), gate: window.nodeId == nil ? app.gateCLI : nil, demo: false) }
         model.attach(demo, gate: nil, demo: true)
         #if DEBUG
         if demo is DispatchDemoService { model.markLocal(DispatchDemoData.downloaded.file, taskId: DispatchDemoData.downloaded.task) }

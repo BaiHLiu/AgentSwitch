@@ -4,21 +4,21 @@ import SwiftUI
 
 /// The settings window's pages; the raw value is what `-openSettings <page>` takes.
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case pairing, devices, models, permissions, keys, agents, environment, general
+    case pairing, nodes, models, permissions, keys, agents, environment, general
     /// The Dispatch group (docs/dispatch-v0.md §3): what the web console's side column and the phone's settings had.
     case context, extensions, log, history
 
     var id: String { rawValue }
 
     /// The sidebar's first block, without a header.
-    static let app: [SettingsTab] = [.pairing, .devices, .models, .permissions, .keys, .agents, .environment, .general]
+    static let app: [SettingsTab] = [.pairing, .nodes, .models, .permissions, .keys, .agents, .environment, .general]
     /// The sidebar's `Dispatch` group; the main window's settings button opens its first page.
     static let dispatch: [SettingsTab] = [.context, .extensions, .log, .history]
 
     var title: String {
         switch self {
         case .pairing: return "Pairing"
-        case .devices: return "Devices"
+        case .nodes: return "Nodes"
         case .models: return "Models"
         case .permissions: return "Permissions"
         case .keys: return "Keys"
@@ -35,7 +35,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .pairing: return "qrcode"
-        case .devices: return "iphone"
+        case .nodes: return "point.3.connected.trianglepath.dotted"
         case .models: return "cpu"
         case .permissions: return "checkmark.shield"
         case .keys: return "key"
@@ -301,7 +301,7 @@ struct SettingsView: View {
     private func page(_ tab: SettingsTab) -> some View {
         switch tab {
         case .pairing: PairingView()
-        case .devices: DevicesView()
+        case .nodes: NodesView()
         case .models: ModelsView()
         case .permissions: PermissionsView()
         case .keys: KeysView()

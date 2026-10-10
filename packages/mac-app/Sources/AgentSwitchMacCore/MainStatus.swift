@@ -137,6 +137,7 @@ public struct TerminalContext: Equatable, Sendable {
         let place: String = switch away {
         case "iphone": "On iPhone"
         case "web": "On Web"
+        case "node": "On Another Node"
         default: "On Mac"
         }
         guard let cols, let rows, cols > 0, rows > 0 else { return place }

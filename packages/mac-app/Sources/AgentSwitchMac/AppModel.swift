@@ -96,6 +96,8 @@ final class AppModel {
     @ObservationIgnored var lastServiceStatus: Date?
 
     let pairingSession = PairingSession()
+    /// The nodes this Mac uses (docs/mesh-v0.md).
+    let nodes = NodesStore()
     /// The daemon-side settings of control-v0 §1–2: approval policy and the default work dir.
     let control = ControlSettings()
     /// The device list has been read at least once; until then the checklist and the first-run wizard do not know
@@ -174,6 +176,8 @@ final class AppModel {
         #endif
         return DaemonClient(port: ports.local, tokenFile: paths.agentswitchHome.appendingPathComponent(DaemonClient.tokenFileName))
     }
+    /// The service of node `id` through this Mac's own (docs/mesh-v0.md §5.2); nil: this Mac's.
+    func client(on id: String?) -> DaemonClient { client.onNode(id, as: nodes.node(id)?.deviceId) }
     var gateCLI: GateCLI { config.get().gateCLI }
 
     // MARK: status lines
@@ -521,6 +525,7 @@ final class AppModel {
             remoteProblem = error.localizedDescription
         }
         await refreshDevices()
+        await nodes.refreshIfDue(self)
         await control.refreshWorkDirIfStale(client)
         bonjour.update(remoteEnabled ? BonjourRecord.advertisement(info: remote, fallbackPort: ports.remote, computerName: computerName) : nil)
     }
@@ -727,6 +732,13 @@ final class AppModel {
     }
 
     #if DEBUG
+    /// `-designPreview`: this Mac with other nodes paired (docs/mesh-v0.md), after `loadDemo()`.
+    func loadDemoNodes() {
+        demoBackend?.set(nodes: true)
+        devices = DemoData.nodeDevices(now: Date())
+        nodes.loadDemo(DemoData.nodeList)
+    }
+
     /// `-designPreview`: every piece of state a view reads, from DemoData; the daemon API answers from DemoTransport.
     /// `fresh`: a Mac on its first run (no phone paired, Codex missing, OpenCode logged out, Tailscale stopped).
     /// `gate`: the credential gate's state (docs/gate-service-v0.md); a set-up Mac runs it as a system service.

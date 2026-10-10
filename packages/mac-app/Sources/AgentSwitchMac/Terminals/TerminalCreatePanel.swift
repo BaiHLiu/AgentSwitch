@@ -201,8 +201,11 @@ struct TerminalCreatePanel: View {
                 .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
                 .help("Folders in the List")
             }
-            Button { choose() } label: { BracketLabel(word: "Choose…") }
-                .buttonStyle(BracketButtonStyle(size: 12.5))
+            // The system's panel shows this Mac's folders: on another node the folder is typed or picked from the list's.
+            if !model.client().isRemote {
+                Button { choose() } label: { BracketLabel(word: "Choose…") }
+                    .buttonStyle(BracketButtonStyle(size: 12.5))
+            }
         }
         .padding(.vertical, 4)
         .overlay(alignment: .bottom) { Rectangle().fill(Look.line).frame(height: 1) }
@@ -398,10 +401,12 @@ struct TerminalSheetView: View {
                         Text("❯").font(.system(size: 12.5, design: .monospaced)).foregroundStyle(Color.signal)
                         PlainField(text: $model.sheetFolder, placeholder: "~/Folder", takesFocusAtFirst: true,
                                    onSubmit: { if !model.sheetFolder.isEmpty { model.answerSheet(ok: true) } }, onCancel: { model.answerSheet(ok: false) })
-                        Button {
-                            if let url = FolderPanel.choose(message: "选择会话继续所在的文件夹。", startingAt: nil) { model.sheetFolder = url.path }
-                        } label: { BracketLabel(word: "Choose…") }
-                        .buttonStyle(BracketButtonStyle(size: 12.5))
+                        if !model.client().isRemote {
+                            Button {
+                                if let url = FolderPanel.choose(message: "选择会话继续所在的文件夹。", startingAt: nil) { model.sheetFolder = url.path }
+                            } label: { BracketLabel(word: "Choose…") }
+                            .buttonStyle(BracketButtonStyle(size: 12.5))
+                        }
                     }
                     .padding(.vertical, 4)
                     .overlay(alignment: .bottom) { Rectangle().fill(Look.line).frame(height: 1) }

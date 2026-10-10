@@ -3,6 +3,10 @@
 # be, each using the other. Echo router and executors — no model is called, no agent is started. Not part of the tests.
 #
 #   scripts/mesh_smoke.sh            ports 4931/4933 and 4941/4943, state in a temp folder that is deleted at the end
+#   MESH_SMOKE_THEN='<command>'      run once the two are paired and Studio has a task, before Laptop removes Studio,
+#                                    with A_HOME, A_PORT (Studio) and B_HOME, B_PORT (Laptop) in its environment and
+#                                    nothing else of this shell's: how the Mac app's `-nodesProbe` is pointed at Laptop
+#   MESH_SMOKE_TERMINALS=1           the services offer terminals (none is started)
 #
 # Every process here gets an environment built from nothing. A shell inside an AgentSwitch terminal carries the real
 # service's AGENTSWITCH_HOME, ports and gate settings; a `serve` that inherited them would run a second service on the
@@ -20,7 +24,7 @@ clean() {  # home local-port command…
   local home="$1" port="$2"; shift 2
   env -i PATH="$NODE_BIN:/usr/bin:/bin:/usr/sbin:/sbin" HOME="$S/$home" TMPDIR="${TMPDIR:-/tmp}" LANG=en_US.UTF-8 \
     AGENTSWITCH_HOME="$S/$home/state" AGENTSWITCH_PORT="$port" AGENTSWITCH_ROUTER=echo AGENTSWITCH_EXECUTORS=echo \
-    AGENTSWITCH_BROWSER=0 AGENTSWITCH_BROWSER_HOST=0 AGENTSWITCH_TERMINALS=0 AGENTSWITCH_SESSIONS=0 "$@"
+    AGENTSWITCH_BROWSER=0 AGENTSWITCH_BROWSER_HOST=0 AGENTSWITCH_TERMINALS="${MESH_SMOKE_TERMINALS:-0}" AGENTSWITCH_SESSIONS=0 "$@"
 }
 serve() {  # name home local-port remote-port
   mkdir -p "$S/$2"
@@ -61,6 +65,11 @@ step "from Laptop: what Studio says of itself"
 curl -s -H "authorization: Bearer $(cat "$S/b/state/local-token")" -H "x-agentswitch-nodes: $(cat "$S/b/state/nodes/key")" "http://127.0.0.1:4941/nodes/Studio/node"; echo
 step "from Laptop: a task on Studio, watched to its end"; B --on Studio task 'hello @echo {"delayMs":300,"result":"done on Studio"}' 2>&1 | tail -1
 step "the task is Studio's, not Laptop's"; echo "Studio: $(A tasks | grep -c . ) line(s)"; echo "Laptop: $(B tasks | grep -c . ) line(s)"
+if [ -n "${MESH_SMOKE_THEN:-}" ]; then
+  step "then: $MESH_SMOKE_THEN"
+  env -i PATH="$NODE_BIN:/usr/bin:/bin:/usr/sbin:/sbin" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" LANG=en_US.UTF-8 \
+    A_HOME="$S/a/state" A_PORT=4931 B_HOME="$S/b/state" B_PORT=4941 /bin/zsh -c "$MESH_SMOKE_THEN"
+fi
 step "the local token without the nodes key does not act on a node (403)"
 curl -s -o /dev/null -w '%{http_code}\n' -H "authorization: Bearer $(cat "$S/b/state/local-token")" "http://127.0.0.1:4941/nodes/Studio/tasks"
 step "Laptop removes Studio, both ways"; B nodes remove Studio --both

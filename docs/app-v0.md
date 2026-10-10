@@ -124,6 +124,8 @@ iPhone: AgentSwitch (SwiftUI)                        Mac: AgentSwitch.app (菜�
 - **CA**：“复制 CA 到 `~/.secret-gate/ca.pem`”自动做；“加入登录钥匙串”只在用户点按钮时做（`secret-gate install-ca` 会两步一起做，所以应用没有直接调用它）。
 - **执行器路径**：`targets.yaml` 里写死的 codex 路径（如 ChatGPT.app 内的）在别的 Mac 上不存在时，daemon 改用 PATH 上的 `codex`。
 
+- **节点（2026-10-10，`mesh-v0.md` §5.2、§9）**：设置里的 `Devices` 换成 `Nodes`（这台 Mac 作为节点、每个配过对的节点和手机、两个方向各一个开关、`Pair With a Link…`）；主窗口顶栏多了节点选择，选了别的节点以后各页都是那个节点的，顶栏下面有一条说明和 `[ Back to This Mac ]`。应用仍然只连本机的服务：别的节点的请求是在路径前加 `/nodes/<节点>`，由本机服务转过去。
+
 ## 5. iPhone 应用（本轮做骨架）
 
 - SwiftUI，iOS 17+，Swift 6，xcodegen 生成工程；纯逻辑放在可在 macOS 上 `swift test` 的 `AgentSwitchKit` 包里（接口模型、配对链接解析、造密文、地址选择、SSE 解析）。密文用 `jedisct1/swift-sodium`（libsodium 的 `crypto_box_seal`，与 gate 用的 PyNaCl 同一实现），不手写密码学。

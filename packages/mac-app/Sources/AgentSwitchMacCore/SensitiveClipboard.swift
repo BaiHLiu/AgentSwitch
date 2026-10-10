@@ -10,8 +10,10 @@ public enum SensitiveClipboard {
 
     /// Writes `text` and returns the change count that identifies this write for `clear(_:ifStill:)`.
     @discardableResult
-    public static func copy(_ text: String, to pasteboard: NSPasteboard = .general) -> Int {
-        pasteboard.prepareForNewContents(with: .currentHostOnly)
+    /// `shared`: not held to this Mac — Universal Clipboard may hand it to the user's other devices, which is how a
+    /// pairing link reaches their other Mac.
+    public static func copy(_ text: String, to pasteboard: NSPasteboard = .general, shared: Bool = false) -> Int {
+        pasteboard.prepareForNewContents(with: shared ? [] : .currentHostOnly)
         pasteboard.setString(text, forType: .string)
         pasteboard.setData(Data(), forType: transientType)
         pasteboard.setData(Data(), forType: concealedType)

@@ -51,9 +51,29 @@ public enum TerminalSizeHolder {
     /// has let it go already; the service only notices a few seconds later. Taken as held elsewhere, a terminal moved
     /// back from its own window showed "in use in another window of this Mac" for good (2026-10-05, user: 打开新窗口之
     /// 后再回来会提示这个，显然应该是个bug).
+    ///
+    /// A screen of this app on another node's terminal is named `node-<its device there>-…` (docs/mesh-v0.md §5.2), so
+    /// "another screen of this Mac" is one with this screen's own beginning: there, a `mac-…` screen is that node's own
+    /// window and does hold the size.
     public static func holder(_ by: String?, seenFrom screen: String) -> String? {
         guard let by else { return nil }
-        return by != screen && by.hasPrefix("mac") ? nil : by
+        return by != screen && family(by) == family(screen) ? nil : by
+    }
+
+    /// A screen's name up to its last part: `mac`, `node-3fa9c1e2`.
+    static func family(_ screen: String) -> Substring {
+        screen.lastIndex(of: "-").map { screen[..<$0] } ?? Substring(screen)
+    }
+
+    /// This app's name for a screen of its own: on this Mac's terminals, on those of a node where this Mac is `device`.
+    public static func screen(onNodeAs device: String?, unique: String = String(UUID().uuidString.prefix(8)).lowercased()) -> String {
+        guard let device, !device.isEmpty else { return "mac-\(unique)" }
+        return "node-\(device.prefix(8))-\(unique)"
+    }
+
+    /// Where a screen is, by its name: `iphone`, `mac`, `node` (another node's screen), else `web`.
+    public static func place(of screen: String) -> String {
+        screen.hasPrefix("phone") ? "iphone" : screen.hasPrefix("mac") ? "mac" : screen.hasPrefix("node") ? "node" : "web"
     }
 }
 

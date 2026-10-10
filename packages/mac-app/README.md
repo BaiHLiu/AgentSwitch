@@ -173,6 +173,27 @@ docs/profiles-v0.md, docs/clash-v0.md. All of it is the service's (`packages/dae
 Design previews: `-designPreview <dir> -designPreviewOnly clash|profiles|browsers|terminals|window|rail`
 (`-appearance classic` for the other look).
 
+## Nodes: using another Mac
+
+Two Macs that both run AgentSwitch pair once and each can use the other's Dispatch, Terminals and Browser
+(`docs/mesh-v0.md`; demo `docs/design/concepts/mesh.html`).
+
+- **Settings › Nodes** (it took the place of Devices): this Mac (`Allow Pairing`, `Paired Nodes May Type`), then every
+  node and phone paired with it — a node with two switches, `This Mac Uses It` and `It Uses This Mac`; a phone with the
+  second alone. `Pair With a Link…` takes the link another node's `Pairing` page gives (`Copy for Another Mac` lets
+  Universal Clipboard carry it), reads it back, and pairs both ways unless told not.
+- **The node menu** in the main window's bar, after the list's button, once this Mac uses a node: this Mac, or
+  `@ <node>`. On another node the pages are that node's — a strip under the bar says so and has `[ Back to This Mac ]`;
+  Clash is this Mac's own and leaves the rail.
+- How: the window's pages are made anew for the node chosen, with a client whose every route is `/nodes/<id>/…` of
+  this Mac's own service, which passes the requests on (`DaemonClient.onNode`, `MainWindowController.use(node:)`,
+  `NodesStore`, `NodesView`). What a page assumed of "this Mac" is handled where it is: a reply's files are sent
+  instead of named by path, the new terminal's folder is typed, the browser is always a picture.
+- `-designPreview <dir> -designPreviewOnly nodes` draws the pane, the link sheet and the window on another node from
+  sample data. `-nodesProbe <dir>` (debug builds, with `-localPort` and `AGENTSWITCH_HOME` of a service paired with
+  another) drives the real window to the other node and back and writes its pictures and `calls.txt`; start the two
+  services with `packages/daemon/scripts/mesh_smoke.sh` and its `MESH_SMOKE_THEN`.
+
 ## Credential gate as a system service
 
 docs/gate-service-v0.md §4 (Mac 应用). The gate runs as two LaunchDaemons under the role account `_agentswitchgate`

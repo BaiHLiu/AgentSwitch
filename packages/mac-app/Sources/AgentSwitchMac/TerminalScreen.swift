@@ -174,7 +174,7 @@ final class TerminalScreenController: NSObject {
     private var resizeWork: DispatchWorkItem?
     /// This screen, to the service: the size it takes is this one's until another screen takes it or this stream ends
     /// (docs/terminal-v0.md §1 "尺寸有主").
-    let screenId = "mac-" + UUID().uuidString.prefix(8).lowercased()
+    let screenId: String
     /// Who has the shown terminal's size, as its stream last said (nil: nobody, or not heard yet).
     private var owner: String? { didSet { tellSize() } }
     /// The terminal's size as the service has it: what this screen draws at while another has it.
@@ -203,6 +203,8 @@ final class TerminalScreenController: NSObject {
 
     init(client: @escaping () -> DaemonClient) {
         self.client = client
+        // On another node's terminal the screen is named after this Mac's device there (docs/mesh-v0.md §5.2).
+        screenId = TerminalSizeHolder.screen(onNodeAs: client().screenOwner)
         view = NativeTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 500), font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular))
         super.init()
         view.owner = self
@@ -316,7 +318,11 @@ final class TerminalScreenController: NSObject {
         guard id != nil else { return false }
         let files = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
         let text: String
-        if !files.isEmpty {
+        if !files.isEmpty, client().isRemote {
+            // A path of this Mac's means nothing on another node: files go through the reply box, which sends them.
+            note("这个终端在另一个节点上：文件请拖到简略视图的回复框，它们会被发送过去。")
+            return false
+        } else if !files.isEmpty {
             text = TerminalDrop.paths(files.map(\.path))
         } else if let string = pasteboard.string(forType: .string), !string.isEmpty {
             text = string
@@ -374,9 +380,7 @@ final class TerminalScreenController: NSObject {
         onSize(service, owner.map { $0 == screenId ? nil : Self.place(of: $0) } ?? takenTo)
     }
 
-    private static func place(of screen: String) -> String {
-        screen.hasPrefix("phone") ? "iphone" : screen.hasPrefix("mac") ? "mac" : "web"
-    }
+    private static func place(of screen: String) -> String { TerminalSizeHolder.place(of: screen) }
 
     /// The Terminals page is shown in the key window: the user is at this screen.
     private var inUse: Bool {
@@ -708,6 +712,8 @@ extension TerminalScreenController: @preconcurrency TerminalViewDelegate {
     /// A plain path counts as a file link, a relative one from where the agent works now; one the agent's screen broke
     /// over indented lines is joined back from the rows around the click (WrappedPath).
     func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
+        // Another node's files are not on this Mac's disk: only what is a web address opens.
+        if client().isRemote, !(link.hasPrefix("http://") || link.hasPrefix("https://")) { return }
         let around = view.rowsAroundClick()
         let wrapped = around.map { WrappedPath.joins(rows: $0.rows, row: $0.row, column: $0.column) } ?? []
         guard let target = LinkPolicy.target(link: link, wrapped: wrapped, workdir: workdir) else { return }

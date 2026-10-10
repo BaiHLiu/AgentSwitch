@@ -19,14 +19,19 @@ struct PairingView: View {
                 Section {
                     PairingCodeView()
                 } footer: {
-                    Footer("使用 iPhone 上的 AgentSwitch 扫描二维码。配对码 5 分钟内有效，仅可使用一次。")
+                    Footer("iPhone：使用 AgentSwitch 扫描二维码。另一台电脑：Copy for Another Mac，然后在那台电脑的「Nodes」中 Pair With a Link。配对码 5 分钟内有效，仅可使用一次。")
+                }
+                Section {
+                    Toggle("Use It Too", isOn: Binding(get: { session.back }, set: { session.back = $0 }))
+                } footer: {
+                    Footer("配对过来的是另一个节点时，这台 Mac 也使用它（一次配好两个方向）。更改后请重新生成配对码。")
                 }
                 if let paired = session.paired {
                     Section {
                         Label("Paired \(paired.name) (\(platformName(paired.platform)))", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                     } footer: {
-                        Footer("如非本人设备，请在「Devices」中吊销。")
+                        Footer("如非本人设备，请在「Nodes」中移除。")
                     }
                 }
                 if let problem = session.problem {
@@ -102,6 +107,8 @@ struct PairingCodeView: View {
                     if session.pairing != nil {
                         Button("Copy Link") { session.copyLink() }
                             .help("仅复制到这台 Mac，不同步到其他设备；配对码过期时自动清除")
+                        Button("Copy for Another Mac") { session.copyLink(shared: true) }
+                            .help("经通用剪贴板同步到登录同一 Apple ID 的设备，供另一台 Mac 粘贴；配对码过期时自动清除")
                     }
                     if session.busy { ProgressView().controlSize(.small) }
                 }

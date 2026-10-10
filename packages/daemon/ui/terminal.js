@@ -483,8 +483,10 @@ function claim() {
   current.rows = term.rows;
   api("POST", `/terminals/${current.id}/resize`, { cols: term.cols, rows: term.rows, screen: SCREEN }).catch(() => undefined);
 }
-const WHERE = { mac: ["On Mac", "这个终端正在 Mac 上使用。"], iphone: ["On iPhone", "这个终端正在 iPhone 上使用。"], web: ["On Web", "这个终端正在浏览器中使用。"] };
-const placeOf = (by) => (by.startsWith("phone") ? "iphone" : by.startsWith("mac") ? "mac" : "web");
+const WHERE = { mac: ["On Mac", "这个终端正在 Mac 上使用。"], iphone: ["On iPhone", "这个终端正在 iPhone 上使用。"], web: ["On Web", "这个终端正在浏览器中使用。"],
+  node: ["On Another Node", "这个终端正在另一个节点上使用。"] };
+// `node-…`: a screen of another node's app on this node's terminal (docs/mesh-v0.md §5.2).
+const placeOf = (by) => (by.startsWith("phone") ? "iphone" : by.startsWith("mac") ? "mac" : by.startsWith("node") ? "node" : "web");
 /** The placeholder: glitches in; going (this screen took the size back), glitches once more and the screen is drawn in.
  *  Said again while going (the service confirming the claim), it goes on going. */
 function showAway(place, pane) {
