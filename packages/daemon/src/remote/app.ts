@@ -1,7 +1,11 @@
 /** The remote listener's request pipeline (app-v0 §2): source check again per request, the route allowlist (else 404),
  *  GET /healthz and POST /pair without a token, then a device token for everything else. GET /me and GET /gate/pubkey
  *  are answered here; every other allowed route goes to the local API unchanged, SSE included, with the device marked in
- *  the env (core/caller.ts). */
+ *  the env (core/caller.ts).
+ *
+ *  A paired device may be a phone or another node (docs/mesh-v0.md): the rules are the same for both. A node that pairs
+ *  can offer itself in return (`back` in POST /pair), `GET /node` says what this node is and has, and `DELETE /me` is
+ *  a device removing itself. */
 
 import type { HttpBindings } from "@hono/node-server";
 import { Hono } from "hono";
@@ -13,11 +17,11 @@ import type { Device } from "../engine/types.js";
 import { isAllowedSource, normalizeAddress } from "./address.js";
 import { authenticate, registerDevice, type Presence } from "./devices.js";
 import type { GateKeyReader } from "./gateKey.js";
-import type { PairingDesk } from "./pairing.js";
+import { PairPayloadSchema, type PairingDesk, type PairPayload } from "./pairing.js";
 import { remoteAllowed } from "./routes.js";
 
-/** POST /pair bodies are three short strings. */
-const PAIR_BODY_BYTES = 4096;
+/** POST /pair bodies are three short strings and, from a node, its own payload for the way back. */
+const PAIR_BODY_BYTES = 8192;
 const MAX_NAME_CHARS = 64;
 const MAX_PLATFORM_CHARS = 32;
 const MAX_CODE_CHARS = 32;
@@ -31,7 +35,20 @@ const PairBody = z.object({
   code: z.string().min(1).max(MAX_CODE_CHARS),
   name: z.string().trim().min(1).max(MAX_NAME_CHARS).regex(NO_CONTROL),
   platform: z.string().trim().min(1).max(MAX_PLATFORM_CHARS).regex(NO_CONTROL),
+  back: PairPayloadSchema.optional(),
 });
+
+/** What the remote side needs of this node's place among the others (nodes/nodes.ts). */
+export type RemoteNodes = {
+  /** What this node is and has (`GET /node`). */
+  info(): object;
+  /** Take the way back a pairing node offers; `inbound` is the device it just became here. */
+  pairBack(payload: PairPayload, source: string | null, inbound: string): Promise<"paired" | "failed">;
+  /** A ticket this node sent with its own pairing was redeemed by `deviceId`. */
+  ticketUsed(code: string, deviceId: string): void;
+  /** A device here removed itself. */
+  inboundGone(deviceId: string): void;
+};
 
 export type RemoteAppDeps = {
   readonly store: Store;
@@ -44,6 +61,8 @@ export type RemoteAppDeps = {
   readonly local: { readonly fetch: (request: Request, env?: HttpBindings) => Response | Promise<Response> };
   /** Source predicate, the same one the connection hook uses; tests may narrow it. */
   readonly allowSource?: (address: string | undefined) => boolean;
+  /** Absent: this node keeps no other nodes (tests); a way back is not taken and `GET /node` is not answered. */
+  readonly nodes?: RemoteNodes;
   readonly now?: () => number;
   readonly log?: (message: string) => void;
 };
@@ -74,10 +93,17 @@ export function createRemoteApp(deps: RemoteAppDeps): Hono<Env> {
     const source = normalizeAddress(peer(c.env))?.address ?? "unknown";
     if (deps.pairing.limited(source)) return c.json({ error: "too many pairing attempts; wait a minute" }, 429, { "Retry-After": "60" });
     const body = PairBody.safeParse(await c.req.json().catch(() => null));
-    if (!body.success || deps.pairing.redeem(body.data.code) !== "ok") return c.json(PAIR_FAILED, 401);
+    const taken = body.success ? deps.pairing.take(body.data.code) : null;
+    if (!body.success || !taken) return c.json(PAIR_FAILED, 401);
     const { device, token } = registerDevice(deps.store, { name: body.data.name, platform: body.data.platform });
     log(`remote: paired device ${device.id} "${device.name}" (${device.platform}) from ${source}`);
-    return c.json({ deviceId: device.id, token });
+    // A ticket is this node's own way back being taken: nothing more to offer. The code on the screen, redeemed by a
+    // node that offers itself in return, makes the pair go both ways unless the code was issued one-way.
+    if (taken.kind === "ticket") { deps.nodes?.ticketUsed(body.data.code, device.id); return c.json({ deviceId: device.id, token }); }
+    const offered = body.data.back;
+    if (!offered) return c.json({ deviceId: device.id, token });
+    const back = taken.back && deps.nodes ? await deps.nodes.pairBack(offered, source === "unknown" ? null : source, device.id).catch(() => "failed" as const) : "declined";
+    return c.json({ deviceId: device.id, token, back });
   });
 
   app.use("*", async (c, next) => {
@@ -95,6 +121,22 @@ export function createRemoteApp(deps: RemoteAppDeps): Hono<Env> {
     const d = c.get("device");
     return c.json({ deviceId: d.id, name: d.name, platform: d.platform });
   });
+
+  /** A device removing itself (docs/mesh-v0.md §2.4): what "remove this node" on the other side ends with, so no device
+   *  that will never come back stays in this node's list. Its other open requests are cut once this one is answered. */
+  app.delete("/me", (c) => {
+    const d = c.get("device");
+    deps.store.revokeDevice(d.id);
+    deps.nodes?.inboundGone(d.id);
+    log(`remote: device ${d.id} "${d.name}" removed itself`);
+    const out = c.env?.outgoing;
+    if (out) out.once("finish", () => deps.presence.disconnect(d.id));
+    // The connection ends with the device: a node keeps its sockets open between requests and must not send the next
+    // one down this one.
+    return c.json({ ok: true }, 200, { connection: "close" });
+  });
+
+  app.get("/node", (c) => (deps.nodes ? c.json(deps.nodes.info()) : c.json({ error: "not found" }, 404)));
 
   /** Where the Mac can be reached now (2026-09-26: a phone paired before Tailscale was detected had no tailnet address
    *  and could not connect off the LAN). Separate from /me, which every probe calls: the Tailscale CLI takes seconds. */

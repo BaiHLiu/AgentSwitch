@@ -1498,6 +1498,31 @@ describe("terminals over HTTP", () => {
     expect(text(events)).not.toContain(TOKEN);
   });
 
+  it("another node's real terminal screen types with keystrokes as they are, unless this node says paired nodes may not (docs/mesh-v0.md §10)", async () => {
+    const home = mkdtempSync(join(tmpdir(), "agentswitch-terminals-"));
+    const cwd = mkdtempSync(join(tmpdir(), "agentswitch-terminal-cwd-"));
+    const cfg: DaemonConfig = { home, targetsPath: TARGETS_PATH, port: 0, router: "echo", executors: "echo", browser: false, quotaTtlMs: 1000, maxTasks: 4, opencodePort: 0, opencodeBinary: "" };
+    const daemon = buildDaemon(cfg, { terminalLauncher: fakeLauncher(() => "http://127.0.0.1:9", false) });
+    closers.push(() => daemon.close());
+    const node = markRemote({}, { deviceId: "node-b" });
+    const req = (path: string, body: unknown) => daemon.api.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }, node);
+    const id = ((await (await req("/terminals", { harness: "codex", cwd })).json()) as { terminal: { id: string } }).terminal.id;
+    const events: TerminalEvent[] = [];
+    daemon.terminals!.subscribe(id, null, (e) => events.push(e));
+    await until(() => text(events).includes("fake agent ready"));
+    expect(await (await req(`/terminals/${id}/write`, { data: "keys from afar\r" })).json()).toEqual({ ok: true });
+    await until(() => text(events).includes("got: keys from afar"));
+    // Set on the node itself: the local listener's route, which the remote list does not name.
+    const set = await daemon.app.request("/settings/mesh", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ keyboard: false }) });
+    expect(await set.json()).toEqual({ keyboard: false });
+    expect(remoteAllowed("PUT", "/settings/mesh")).toBe(false);
+    const refused = await req(`/terminals/${id}/write`, { data: "x" });
+    expect(refused.status).toBe(403);
+    expect(((await (await daemon.app.request("/node")).json()) as { has: string[] }).has).not.toContain("keyboard");
+    // This node's own screens type as before.
+    expect((await daemon.api.request(`/terminals/${id}/write`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ data: "own\r" }) })).status).toBe(200);
+  });
+
   it("continues a session in place, once: the same terminal again, a session open elsewhere refused unless forked", async () => {
     const asked: string[] = [];
     const { cwd, call } = await start(async (harness, id) => {
@@ -1808,13 +1833,13 @@ describe("terminal pieces", () => {
       .toEqual({ ANTHROPIC_BASE_URL: "http://x", CLAUDE_CONFIG_DIR: "/c", CLAUDE_CODE_USE_BEDROCK: "1", PATH: "/usr/bin" });
   });
 
-  it("the phone gets every terminal route but the hook and raw keystrokes", () => {
+  it("a paired device gets every terminal route but the hook; raw keystrokes are on the list for another node's screen", () => {
     expect(remoteAllowed("GET", "/terminals")).toBe(true);
     expect(remoteAllowed("GET", "/terminals/ab12cd34/stream")).toBe(true);
     expect(remoteAllowed("POST", "/terminals/ab12cd34/permissions/p1")).toBe(true);
     expect(remoteAllowed("DELETE", "/terminals/ab12cd34")).toBe(true);
     expect(remoteAllowed("POST", "/terminals/hook")).toBe(false);
-    expect(remoteAllowed("POST", "/terminals/ab12cd34/write")).toBe(false);
+    expect(remoteAllowed("POST", "/terminals/ab12cd34/write")).toBe(true);
   });
 
   it("deletes a Claude Code transcript by its session id only", () => {

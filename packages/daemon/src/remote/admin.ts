@@ -10,6 +10,8 @@ export type RemoteAdminDeps = {
   readonly store: Store;
   /** Null when AGENTSWITCH_REMOTE is off: devices can still be listed and revoked, but nothing can pair. */
   readonly remote: RemoteRuntime | null;
+  /** A device was revoked here: it may have been another node's (nodes/nodes.ts). */
+  readonly onRevoke?: (deviceId: string) => void;
   readonly now?: () => number;
 };
 
@@ -21,7 +23,9 @@ export function mountRemoteAdmin<A extends Hono>(app: A, deps: RemoteAdminDeps):
     const remote = deps.remote;
     if (!remote) return c.json({ error: "remote access is off; start the daemon with AGENTSWITCH_REMOTE=1" }, 409);
     const [addresses, gate] = await Promise.all([remote.addresses(), remote.gateKey()]);
-    const { code, expiresAt } = remote.pairing.issue();
+    // `{back: false}`: whoever redeems this code is not used in return (docs/mesh-v0.md §2.2); the default is both ways.
+    const asked = await c.req.json().catch(() => null) as { back?: unknown } | null;
+    const { code, expiresAt } = remote.pairing.issue({ back: asked?.back !== false });
     const { payload, link } = pairPayload({ name: remote.name, port: remote.port, fp: remote.tls.fingerprint, code, lan: addresses.lan, tailnet: addresses.tailnet, gate });
     return c.json({ code, expiresAt, link, payload });
   });
@@ -35,6 +39,7 @@ export function mountRemoteAdmin<A extends Hono>(app: A, deps: RemoteAdminDeps):
     const device = deps.store.revokeDevice(c.req.param("id"));
     if (!device) return c.json({ error: "not found" }, 404);
     deps.remote?.presence.disconnect(device.id);
+    deps.onRevoke?.(device.id);
     return c.json({ ok: true, device });
   });
 

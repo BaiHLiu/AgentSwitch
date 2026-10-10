@@ -39,10 +39,13 @@ const ALLOWED: Readonly<Record<string, readonly string[]>> = {
   terminals: [...UPPER, "executors"],
   /** browser-v0: the shared browser the daemon holds; the executors' protected table and browser profiles, below the API. */
   browser: [...UPPER, "executors"],
-  api: [...UPPER, "threads", "router", "executors", "engine", "assistant", "terminals", "browser", "profiles", "clash"],
+  api: [...UPPER, "threads", "router", "executors", "engine", "assistant", "terminals", "browser", "profiles", "clash", "nodes"],
   /** app-v0 §2: the remote listener, device tokens and pairing; a peer of api, which it reaches only over fetch. */
   remote: [...UPPER, "threads", "router", "executors", "engine"],
-  [ROOT]: [...UPPER, "threads", "router", "executors", "engine", "assistant", "terminals", "browser", "profiles", "clash", "api", "remote"],
+  /** mesh-v0: the other nodes this one uses — their book, the pinned connections to them, pairing with them. Above the
+   *  remote listener, whose pairing desk and addresses it uses and which knows it only as an interface; below the API. */
+  nodes: [...UPPER, "executors", "engine", "remote"],
+  [ROOT]: [...UPPER, "threads", "router", "executors", "engine", "assistant", "terminals", "browser", "profiles", "clash", "api", "remote", "nodes"],
 };
 
 const SPECIFIER = /(?:\bfrom\s*|\bimport\s*\(\s*|^\s*import\s+)(["'])(\.{1,2}\/[^"']+)\1/gm;

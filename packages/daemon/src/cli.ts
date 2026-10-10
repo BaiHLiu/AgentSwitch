@@ -13,9 +13,18 @@
  *                               what could be, updating the pair (download, digest, self-check, switch, the old copy deleted)
  *   browser-mcp --session <id> --token-file <file>   the shared browser's agent bridge on stdio (docs/browser-v0.md §2),
  *                               as `secret-gate browser -- agentswitch browser-mcp …` (the terminals run the same script)
+ *   pair [--one-way]            a pairing code and its link for a phone or another node (docs/mesh-v0.md §2.2); another
+ *                               node that pastes the link is used back unless `--one-way`
+ *   devices | devices revoke <id>   who uses this node
+ *   nodes | nodes add <link> [--one-way] | nodes remove <node> [--both]   the nodes this one uses: `add` pairs with one
+ *                               from its link and offers this node in return (`--one-way`: does not); `remove` stops
+ *                               using one (`--both`: and it stops using this one)
+ *   --on <node>                 with any daemon-backed command: the same on another node, by its id or name
+ *                               (`agentswitch --on studio tasks`)
  */
 
 import { readLocalToken } from "./api/localAuth.js";
+import { NODES_KEY_HEADER, readNodesKey } from "./nodes/book.js";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -69,13 +78,19 @@ const { values, positionals } = parseArgs({
     deny: { type: "boolean", default: false },
     help: { type: "boolean", short: "h", default: false },
     session: { type: "string" },
+    on: { type: "string" },
+    "one-way": { type: "boolean", default: false },
+    both: { type: "boolean", default: false },
     "token-file": { type: "string" },
     // Added by `secret-gate browser` for a Playwright MCP of its own; the bridge has no files of its own to put there.
     "output-dir": { type: "string" },
   },
 });
 const [cmd, a1, a2] = positionals;
-const client = new Client(values.server, fetch, readLocalToken(cfg.home));
+const nodesKey = readNodesKey(cfg.home);
+/** This node's own service; `client` is the node the command is for (`--on`), which is this one unless said. */
+const here = new Client(values.server, fetch, readLocalToken(cfg.home), nodesKey ? { [NODES_KEY_HEADER]: nodesKey } : {});
+const client = values.on ? here.on(values.on) : here;
 const out = (v: unknown) => console.log(JSON.stringify(v, null, 2));
 
 function splitPin(text: string): { harness: string; model: string } {
@@ -135,7 +150,13 @@ async function watchInteractive(id: string): Promise<void> {
   }
 }
 
-const USAGE = "usage: serve | engine | task | tasks | show | watch | approve | cancel | handoff | threads | thread | archive | reopen | rmthread | approvals | quota | preview | log | mcp | skills | health | context init | route | reroute | browser-mcp";
+const USAGE = "usage: serve | engine | task | tasks | show | watch | approve | cancel | handoff | threads | thread | archive | reopen | rmthread | approvals | quota | preview | log | mcp | skills | health | context init | route | reroute | browser-mcp | pair | devices | nodes [add|remove]; --on <node>";
+
+const ago = (ts: number | null): string => {
+  if (ts === null) return "never";
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  return s < 90 ? `${s}s ago` : s < 5400 ? `${Math.round(s / 60)}m ago` : s < 129_600 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86_400)}d ago`;
+};
 
 async function main(): Promise<number> {
   if (values.help) { console.log(USAGE); return 0; }
@@ -208,6 +229,48 @@ async function main(): Promise<number> {
     case "mcp": { out(await client.mcp()); return 0; }
     case "skills": { out(await client.skills()); return 0; }
     case "health": { out(await client.health()); return 0; }
+    // docs/mesh-v0.md: who uses this node, and the nodes it uses. Always this node's own service, whatever `--on` says.
+    case "pair": {
+      const p = await here.pairing(!values["one-way"]);
+      if (values.json) { out(p); return 0; }
+      console.log(`code   ${p.code}   (once, for ${Math.round((p.expiresAt - Date.now()) / 60_000)} minutes)\nlink   ${p.link}\n\nOn a phone: scan the code in the app, or paste the link. On another node: agentswitch nodes add '<link>'${values["one-way"] ? "\nOne way: that node will use this one; this one will not use it." : ""}`);
+      return 0;
+    }
+    case "devices": {
+      if (a1 === "revoke") { if (!a2) throw new Error("devices revoke <id>"); out(await here.revokeDevice(a2)); return 0; }
+      const list = await here.devices();
+      if (values.json) { out(list); return 0; }
+      for (const d of list) console.log(`${d.id}  ${d.revokedAt !== null ? "revoked" : d.online ? "online " : "       "}  ${d.platform.padEnd(6)}  ${d.name}  (seen ${ago(d.lastSeenAt)})`);
+      if (!list.length) console.log("no device is paired with this node");
+      return 0;
+    }
+    case "nodes": {
+      if (a1 === "add") {
+        if (!a2) throw new Error("nodes add <link> [--one-way]");
+        const r = await here.addNode(a2, !values["one-way"]);
+        if (values.json) { out(r); return 0; }
+        const way = r.back === "paired" ? "both ways" : r.back === "none" ? "one way (this node uses it)" : r.back === "declined" ? "one way: it did not take this node in return" : "one way: it could not reach this node in return";
+        console.log(`paired with ${r.node.name} (${r.node.id}), ${way}`);
+        return 0;
+      }
+      if (a1 === "remove") {
+        if (!a2) throw new Error("nodes remove <node> [--both]");
+        const r = await here.removeNode(a2, values.both);
+        if (values.json) { out(r); return 0; }
+        console.log(`removed ${r.node.name}${r.told ? "" : " (it could not be told; its list still has this node)"}${r.inboundRevoked ? "; it no longer uses this node" : r.node.inbound ? "; it still uses this node (--both ends that too)" : ""}`);
+        return 0;
+      }
+      if (a1) throw new Error("nodes | nodes add <link> [--one-way] | nodes remove <node> [--both]");
+      const { self, nodes } = await here.nodes();
+      if (values.json) { out({ self, nodes }); return 0; }
+      console.log(`this node  ${self.name}${self.listening ? `  (port ${self.port})` : "  (not listening: it can use other nodes, none can use it)"}`);
+      for (const n of nodes) {
+        const state = n.state === "online" ? `online${n.waiting ? `, ${n.waiting} waiting` : ""}` : n.state === "revoked" ? "removed there" : "offline";
+        console.log(`${n.id}  ${n.name}  ${state}${n.address ? `  ${n.address}` : ""}  ${n.inbound ? "both ways" : "this node uses it"}`);
+      }
+      if (!nodes.length) console.log("this node uses no other node");
+      return 0;
+    }
     case "context": {
       if (a1 !== "init") { out(await client.context()); return 0; }
       if (existsSync(values.context)) console.log(`exists: ${values.context}`);

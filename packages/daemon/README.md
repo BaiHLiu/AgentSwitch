@@ -268,7 +268,7 @@ order and names, superseded ones `older`, refreshed every 6 h and when the agent
 agent's default is). `POST /terminals {harness, cwd, model?}` starts one; `GET /terminals/:id/stream` (SSE) sends a snapshot, then output, status and permission requests;
 `/input` (a reply, sealed unless `seal: false`), `/keys` (named keys; `wheel-up`/`wheel-down` follow the program's
 mouse and screen modes), `/commands` (the agent's slash commands, `src/terminals/commands.ts`), `/write` (raw
-keystrokes, this Mac only), `/resize`,
+keystrokes: this Mac's own screens, and a paired node's unless `/settings/mesh` says no), `/resize`,
 `/permissions/:pid {decision}`, `/kill`, `DELETE` (`?transcript=1` also deletes Claude Code's own record);
 `POST /terminals/resume {harness, cwd, agentSessionId}` continues a session started elsewhere. Claude Code gets this
 terminal's own hooks through `--settings` (status, session id, `PermissionRequest` answered from any screen); Codex gets
@@ -523,6 +523,37 @@ is taken fails start-up (exit 1, the port named in the error), so the Mac app se
 The Mac app runs `node --no-warnings=ExperimentalWarning <runtime>/daemon/dist/cli.js serve` with
 `AGENTSWITCH_HOME`, `AGENTSWITCH_REMOTE=1`, `AGENTSWITCH_EXECUTORS=real`, `SECRET_GATE_BIN` and the login shell's
 `PATH` (see docs/app-v0.md §4).
+
+## Nodes (mesh-v0)
+
+Two machines that both run the service pair once and each can use the other (`docs/mesh-v0.md`). A node is a paired
+device like a phone — the same remote list, the same limits — and what it uses of another node goes through its own
+service:
+
+```bash
+agentswitch pair                       # on one Mac: a code and its link (`--one-way`: do not use whoever pairs back)
+agentswitch nodes add '<link>'         # on the other: pair, and offer this node in return (`--one-way`: do not)
+agentswitch nodes                      # the nodes this one uses: online / offline / removed there, how many things wait
+agentswitch --on studio tasks          # any daemon-backed command, on another node (by id or name)
+agentswitch nodes remove studio        # stop using it (it is told, and removes this node's device); `--both` ends both ways
+agentswitch devices                    # who uses this node; `devices revoke <id>`
+```
+
+- `src/nodes/book.ts`: the nodes this one uses, in `$AGENTSWITCH_HOME/nodes/peers.json` (0700 / 0600), and the nodes
+  key beside it. No agent reads that folder, in a terminal either (`executors/protected.ts`).
+- `src/nodes/dial.ts`: HTTPS to another node's remote listener, each socket checked against the certificate the node
+  was paired with before HTTP gets it; sockets are kept between requests. It dials private, link-local, Tailscale and
+  loopback addresses and `*.ts.net` names only.
+- `src/nodes/nodes.ts`: pairing from a link, the way back (`back` in `POST /pair`, a ticket beside the code on the
+  screen), removal, and how each node is doing.
+- `src/api/nodes.ts`, on the 127.0.0.1 listener only: `GET /nodes`, `POST /nodes {link, back?}`,
+  `DELETE /nodes/:id[?both=1]`, and `/nodes/:id/<route>` — that node's `<route>`, passed on as it is with this node's
+  device token, streams included. Acting routes need the header `x-agentswitch-nodes` (the nodes key) as well as the
+  local token. `GET|PUT /settings/mesh {keyboard}`: whether paired nodes may send raw keystrokes.
+- Remote list additions: `DELETE /me`, `GET /node`, `GET /live`, `POST /terminals/:id/write`.
+- `scripts/mesh_smoke.sh`: two throw-away services on this machine, paired and used from the command line. It builds
+  every process's environment from nothing: a shell inside an AgentSwitch terminal carries the real service's
+  `AGENTSWITCH_HOME`, and a `serve` that inherits it runs on the real state.
 
 ## Start-up (serve)
 

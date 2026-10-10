@@ -70,8 +70,14 @@ import type { Router } from "./core/modelCall.js";
 import { loadTargets, type Targets, modelKey } from "./router/targets.js";
 import { withModelOverlay } from "./router/modelOverlay.js";
 import { mountRemoteAdmin } from "./remote/admin.js";
+import { mountNodes } from "./api/nodes.js";
+import { NodeBook, NODES_DIR } from "./nodes/book.js";
+import { Dialer } from "./nodes/dial.js";
+import { Nodes } from "./nodes/nodes.js";
+import { loadMesh } from "./nodes/settings.js";
+import { vergeDir } from "./clash/verge.js";
 import { createRemoteApp } from "./remote/app.js";
-import { DEFAULT_REMOTE_PORT, remoteRuntime, type RemoteRuntime } from "./remote/runtime.js";
+import { DEFAULT_REMOTE_PORT, macName, remoteRuntime, type RemoteRuntime } from "./remote/runtime.js";
 import { listenRemote, type RemoteListener } from "./remote/server.js";
 import type { TargetRef } from "./core/target.js";
 import { mergeLogged } from "./router/discovery.js";
@@ -193,6 +199,8 @@ export type Daemon = {
   readonly api: ReturnType<typeof createApp>;
   /** Remote access state when AGENTSWITCH_REMOTE is on (certificate generated on first build), else null. */
   readonly remote: RemoteRuntime | null;
+  /** The other nodes this one uses, and what it says of itself to them (docs/mesh-v0.md). */
+  readonly nodes: Nodes;
   readonly engine: Engine;
   readonly store: Store;
   readonly quota: QuotaService;
@@ -442,7 +450,7 @@ export function buildDaemon(cfg: DaemonConfig, overrides: BuildOverrides = {}): 
   const clash = new ClashIntegration({ store: new ClashStore(cfg.home), source: new ClashSource(cfg.home), base: () => `http://127.0.0.1:${localPort}`,
     // A profile's proxy server is tried on its own port by the routing check (docs/clash-v0.md §7.9).
     proxyPorts: () => new Map(Object.values(profiles.all()).flatMap((a) => a.profiles).flatMap((p) => { const place = p.proxy ? proxyPlace(p.proxy.server) : null; return place ? [[place.host.toLowerCase(), place.port] as const] : []; })) });
-  const apiDeps: ApiDeps = { exits, profiles, sessionKeys, ...(profileBrowsers ? { profileBrowsers } : {}), clash, ...(browser ? { browser } : {}), ...(engineKit ? { engineKit } : {}), ...(taskFolderRoot ? { taskFolderRoot } : {}), ...(sessions ? { sessions } : {}), ...(terminals ? { terminals } : {}), ...(sealer ? { sealer } : {}), store, bus, engine, targets, quota, routingLog, routeDeps, contextPath, memoryPath, platformMemoryPath, policyPath, workRoot, cwdRules: defaultCwdRules(process.env, cfg.home), home: cfg.home, ...(cfg.appBundle ? { appBundle: cfg.appBundle } : {}), uploads, artifactsDir, extensions, version: VERSION, models: { path: modelsPath, base: baseTargets }, ...(overrides.sseHeartbeatMs ? { sseHeartbeatMs: overrides.sseHeartbeatMs } : {}) };
+  const apiDeps: ApiDeps = { remoteKeyboard: () => loadMesh(cfg.home).keyboard, exits, profiles, sessionKeys, ...(profileBrowsers ? { profileBrowsers } : {}), clash, ...(browser ? { browser } : {}), ...(engineKit ? { engineKit } : {}), ...(taskFolderRoot ? { taskFolderRoot } : {}), ...(sessions ? { sessions } : {}), ...(terminals ? { terminals } : {}), ...(sealer ? { sealer } : {}), store, bus, engine, targets, quota, routingLog, routeDeps, contextPath, memoryPath, platformMemoryPath, policyPath, workRoot, cwdRules: defaultCwdRules(process.env, cfg.home), home: cfg.home, ...(cfg.appBundle ? { appBundle: cfg.appBundle } : {}), uploads, artifactsDir, extensions, version: VERSION, models: { path: modelsPath, base: baseTargets }, ...(overrides.sseHeartbeatMs ? { sseHeartbeatMs: overrides.sseHeartbeatMs } : {}) };
   // assistant-v0 §1.1: the router as the user's assistant, on the router model (a text-only agent); echo mode has none
   // and every message becomes a task. Task creation is POST /tasks's second half (admitSealed).
   const assistantRouter = overrides.assistant ?? (summarizer ? oracle("assistant") : undefined);
@@ -454,10 +462,19 @@ export function buildDaemon(cfg: DaemonConfig, overrides: BuildOverrides = {}): 
     admit: (body, sealed) => admitSealed(apiDeps, body as TaskBody, sealed), workRoot: apiDeps.workRoot, ...(sessions ? { sessions } : {}), stagedUpdate: () => updateState(cfg.appBundle)?.staged?.built ?? null, timeoutMs: targets.router.timeout_ms });
   const api = createApp({ ...apiDeps, assistant });
   const remote = overrides.remote !== undefined ? overrides.remote : cfg.remote ? remoteRuntime({ home: cfg.home, port: cfg.remote.port, ...(cfg.remote.name ? { name: cfg.remote.name } : {}), gate: () => defaultGate() }) : null;
-  const app = mountRemoteAdmin(new Hono().route("/", api), { store, remote });
-  return { app, api, remote, engine, store, quota, targets, clash, terminals: terminalHost, browser: browser?.host ?? null, setLocalPort: (port) => { localPort = port; },
+  // docs/mesh-v0.md: this node among the others. What it has is what its screens would show of it.
+  const nodes = new Nodes({
+    book: new NodeBook(join(cfg.home, NODES_DIR)), dialer: new Dialer(), store, remote,
+    info: () => ({
+      name: remote?.name ?? macName(), kind: process.platform === "darwin" ? "mac" : "linux", version: VERSION, home: process.env.HOME ?? homedir(),
+      has: ["dispatch", ...(terminalHost ? ["terminals", "profiles"] : []), ...(browser ? ["browser"] : []), ...(process.platform === "darwin" && existsSync(vergeDir()) ? ["clash"] : []),
+        ...(cfg.appBundle ? ["update"] : []), ...(loadMesh(cfg.home).keyboard ? ["keyboard"] : [])],
+    }),
+  });
+  const app = mountNodes(mountRemoteAdmin(new Hono().route("/", api), { store, remote, onRevoke: (id) => nodes.inboundGone(id) }), { nodes, home: cfg.home });
+  return { app, api, remote, nodes, engine, store, quota, targets, clash, terminals: terminalHost, browser: browser?.host ?? null, setLocalPort: (port) => { localPort = port; },
     stopBrowser: async () => { await profileBrowsers?.stop(); await browser?.agents.shutdown(); await browser?.host.shutdown(); await browser?.stop(); },
-    close: () => { terminalHost?.closeAll(); void profileBrowsers?.stop(); void exits.stop(); void browser?.agents.shutdown(); void browser?.host.shutdown(); reporter.stop(); store.close(); routingLog.close(); conversation.close(); } };
+    close: () => { nodes.close(); terminalHost?.closeAll(); void profileBrowsers?.stop(); void exits.stop(); void browser?.agents.shutdown(); void browser?.host.shutdown(); reporter.stop(); store.close(); routingLog.close(); conversation.close(); } };
 }
 
 /** The planner as a text-only Router (loop-v0 §6): the router's pick when it named a usable one, else targets.yaml
@@ -621,8 +638,8 @@ export function listenLocal(daemon: Pick<Daemon, "app">, port: number, onListeni
 }
 
 /** app-v0 §2: the HTTPS listener for paired phones, before the local one, so a taken port fails start-up cleanly. */
-export async function startRemote(daemon: Pick<Daemon, "api" | "store">, remote: RemoteRuntime, host?: string): Promise<RemoteListener> {
-  const app = createRemoteApp({ store: daemon.store, pairing: remote.pairing, presence: remote.presence, gateKey: remote.gateKey, addresses: remote.addresses, local: daemon.api });
+export async function startRemote(daemon: Pick<Daemon, "api" | "store"> & { readonly nodes?: Nodes }, remote: RemoteRuntime, host?: string): Promise<RemoteListener> {
+  const app = createRemoteApp({ store: daemon.store, pairing: remote.pairing, presence: remote.presence, gateKey: remote.gateKey, addresses: remote.addresses, local: daemon.api, ...(daemon.nodes ? { nodes: daemon.nodes } : {}) });
   try {
     const listener = await listenRemote({ fetch: app.fetch, tls: remote.tls, port: remote.port, ...(host ? { host } : {}) });
     console.error(`agentswitchd remote listening on https://*:${listener.port}  fingerprint=${remote.tls.fingerprint} name="${remote.name}"`);

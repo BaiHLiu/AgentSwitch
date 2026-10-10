@@ -8,14 +8,24 @@ import type { Thread, ThreadState } from "./threads/types.js";
 const CLIENT_LIST_LIMIT = 20;
 const SSE_DATA = "data:";
 
+export type NodeSelf = { name: string; kind: string; fingerprint: string | null; port: number | null; listening: boolean };
+export type NodeRow = { id: string; name: string; kind: string | null; fingerprint: string; state?: "online" | "offline" | "revoked"; address?: string | null; waiting?: number | null; inbound: string | null };
+
 export type ThreadView = Thread & { summary: ThreadState["summary"]; lastTarget: ThreadState["lastTarget"]; lastActivity: number | null; taskCount: number; handoffs: number };
 
 export class Client {
-  /** `token`: the local API's (`$AGENTSWITCH_HOME/local-token`, api/localAuth.ts). */
-  constructor(private readonly base: string, private readonly fetchImpl: typeof fetch = fetch, private readonly token: string | null = null) {}
+  /** `token`: the local API's (`$AGENTSWITCH_HOME/local-token`, api/localAuth.ts). `extra`: headers every request
+   *  carries, the nodes key among them (nodes/book.ts). */
+  constructor(private readonly base: string, private readonly fetchImpl: typeof fetch = fetch, private readonly token: string | null = null, private readonly extra: Readonly<Record<string, string>> = {}) {}
 
   private auth(): Record<string, string> {
-    return this.token ? { authorization: `Bearer ${this.token}` } : {};
+    return { ...this.extra, ...(this.token ? { authorization: `Bearer ${this.token}` } : {}) };
+  }
+
+  /** The same calls made to another node this one is paired with, by its id or name (docs/mesh-v0.md §5.2): this
+   *  node's service passes them on. */
+  on(node: string): Client {
+    return new Client(`${this.base}/nodes/${encodeURIComponent(node)}`, this.fetchImpl, this.token, this.extra);
   }
 
   private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -27,6 +37,14 @@ export class Client {
   }
 
   health() { return this.call<{ ok: boolean; version: string }>("GET", "/healthz"); }
+  /** docs/mesh-v0.md: this node, the nodes it uses, and the devices (phones, other nodes) that use it. */
+  node() { return this.call<{ name: string; kind: string; version: string; home: string; has: string[] }>("GET", "/node"); }
+  nodes() { return this.call<{ self: NodeSelf; nodes: NodeRow[] }>("GET", "/nodes"); }
+  addNode(link: string, back: boolean) { return this.call<{ ok: true; node: NodeRow; back: string }>("POST", "/nodes", { link, back }); }
+  removeNode(node: string, both: boolean) { return this.call<{ ok: true; told: boolean; inboundRevoked: boolean; node: NodeRow }>("DELETE", `/nodes/${encodeURIComponent(node)}${both ? "?both=1" : ""}`); }
+  pairing(back: boolean) { return this.call<{ code: string; expiresAt: number; link: string }>("POST", "/pairing", { back }); }
+  devices() { return this.call<{ id: string; name: string; platform: string; lastSeenAt: number | null; revokedAt: number | null; online: boolean }[]>("GET", "/devices"); }
+  revokeDevice(id: string) { return this.call<{ ok: true }>("DELETE", `/devices/${encodeURIComponent(id)}`); }
   /** docs/browser-v0.md §7: the browser engine as installed; `check` asks what could be. */
   browserEngine(opts: { check?: boolean; prerelease?: boolean } = {}) {
     return this.call<EngineStatus>("GET", `/browser/engine${opts.check ? `?check=1${opts.prerelease ? "&prerelease=1" : ""}` : ""}`);

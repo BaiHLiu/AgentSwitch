@@ -296,20 +296,20 @@ describe("device tokens", () => {
 describe("remote route allowlist", () => {
   it("lists exactly the doc's routes", () => {
     expect(REMOTE_ROUTES.map(([m, p]) => `${m} ${p}`)).toEqual([
-      "GET /healthz", "POST /pair", "GET /me", "GET /addresses", "GET /gate/pubkey", "GET /tasks", "POST /tasks", "GET /tasks/:id", "GET /tasks/:id/events",
+      "GET /healthz", "POST /pair", "GET /me", "DELETE /me", "GET /node", "GET /addresses", "GET /gate/pubkey", "GET /tasks", "POST /tasks", "GET /tasks/:id", "GET /tasks/:id/events",
       "POST /tasks/:id/answer", "POST /tasks/:id/approve", "POST /tasks/:id/cancel", "POST /tasks/:id/handoff", "POST /tasks/:id/rate",
       "POST /tasks/:id/ack", "GET /search", "GET /tasks/:id/files", "GET /tasks/:id/files/*", "GET /approvals", "GET /threads", "GET /threads/:id", "PATCH /threads/:id",
       "POST /threads/:id/archive", "POST /threads/:id/reopen", "DELETE /tasks/:id", "DELETE /threads/:id", "GET /quota", "POST /quota/refresh",
       "GET /targets", "POST /uploads", "GET /context", "PUT /context", "GET /context/example", "POST /assistant", "GET /assistant", "DELETE /assistant/:seq", "DELETE /history",
       "GET /sessions", "GET /sessions/:harness/:id", "GET /sessions/:harness/:id/record", "GET /sessions/:harness/:id/changes", "GET /sessions/:harness/:id/images/:item/:n", "GET /sessions/:harness/:id/steps/:item/:n", "GET /sessions/:harness/:id/steps/:item/:n/images/:k", "GET /sessions/search", "DELETE /sessions/:harness/:id",
       "GET /terminals", "GET /terminals/style", "POST /terminals", "POST /terminals/resume", "GET /terminals/:id", "PATCH /terminals/:id", "GET /terminals/:id/stream", "GET /terminals/:id/commands", "POST /terminals/:id/input",
-      "POST /terminals/:id/attach", "POST /terminals/:id/keys", "POST /terminals/:id/model", "POST /terminals/:id/effort", "POST /terminals/:id/daybreak", "POST /terminals/:id/choices", "GET /profiles", "POST /profiles/current", "PUT /profiles/:agent/:id/proxy", "POST /profiles/:agent/:id/check", "POST /terminals/:id/mode", "GET /terminals/:id/files", "POST /terminals/:id/resize", "POST /terminals/:id/redraw", "POST /terminals/:id/permissions/:pid", "POST /terminals/:id/kill", "DELETE /terminals/:id", "GET /folders/git",
+      "POST /terminals/:id/attach", "POST /terminals/:id/keys", "POST /terminals/:id/write", "POST /terminals/:id/model", "POST /terminals/:id/effort", "POST /terminals/:id/daybreak", "POST /terminals/:id/choices", "GET /profiles", "POST /profiles/current", "PUT /profiles/:agent/:id/proxy", "POST /profiles/:agent/:id/check", "POST /terminals/:id/mode", "GET /terminals/:id/files", "POST /terminals/:id/resize", "POST /terminals/:id/redraw", "POST /terminals/:id/permissions/:pid", "POST /terminals/:id/kill", "DELETE /terminals/:id", "GET /folders/git",
       "GET /browser/tabs", "POST /browser/tabs", "GET /browser/tabs/:id", "DELETE /browser/tabs/:id", "GET /browser/tabs/:id/stream", "POST /browser/tabs/:id/input",
       "POST /browser/tabs/:id/navigate", "POST /browser/tabs/:id/take", "POST /browser/tabs/:id/release", "POST /browser/tabs/:id/viewport", "POST /browser/tabs/:id/fill", "GET /browser/servers", "GET /browser/speed",
       "GET /browsers", "GET /profile-browser/:key/browser/tabs", "POST /profile-browser/:key/browser/tabs", "GET /profile-browser/:key/browser/tabs/:id", "DELETE /profile-browser/:key/browser/tabs/:id", "GET /profile-browser/:key/browser/tabs/:id/stream", "POST /profile-browser/:key/browser/tabs/:id/input", "POST /profile-browser/:key/browser/tabs/:id/navigate", "POST /profile-browser/:key/browser/tabs/:id/take", "POST /profile-browser/:key/browser/tabs/:id/release", "POST /profile-browser/:key/browser/tabs/:id/viewport", "POST /profile-browser/:key/browser/tabs/:id/fill", "GET /profile-browser/:key/browser/servers", "GET /profile-browser/:key/browser/speed",
       "GET /browser/identity", "PUT /browser/identity", "POST /browser/identity/restart",
       "GET /clash", "PUT /clash/settings", "GET /clash/templates/:name", "GET /clash/dns", "POST /clash/check", "POST /clash/source", "DELETE /clash/source", "POST /clash/update", "POST /clash/select", "POST /clash/delays",
-      "GET /approvals/policy", "GET /settings/workdir", "GET /update", "POST /update/install",
+      "GET /approvals/policy", "GET /settings/workdir", "GET /update", "POST /update/install", "GET /live",
     ]);
   });
 

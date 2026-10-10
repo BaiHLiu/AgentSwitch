@@ -92,6 +92,8 @@ const Input = z.object({
 });
 /** Between the pastes of one reply: the agent takes each (Claude Code reads an image's path) before the next. */
 const PASTE_GAP_MS = 150;
+/** A paired node typing into a terminal is one line in the audit this often, not one a keystroke. */
+const REMOTE_TYPING_AUDIT_MS = 60_000;
 const SUBMIT_AFTER_FILES_MS = 400;
 const Keys = z.object({ keys: z.array(z.union([z.enum(KEY_NAMES), z.string().regex(CLICK).transform((k) => k as KeyName)])).min(1).max(20) });
 /** `screen`: the asking screen's own id, which then owns the size (terminal-v0 §1). */
@@ -638,15 +640,28 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
     return c.json({ ok: true });
   });
 
-  // Keystrokes as they are, from a full keyboard on this Mac (the web page, the Mac app's window). Not on the remote
-  // allowlist: a paired phone replies through /input (sealed) and /keys.
+  // Keystrokes as they are, from a full keyboard: this Mac's own screens (the web page, the Mac app's window), and
+  // another node's when this node lets paired nodes type (docs/mesh-v0.md §10; a phone replies through /input and
+  // /keys). A keystroke is not a line in the audit each; a paired node's typing into a terminal is said once a minute.
+  const typed = new Map<string, number>();
   app.post("/terminals/:id/write", async (c) => {
-    if (remoteCaller(c.env)) return c.json({ error: "not available from a paired device" }, 403);
+    const id = c.req.param("id");
+    const remote = remoteCaller(c.env);
+    if (remote && !(deps.remoteKeyboard?.() ?? false)) return c.json({ error: "this node does not take keystrokes from paired nodes" }, 403);
     const body = await parseBody(c, Raw);
     if (!body.ok) return c.json({ error: body.error }, 400);
     try {
-      host.write(c.req.param("id"), body.data.data);
+      host.write(id, body.data.data);
     } catch (err) { return failed(c, err); }
+    if (remote) {
+      const key = `${id} ${remote.deviceId}`;
+      const now = Date.now();
+      if (now - (typed.get(key) ?? 0) >= REMOTE_TYPING_AUDIT_MS) {
+        for (const [k, at] of typed) if (now - at >= REMOTE_TYPING_AUDIT_MS) typed.delete(k);
+        typed.set(key, now);
+        audit.record({ terminal: id, action: "write", via: remote.deviceId, detail: { keyboard: true } });
+      }
+    }
     return c.json({ ok: true });
   });
 

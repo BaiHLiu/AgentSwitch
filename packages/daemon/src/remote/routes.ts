@@ -10,6 +10,9 @@ export const REMOTE_ROUTES: readonly (readonly [Method, string])[] = [
   ["GET", "/healthz"],
   ["POST", "/pair"],
   ["GET", "/me"],
+  // A device removing itself, and what this node is and has (docs/mesh-v0.md §2.4, §3).
+  ["DELETE", "/me"],
+  ["GET", "/node"],
   ["GET", "/addresses"],
   ["GET", "/gate/pubkey"],
   ["GET", "/tasks"],
@@ -64,6 +67,9 @@ export const REMOTE_ROUTES: readonly (readonly [Method, string])[] = [
   ["POST", "/terminals/:id/input"],
   ["POST", "/terminals/:id/attach"],
   ["POST", "/terminals/:id/keys"],
+  // Keystrokes as they are, for another node's real terminal screen; refused unless this node allows it
+  // (docs/mesh-v0.md §10, `GET /settings/mesh`).
+  ["POST", "/terminals/:id/write"],
   ["POST", "/terminals/:id/model"],
   ["POST", "/terminals/:id/effort"],
   ["POST", "/terminals/:id/daybreak"],
@@ -131,10 +137,13 @@ export const REMOTE_ROUTES: readonly (readonly [Method, string])[] = [
   ["GET", "/settings/workdir"],
   ["GET", "/update"],
   ["POST", "/update/install"],
+  // What is at work and what waits for the user here, as this node's own Live Activity counts it: another node's
+  // screens show it beside their own (docs/mesh-v0.md §5).
+  ["GET", "/live"],
 ];
 
 /** Routes the remote app answers itself; every other allowed route goes on to the local API unchanged. */
-export const REMOTE_OWN_ROUTES: ReadonlySet<string> = new Set(["/healthz", "/pair", "/me", "/addresses", "/gate/pubkey"]);
+export const REMOTE_OWN_ROUTES: ReadonlySet<string> = new Set(["/healthz", "/pair", "/me", "/node", "/addresses", "/gate/pubkey"]);
 
 function compile(pattern: string): RegExp {
   const body = pattern.split("/").map((seg) => (seg.startsWith(":") ? "[^/]+" : seg === "*" ? ".+" : seg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))).join("/");

@@ -45,8 +45,9 @@ function places(env: NodeJS.ProcessEnv): { home: string; gate: string; socket: s
  *  files, its local token, the kept browser sessions and the remote TLS key are open there; the managed executors keep
  *  the whole table (`defaultProtected`). */
 export function terminalProtected(env: NodeJS.ProcessEnv = process.env): ProtectedPaths {
-  const { gate, socket } = places(env);
-  const closed = [gate, socket].map(canonicalPath);
+  const { home, gate, socket } = places(env);
+  // The other nodes' tokens are credentials at rest too: one of them runs commands on another machine.
+  const closed = [gate, socket, join(home, NODES_DIR)].map(canonicalPath);
   return { roots: closed, exempt: [], readDenied: closed };
 }
 
@@ -56,9 +57,13 @@ export function defaultProtected(env: NodeJS.ProcessEnv = process.env): Protecte
     roots: [home, gate, DAEMON_CONFIG_DIR, socket].map(canonicalPath),
     exempt: EXEMPT_UNDER_HOME.map((d) => canonicalPath(join(home, d))),
     // The local API's token too: an executor that read it could call the API to loosen its own approval policy.
-    readDenied: [gate, socket, join(home, BROWSER_PROFILES_DIR), join(home, BROWSER_STATE_DIR), join(home, "remote"), join(home, LOCAL_TOKEN_NAME)].map(canonicalPath),
+    readDenied: [gate, socket, join(home, BROWSER_PROFILES_DIR), join(home, BROWSER_STATE_DIR), join(home, "remote"), join(home, LOCAL_TOKEN_NAME), join(home, NODES_DIR)].map(canonicalPath),
   };
 }
+
+/** Under `$AGENTSWITCH_HOME`: the other nodes this one uses, their tokens and the nodes key (nodes/book.ts keeps the
+ *  same name; no agent reads it, in a terminal either). */
+export const NODES_DIR = "nodes";
 
 /** Under `$AGENTSWITCH_HOME`: the local API token (api/localAuth.ts keeps the same name; executors never read it). */
 export const LOCAL_TOKEN_NAME = "local-token";

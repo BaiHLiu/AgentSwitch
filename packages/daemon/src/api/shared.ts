@@ -78,6 +78,8 @@ export type ApiDeps = {
   readonly recordWatchMs?: number;
   /** The router as the user's assistant (assistant-v0 §1.1). */
   readonly assistant?: Assistant;
+  /** Whether a paired node may send keystrokes as they are (docs/mesh-v0.md §10); absent = no. */
+  readonly remoteKeyboard?: () => boolean;
 };
 
 /** A request body's issues; an issue on the body itself reads "body: ...". */
