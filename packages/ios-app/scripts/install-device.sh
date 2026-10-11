@@ -8,6 +8,11 @@
 # the iPhone connected once by cable and trusted, Developer Mode on (iPhone Settings › Privacy & Security).
 # TEAM is the 10-character team ID shown in Xcode › Settings › Accounts › (your team). Signing is passed on the
 # xcodebuild command line, so the generated project and project.yml stay team-free and nothing personal is committed.
+#
+# An iPhone on another network: Xcode only reaches one on the cable or on this Mac's own network. With RoamRun
+# (https://github.com/mh-mobile/RoamRun) installed and the iPhone saved in it, this script starts RoamRun's bridge
+# when it finds no iPhone, and stops it again at the end. The iPhone has to be joined to some Wi-Fi (cellular alone
+# does not do), unlocked, with the Tailscale app as its VPN.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -61,7 +66,34 @@ PY
   rm -f "$details_json"
 }
 
+# The iPhone RoamRun has saved and no bridge runs for: the one DEVICE names (UDID or name), else the only one saved.
+# Prints its name there; nothing when RoamRun is not installed, or a bridge to it is up already.
+bridgeable() {
+  command -v roamrun >/dev/null 2>&1 || return 0
+  roamrun devices --json 2>/dev/null | /usr/bin/python3 -c '
+import json, sys
+wanted = sys.argv[1]
+try:
+    saved = json.load(sys.stdin)
+except Exception:
+    saved = []
+found = [d for d in saved if not wanted or wanted in (d.get("udid"), d.get("name"))]
+if len(found) == 1 and found[0].get("state") == "off":
+    print(found[0].get("name", ""))
+' "${DEVICE:-}" || true
+}
+
 read -r UDID DEV_MODE <<<"$(list_iphones)" || true
+if [ -z "${UDID:-}" ]; then
+  BRIDGED="$(bridgeable)"
+  if [ -n "$BRIDGED" ]; then
+    echo "no iPhone on the cable or on this network; starting RoamRun's bridge to $BRIDGED (it must be on some Wi-Fi, unlocked, with the Tailscale app as its VPN)"
+    # Also when the bridge does not get there: it would go on trying in the background.
+    trap 'roamrun down "$BRIDGED" >/dev/null 2>&1 || true' EXIT
+    roamrun up "$BRIDGED" -d || { echo "the bridge did not reach $BRIDGED; \`roamrun doctor $BRIDGED\` says which step fails" >&2; exit 1; }
+    read -r UDID DEV_MODE <<<"$(list_iphones)" || true
+  fi
+fi
 [ -n "${UDID:-}" ] || { echo "no reachable iPhone found (plug it in, unlock it, trust this Mac; or set DEVICE=<udid|name>)" >&2; xcrun devicectl list devices >&2 || true; exit 1; }
 [[ "$DEV_MODE" != "disabled" ]] || DEV_MODE="$(live_dev_mode "$UDID")"
 echo "device: $UDID  team: $TEAM  bundle id: $BUNDLE_ID  developer mode: $DEV_MODE"

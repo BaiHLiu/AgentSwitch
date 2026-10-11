@@ -138,6 +138,15 @@ The simulator has no camera; use "粘贴配对链接".
 
    The team ID is the 10-character ID shown for your team in Xcode › Settings › Accounts. Signing goes in on the
    command line only, so project.yml and the generated project stay team-free.
+
+   **An iPhone that is away.** Xcode only reaches an iPhone on the cable or on the Mac's own network: its pairing
+   service wants the iPhone as a neighbour on the same link, and a Tailscale address alone is refused. With
+   [RoamRun](https://github.com/mh-mobile/RoamRun) installed (`brew install --cask mh-mobile/tap/roamrun`) and the
+   iPhone saved in it once while it is on the Mac's Wi-Fi, the script starts RoamRun's bridge when it finds no
+   iPhone and stops it at the end. What the iPhone needs then: joined to some Wi-Fi (on cellular alone its pairing
+   service does not listen), unlocked, and the Tailscale app as its VPN — a proxy app's built-in Tailscale node
+   (Stash's `type: tailscale`) only carries traffic out of the iPhone, not in to it. `roamrun doctor <name>` says
+   which step fails. After the iPhone restarts it may want the cable once.
 4. First launch: if iOS says the developer is not trusted, open Settings › General › VPN & Device Management and
    trust your Apple ID. Allow Local Network and Camera when asked.
 5. Pair: on the Mac, AgentSwitch › 配对新设备…; on the iPhone, scan the code (same Wi-Fi as the Mac, or the Tailscale
