@@ -239,4 +239,13 @@ final class TerminalsPageRulesTests: XCTestCase {
         XCTAssertEqual(TerminalEffort.levels(models: old.models, any: old.efforts, harness: "claude-code", model: "opus"), [])
         XCTAssertEqual(TerminalEffort.levels(models: old.models, any: old.efforts, harness: "claude-code", model: nil), [])
     }
+
+    /// 2026-10-11, user: 让 AS 支持 resume pi. Every agent's sessions go on; the two the service cannot tell are open
+    /// elsewhere are asked about first, and only OpenCode's question says it cannot fork.
+    func testWhichSessionsGoOnAndWhichAreAskedAboutFirst() {
+        XCTAssertEqual(TerminalListText.resumable, Set(TerminalListText.agents.map(\.id)))
+        XCTAssertEqual(TerminalListText.resumable.subtracting(TerminalListText.checked), ["opencode", "pi"])
+        XCTAssertTrue(TerminalListText.mayBeOpen("opencode").contains("OpenCode 不支持分叉"))
+        XCTAssertEqual(TerminalListText.mayBeOpen("pi"), "此会话可能正在其他终端中运行，继续将写入同一会话。")
+    }
 }

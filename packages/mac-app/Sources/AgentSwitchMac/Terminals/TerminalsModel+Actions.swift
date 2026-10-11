@@ -255,7 +255,7 @@ extension TerminalsModel {
         let c = client()
         Task {
             if !TerminalListText.checked.contains(session.harness), session.active {
-                let answer = await ask(TerminalSheet(title: "继续「\(name)」？", body: "此会话可能正在其他终端中运行。OpenCode 不支持分叉，继续将写入同一会话。", confirm: "Resume"))
+                let answer = await ask(TerminalSheet(title: "继续「\(name)」？", body: TerminalListText.mayBeOpen(session.harness), confirm: "Resume"))
                 guard answer.ok else { return }
             }
             opening = session.sessionId

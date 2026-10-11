@@ -111,8 +111,8 @@ const Raw = z.object({ data: z.string().min(1).max(MAX_INPUT) });
 
 const STATUS: Record<TerminalError["code"], 400 | 403 | 404 | 409> = { not_found: 404, exited: 409, unavailable: 400, forbidden: 403, invalid: 400, busy: 409 };
 /** Agents that can go on with a session, and those that can fork one (docs/terminal-v0.md §5). */
-const RESUMES: ReadonlySet<TerminalHarness> = new Set(["claude-code", "codex", "opencode"]);
-const FORKS: ReadonlySet<TerminalHarness> = new Set(["claude-code", "codex"]);
+const RESUMES: ReadonlySet<TerminalHarness> = new Set(["claude-code", "codex", "opencode", "pi"]);
+const FORKS: ReadonlySet<TerminalHarness> = new Set(["claude-code", "codex", "pi"]);
 /** Events a stalled screen may fall behind by before its stream is ended (it reconnects to a fresh snapshot). */
 const MAX_QUEUED = 5_000;
 
@@ -330,10 +330,14 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
     // in the audit.
     const listedAt = resumed ? deps.sessions?.find(resumed.harness, resumed.agentSessionId)?.cwd : undefined;
     const movedFrom = listedAt && listedAt !== cwd ? listedAt : undefined;
+    // pi goes on with a session only in the folder it began in (it keeps it under that folder and does not move it);
+    // started anywhere else it asks, in the terminal, whether to fork it there. In another folder the service asks for
+    // the fork itself: a new session there with the whole history, the first one left where it is (§5, 2026-10-11).
+    const forks = fork || (body.data.harness === "pi" && movedFrom !== undefined);
     // The agent made ready (Codex: its hooks trusted, a few seconds at most); the start goes on whatever happens.
     await t.prepare?.(body.data.harness).catch(() => undefined);
     // Open in another program → say where, and the client may fork instead.
-    if (agentSessionId && !fork) {
+    if (agentSessionId && !forks) {
       const open = openHere();
       if (open) return c.json({ terminal: open, existing: true });
       const ours = host.list().flatMap((x) => (x.pid && x.status !== "exited" ? [x.pid] : []));
@@ -366,13 +370,13 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
     const account = profile && deps.profiles!.kindOf(body.data.harness, wanted) === "subscription";
     const firstInput = profile && account && (await t.signedIn?.(body.data.harness, profile.home).catch(() => null)) === false ? "/login" : null;
     try {
-      const info = await host.spawn({ harness: body.data.harness, cwd, ...(profile ? { profile } : {}), ...(firstInput ? { firstInput } : {}), ...(body.data.model ? { model: body.data.model } : {}), ...(body.data.effort ? { effort: body.data.effort } : {}), ...(agentSessionId ? { resume: agentSessionId, ...(fork ? { fork } : {}) } : {}),
+      const info = await host.spawn({ harness: body.data.harness, cwd, ...(profile ? { profile } : {}), ...(firstInput ? { firstInput } : {}), ...(body.data.model ? { model: body.data.model } : {}), ...(body.data.effort ? { effort: body.data.effort } : {}), ...(agentSessionId ? { resume: agentSessionId, ...(forks ? { fork: forks } : {}) } : {}),
         ...(resumed?.title ? { name: resumed.title } : {}), ...(body.data.mode ? { mode: body.data.mode } : {}),
         allowBypass: true,
         ...(body.data.cols ? { cols: body.data.cols } : {}), ...(body.data.rows ? { rows: body.data.rows } : {}) });
       // What a new terminal was started under is what the next one is offered first.
       if (!resume && body.data.profile) { try { deps.profiles?.setCurrent(body.data.harness, body.data.profile); } catch { /* it started all the same */ } }
-      audit.record({ terminal: info.id, action: resume ? "resume" : "create", via: via(c), detail: { harness: info.harness, cwd, model: info.model, effort: info.effort, mode: info.mode, ...(resume ? { fork } : {}), ...(movedFrom ? { movedFrom } : {}) } });
+      audit.record({ terminal: info.id, action: resume ? "resume" : "create", via: via(c), detail: { harness: info.harness, cwd, model: info.model, effort: info.effort, mode: info.mode, ...(resume ? { fork: forks } : {}), ...(movedFrom ? { movedFrom } : {}) } });
       return c.json({ terminal: info }, 201);
     } catch (err) { return failed(c, err); }
   };

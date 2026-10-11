@@ -319,6 +319,11 @@ export function agentLauncher(opts: LauncherOptions): Launcher {
         const args = ["--extension", opts.piExtension ?? PI_EXTENSION];
         if (req.model) args.push("--model", req.model);
         args.push(...effortArgs("pi", req.effort, req.model).args);
+        // The same session goes on (docs/terminal-v0.md §5): pi keeps a folder's sessions under that folder and, started
+        // there, opens the one with this id. Started in another folder it would find it and ask, in the terminal,
+        // whether to fork it (the service asks for the fork itself then, api/terminals.ts). A fork is a new session
+        // under the terminal's folder with the whole history; pi finds its source under any folder.
+        if (req.resume) args.push(req.fork ? "--fork" : "--session", req.resume);
         return { file, args, env, hooks: true };
       }
     }

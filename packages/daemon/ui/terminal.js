@@ -65,12 +65,12 @@ const AGENTS = [
   { id: "pi", name: "pi" },
 ];
 const AGENT = Object.fromEntries(AGENTS.map((a) => [a.id, a.name]));
-const RESUMABLE = new Set(["claude-code", "codex", "opencode"]);
+const RESUMABLE = new Set(["claude-code", "codex", "opencode", "pi"]);
 /** Sessions whose record can be deleted here (OpenCode keeps them in its database). */
 // Every agent's sessions can be deleted (docs/terminal-v0.md §5; OpenCode and pi since 2026-10-01).
 const DELETABLE = new Set(["claude-code", "codex", "opencode", "pi"]);
 /** "Continue" goes on in the same session, one program at a time; the service sees where Claude Code and Codex
- *  sessions are open (terminal-v0 §5), not OpenCode's. */
+ *  sessions are open (terminal-v0 §5), not OpenCode's or pi's. */
 const CHECKED = new Set(["claude-code", "codex"]);
 /** How the agent asks before acting (terminal-v0 §3); the protected paths stay closed in all three. */
 const MODES = [
@@ -1692,7 +1692,7 @@ async function resume(s) {
   if (open) { select(open.id); return; }
   const name = s.title || "会话";
   if (!CHECKED.has(s.harness) && s.active) {
-    const r = await ask({ title: `继续「${name}」？`, body: "此会话可能正在其他终端中运行。OpenCode 不支持分叉，继续将写入同一会话。", confirm: "Resume" });
+    const r = await ask({ title: `继续「${name}」？`, body: s.harness === "opencode" ? "此会话可能正在其他终端中运行。OpenCode 不支持分叉，继续将写入同一会话。" : "此会话可能正在其他终端中运行，继续将写入同一会话。", confirm: "Resume" });
     if (!r.ok) return;
   }
   opening = s.id;

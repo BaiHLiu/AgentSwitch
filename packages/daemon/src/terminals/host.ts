@@ -1294,6 +1294,8 @@ export class TerminalHost {
         const refused = this.opts.floor?.(call.tool, call.input, s.cwd) ?? null;
         return refused ? { block: true, reason: refused } : null;
       }
+      // pi says which session it writes (read above from `session_id`, as from any call): nothing else changes.
+      case "PiSession": return null;
       case "PiAgentStart": this.setStatus(s, "working"); return null;
       case "PiAgentEnd": this.turnEnded(s, true, null); this.setStatus(s, "idle"); return null;
       // pi blocks on a question of its own (a confirm or a choice in its screen): the terminal waits for you.

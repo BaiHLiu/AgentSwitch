@@ -3,7 +3,7 @@
  *  answered from the API, audit, delete. No model is called. */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { homedir, tmpdir } from "node:os";
@@ -1548,7 +1548,6 @@ describe("terminals over HTTP", () => {
     // A session id goes after `--resume`: nothing that reads as a flag; no fork or resume an agent cannot do.
     expect((await call("POST", "/terminals/resume", { harness: "claude-code", cwd, agentSessionId: "--dangerously-skip-permissions" })).status).toBe(400);
     expect((await call("POST", "/terminals/resume", { harness: "opencode", cwd, agentSessionId: "ses_1", fork: true })).status).toBe(400);
-    expect((await call("POST", "/terminals/resume", { harness: "pi", cwd, agentSessionId: "p-1" })).status).toBe(400);
     // `dir/` and `dir` are one folder.
     expect((await call("POST", "/terminals", { harness: "claude-code", cwd: `${cwd}/` })).json.terminal.cwd).toBe(cwd);
 
@@ -1578,7 +1577,51 @@ describe("terminals over HTTP", () => {
     expect(again.status).toBe(200);
     expect(again.json).toMatchObject({ existing: true, terminal: { id: moved.json.terminal.id } });
     // What an agent cannot do is said first.
-    expect((await call("POST", "/terminals/resume", { harness: "pi", cwd: gone, agentSessionId: "p-1" })).status).toBe(400);
+    expect((await call("POST", "/terminals/resume", { harness: "opencode", cwd: gone, agentSessionId: "ses_1", fork: true })).status).toBe(400);
+  });
+
+  // 2026-10-11, user: 让 AS 支持 resume pi.
+  it("goes on with a pi session in its own folder; in another folder it is a fork, and a pi terminal says which session it writes", async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "agentswitch-pi-sessions-")));
+    const own = join(root, "work", "site");
+    const other = join(root, "work", "elsewhere");
+    for (const dir of [own, other, join(root, "pi", "--site--")]) mkdirSync(dir, { recursive: true });
+    writeFileSync(join(root, "pi", "--site--", "2026-10-11T04-00-00-000Z_p-1.jsonl"), [
+      JSON.stringify({ type: "session", version: 3, id: "p-1", timestamp: new Date().toISOString(), cwd: own }),
+      JSON.stringify({ type: "message", id: "a", timestamp: new Date().toISOString(), message: { role: "user", content: [{ type: "text", text: "看看目录" }] } }),
+    ].join("\n") + "\n");
+    const home = mkdtempSync(join(tmpdir(), "agentswitch-terminals-"));
+    const cfg: DaemonConfig = { home, targetsPath: TARGETS_PATH, port: 0, router: "echo", executors: "echo", browser: false, quotaTtlMs: 1000, maxTasks: 4, opencodePort: 0, opencodeBinary: "", watchSessions: true };
+    const daemon = buildDaemon(cfg, {
+      terminalLauncher: fakeLauncher(() => "http://127.0.0.1:9", true),
+      sessionSources: { claudeProjects: join(root, "claude"), codexSessions: join(root, "codex"), piSessions: join(root, "pi"), opencodeDb: join(root, "none.db"), excluded: [] },
+    });
+    closers.push(() => daemon.close());
+    const call = async (body: unknown) => {
+      const res = await daemon.api.request("/terminals/resume", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      return { status: res.status, json: (await res.json()) as Record<string, any> };
+    };
+    // Where it began: the same session, and that terminal again when asked twice.
+    const first = await call({ harness: "pi", cwd: own, agentSessionId: "p-1" });
+    expect(first.status).toBe(201);
+    expect(first.json.terminal).toMatchObject({ harness: "pi", cwd: own, resumedFrom: "p-1", forked: false, agentSessionId: "p-1" });
+    expect((await call({ harness: "pi", cwd: own, agentSessionId: "p-1" })).json).toMatchObject({ existing: true, terminal: { id: first.json.terminal.id } });
+    // Asked for: a fork beside it.
+    const asked = await call({ harness: "pi", cwd: own, agentSessionId: "p-1", fork: true });
+    expect(asked.json.terminal).toMatchObject({ resumedFrom: "p-1", forked: true, agentSessionId: null });
+    // The one it is open in is given first, whatever folder is named; once that is closed, another folder is a fork.
+    expect((await call({ harness: "pi", cwd: other, agentSessionId: "p-1" })).json).toMatchObject({ existing: true });
+    await daemon.api.request(`/terminals/${first.json.terminal.id}`, { method: "DELETE" });
+    const moved = await call({ harness: "pi", cwd: other, agentSessionId: "p-1" });
+    expect(moved.status).toBe(201);
+    expect(moved.json.terminal).toMatchObject({ cwd: other, resumedFrom: "p-1", forked: true, agentSessionId: null });
+    // The fork's own session, as pi's extension says it: the terminal's, and the one a second "continue" finds it by.
+    const host = daemon.terminals!;
+    const token = (host as unknown as { sessions: Map<string, { hookToken: string }> }).sessions.get(moved.json.terminal.id)!.hookToken;
+    await host.hook(moved.json.terminal.id, token, { event: "PiSession", payload: { session_id: "p-2" } });
+    expect(host.get(moved.json.terminal.id)).toMatchObject({ agentSessionId: "p-2", resumedFrom: "p-1", forked: true });
+    expect(host.ownSession(moved.json.terminal.id)).toBe("p-2");
+    expect((await call({ harness: "pi", cwd: other, agentSessionId: "p-2" })).json).toMatchObject({ existing: true, terminal: { id: moved.json.terminal.id } });
   });
 
   it("a permission request nobody answers ends with no decision when the terminal goes", async () => {
@@ -1694,6 +1737,10 @@ describe("terminal pieces", () => {
     expect(launch({ id: "t4", harness: "claude-code", cwd: "/tmp", resume: "s-1", mode: "manual", hookToken: "tok" }).args.slice(-2)).toEqual(["--resume", "s-1"]);
     expect(launch({ id: "t10", harness: "claude-code", cwd: "/tmp", resume: "s-1", fork: true, mode: "manual", hookToken: "tok" }).args.slice(-3)).toEqual(["--resume", "s-1", "--fork-session"]);
     expect(() => launch({ id: "t3", harness: "pi", cwd: "/tmp", mode: "manual", hookToken: "tok" })).toThrow(/not installed/);
+    // pi: the session by its id (started in the session's folder it is the same one), or a fork of it.
+    const withPi = agentLauncher({ binaries: { pi: "/bin/pi" }, hookUrl: () => "http://127.0.0.1:4711", stateDir, node: "/n/node", hookScript: "/h/hook.js", piExtension: "/h/pi.ts", env: { PATH: "/usr/bin" } });
+    expect(withPi({ id: "p2", harness: "pi", cwd: "/tmp", resume: "01a1-b2", mode: "manual", hookToken: "tok" }).args).toEqual(["--extension", "/h/pi.ts", "--session", "01a1-b2"]);
+    expect(withPi({ id: "p3", harness: "pi", cwd: "/tmp", resume: "01a1-b2", fork: true, mode: "manual", hookToken: "tok" }).args).toEqual(["--extension", "/h/pi.ts", "--fork", "01a1-b2"]);
     // Codex's Daybreak switch (docs/simple-view-v0.md §5.8): the feature it is kept under, for a terminal started
     // where Codex and the account have it — and its companion then says how the switch stands. Otherwise neither.
     expect(codex.args.join(" ")).not.toContain("cli_daybreak");
@@ -1765,7 +1812,7 @@ describe("terminal pieces", () => {
 
   it("pi's extension blocks what the service refuses, and everything when the service does not answer", async () => {
     const { default: extension } = await import("../src/terminals/piExtension.js");
-    const handlers = new Map<string, (event: Record<string, unknown>) => unknown>();
+    const handlers = new Map<string, (event: Record<string, unknown>, ctx?: { sessionManager?: { getSessionId?: () => unknown } }) => unknown>();
     extension({ on: (event, handler) => handlers.set(event, handler) });
     const calls: unknown[] = [];
     const server = createServer((req, res) => {
@@ -1788,6 +1835,18 @@ describe("terminal pieces", () => {
     expect(await toolCall({ toolName: "read", input: { path: "/x/local-token" } })).toEqual({ block: true, reason: "受保护" });
     expect(await toolCall({ toolName: "read", input: { path: "/x/readme" } })).toBeUndefined();
     expect(calls[0]).toMatchObject({ auth: "Bearer tok", terminal: "p1", event: "PiToolCall", payload: { tool: "read" } });
+    // Which session pi writes: said when one starts (pi's start; `/new`, `/resume`, `/fork` typed in it) and with every
+    // call after; a pi that does not say has nothing made up for it.
+    const ctx = { sessionManager: { getSessionId: () => "p-9" } };
+    handlers.get("session_start")!({ type: "session_start", reason: "startup" }, ctx);
+    await until(() => calls.length === 3);
+    expect(calls[2]).toMatchObject({ event: "PiSession", payload: { session_id: "p-9" } });
+    await toolCall({ toolName: "read", input: { path: "/x/readme" } }, ctx);
+    expect(calls[3]).toMatchObject({ event: "PiToolCall", payload: { tool: "read", session_id: "p-9" } });
+    handlers.get("agent_start")!({}, {});
+    await until(() => calls.length === 5);
+    expect(calls[4]).toMatchObject({ event: "PiAgentStart", payload: {} });
+    expect((calls[4] as { payload: object }).payload).toEqual({});
     process.env.AGENTSWITCH_TERMINAL_URL = "http://127.0.0.1:9";   // nothing listens there
     expect(await toolCall({ toolName: "read", input: { path: "/x/readme" } })).toMatchObject({ block: true });
   });

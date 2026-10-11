@@ -111,7 +111,7 @@ export function elsewhereCheck(opts: ElsewhereOptions = {}): ElsewhereCheck {
       const lock = join(home, ".codex", "thread-writer-locks", `${sessionId}.lock`);
       pids = existsSync(lock) ? await holders(lock).catch(() => []) : [];
     } else {
-      return null;   // OpenCode: nothing to look at (the page asks when the session was active lately)
+      return null;   // OpenCode, pi: nothing to look at (the page asks when the session was active lately)
     }
     if (pids.length === 0) return null;
     const table = await processes().catch(() => new Map<number, Proc>());

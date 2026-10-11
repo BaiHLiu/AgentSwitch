@@ -481,7 +481,8 @@ struct TerminalsTab: View {
         }
     }
 
-    static let resumable: Set<String> = ["claude-code", "codex", "opencode"]
+    /// The agents whose sessions can be gone on with (pi's since 2026-10-11, docs/terminal-v0.md §5).
+    static let resumable: Set<String> = ["claude-code", "codex", "opencode", "pi"]
 
     /// `new`, or a terminal (from the Live Activity) in place of the page open now; one closed since is not found.
     private func openRequested() {

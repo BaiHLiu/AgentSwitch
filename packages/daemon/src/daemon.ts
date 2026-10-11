@@ -89,7 +89,7 @@ import { claudeTextRouter, type ClaudeRouterOptions } from "./router/routers/cla
 import { codexTextRouter } from "./router/routers/codex.js";
 import { DEFAULT_EXECUTOR_TIMEOUT_MS, QUOTA_TTL_MS } from "./core/limits.js";
 import { loadWorkdir } from "./files/workdir.js";
-import { defaultSessionSources, SessionMonitor } from "./sessions/monitor.js";
+import { defaultSessionSources, SessionMonitor, type SessionSources } from "./sessions/monitor.js";
 import { openCodeDeleter, type OpenCodeDelete } from "./sessions/opencode.js";
 import { broadFolders, sessionsNear, SESSIONS_READ } from "./sessions/folders.js";
 import { TerminalAudit } from "./terminals/audit.js";
@@ -245,6 +245,8 @@ export type BuildOverrides = {
   readonly terminalLauncher?: Launcher;
   /** Tests: whether a session is open in another program (default: this Mac's agents; none with a fake launcher). */
   readonly terminalElsewhere?: ElsewhereCheck;
+  /** Tests: where the agents' own sessions are read (default: the user's, under their home). */
+  readonly sessionSources?: SessionSources;
   /** Tests: how an OpenCode session is deleted (default: the user's opencode; none with a fake launcher). */
   readonly openCodeDelete?: OpenCodeDelete;
   /** Tests: a fake browser for the shared browser; also turns it on whatever cfg.browserHost says. */
@@ -432,7 +434,7 @@ export function buildDaemon(cfg: DaemonConfig, overrides: BuildOverrides = {}): 
   // Deleting an OpenCode session goes through the user's own opencode (docs/terminal-v0.md §5, threads-v0 删除): the
   // user's from the session list, the executors' with their tasks. None with a fake launcher, nor when no opencode is
   // configured (tests): a test never reaches the user's OpenCode.
-  const sessionSources = defaultSessionSources(cfg.home);
+  const sessionSources = overrides.sessionSources ?? defaultSessionSources(cfg.home);
   const opencodeBin = overrides.terminalLauncher || !cfg.opencodeBinary ? undefined : agentBinaries.opencode ?? terminalBinaries(targets, cfg.opencodeBinary).opencode;
   const openCodeDelete = overrides.openCodeDelete ?? (opencodeBin ? openCodeDeleter(opencodeBin, sessionSources.opencodeDb) : undefined);
   const sessions = cfg.watchSessions ? new SessionMonitor({

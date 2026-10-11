@@ -136,10 +136,15 @@ public enum TerminalListRows {
 /// The page's short words.
 public enum TerminalListText {
     public static let agents: [(id: String, name: String)] = [("claude-code", "Claude Code"), ("codex", "Codex"), ("opencode", "OpenCode"), ("pi", "pi")]
-    /// The agents whose sessions can be gone on with (pi keeps none to continue).
-    public static let resumable: Set<String> = ["claude-code", "codex", "opencode"]
-    /// The agents the service can tell are open elsewhere (not OpenCode's).
+    /// The agents whose sessions can be gone on with (pi's since 2026-10-11, docs/terminal-v0.md §5).
+    public static let resumable: Set<String> = ["claude-code", "codex", "opencode", "pi"]
+    /// The agents the service can tell are open elsewhere (not OpenCode's or pi's).
     public static let checked: Set<String> = ["claude-code", "codex"]
+    /// What is asked before going on with a session the service cannot tell is open elsewhere, when it was written
+    /// lately: it goes on in the same record (OpenCode cannot fork one).
+    public static func mayBeOpen(_ harness: String) -> String {
+        harness == "opencode" ? "此会话可能正在其他终端中运行。OpenCode 不支持分叉，继续将写入同一会话。" : "此会话可能正在其他终端中运行，继续将写入同一会话。"
+    }
     /// How the agent asks before acting: the id the service takes and its name on the panel.
     public static let modes: [(id: String, name: String)] = [("manual", "Ask Each"), ("auto", "Auto"), ("bypass", "Bypass")]
 
