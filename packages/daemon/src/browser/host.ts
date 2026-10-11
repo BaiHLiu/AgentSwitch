@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 import type { BrowserDriver, DriverBrowser, DriverCookie, DriverPage, FocusedField, GuardDecision, GuardRequest } from "./driver.js";
 import { FillRefused, type FillResolver } from "./fill.js";
 import { inputCalls, NOTHING_PRESSED, type InputEvent, type Pressed } from "./input.js";
-import { AGENT_FILE_REFUSAL, checkLocalFile, checkUrl, isLoopbackAddress, isLoopbackHost, normalHost, OWN_PORT_REFUSAL, placeOf, portOf, type FileRules } from "./rules.js";
+import { AGENT_FILE_REFUSAL, checkLocalFile, checkUploadFile, checkUrl, isLoopbackAddress, isLoopbackHost, normalHost, OWN_PORT_REFUSAL, placeOf, portOf, type FileRules } from "./rules.js";
 import { renderScale, Screencast, viewAt, type StreamOptions } from "./screencast.js";
 import { BrowserError, DEFAULT_VIEWPORT, WINDOW_HOLDER, YOU, type AgentAction, type BrowserEvent, type ClosedReason, type HeldReason, type TabGroup, type TabInfo,
   type TabOwner, type TabOwnerKind, type TabStatus, type Viewport } from "./types.js";
@@ -461,6 +461,11 @@ export class BrowserHost {
   /** Where `owner`'s tab may go (the same rules as `open` and `navigate`): the URL normalized, or a refusal. */
   allowed(owner: TabOwner, url: string): string {
     return checkUrl(owner, url, this.opts.files, this.ownPorts());
+  }
+
+  /** A file a terminal's agent may hand a page (the same rules as a person's `file:` path, and a file), or a refusal. */
+  uploadable(path: string): ReturnType<typeof checkUploadFile> {
+    return checkUploadFile(path, this.opts.files);
   }
 
   /** A person's Fill Ciphertext (browser-v0 §1, §6): `token` resolved by the gate for the focused field's frame and

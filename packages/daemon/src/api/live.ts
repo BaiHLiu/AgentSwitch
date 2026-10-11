@@ -274,7 +274,7 @@ const VERBS: Readonly<Record<string, string>> = {
 const BROWSER: Readonly<Record<string, string>> = {
   navigate: "打开", navigate_back: "后退", click: "点击", type: "输入", fill_form: "填写表单", press_key: "按键",
   select_option: "选择", hover: "悬停", snapshot: "读取页面", take_screenshot: "截图", wait_for: "等待",
-  evaluate: "执行脚本", tabs: "标签页", close: "关闭", file_upload: "上传文件", handle_dialog: "处理弹窗",
+  evaluate: "执行脚本", tabs: "标签页", close: "关闭", file_upload: "上传文件", drop: "拖入", handle_dialog: "处理弹窗",
 };
 const SECRET: Readonly<Record<string, string>> = { secret_fill: "填入密文", secret_type: "填入密文", secret_repair: "修复密文", credential_repair: "修复密文" };
 const TARGET_KEYS = ["url", "file_path", "filePath", "notebook_path", "path", "pattern", "query", "element", "description", "skill", "prompt"];

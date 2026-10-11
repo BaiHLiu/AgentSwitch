@@ -9,27 +9,31 @@
  *    minutes), then fails with words for the model; the hold is looked at again right before the call is handed over;
  *  - the tab's status (busy while a call runs) and the agent's last action for the screens' overlay, with the box of the
  *    element it acts on;
- *  - refusals of its own, whatever the gate does: no file read or written for an agent (`filename`, `paths`), only
- *    http(s) and about:blank, no resizing of a tab the screens size, `browser_close` closing the agent's own tabs only
+ *  - refusals of its own, whatever the gate does: no file written for an agent (`filename`) and none read (`paths`)
+ *    but what a terminal's agent uploads (below), only http(s) and about:blank, no resizing of a tab the screens size, `browser_close` closing the agent's own tabs only
  *    (each once handed back), no code but the gate's own probes (probes.ts: `browser_run_code_unsafe` runs in this
  *    process) and none at all where no gate is in front, and no network or console log of a tab whose hold could not
  *    be kept out of them (heldTraffic.ts);
  *  - with no gate in front, the list the model reads: Playwright MCP's own, without the tools refused here and
- *    without the parameters that name files (`directTools`), and answers without their links to this module's
- *    private folder (`withoutFileLinks`);
+ *    without the parameters that name files but an upload's (`directTools`), and answers without their links to this
+ *    module's private folder (`withoutFileLinks`);
+ *  - with no gate in front, uploads (2026-10-11, docs/browser-v0.md §5 上传): the files `browser_file_upload` and
+ *    `browser_drop` name, each one the host lets a page have (`BrowserHost.uploadable`: no credentials, none of
+ *    AgentSwitch's data, no folder), copied into the connection's folder and handed over from there — Playwright MCP
+ *    takes files from its own workspace only, and what was checked is what is read;
  *  - Playwright MCP's files (unredacted snapshots, console logs) in a private folder per connection under
  *    `$AGENTSWITCH_HOME/browser` (read-denied to the executors), emptied after every call, removed with the connection.
  *  Tool arguments are never logged or audited: after the gate, a fill's text is the plaintext; with no gate, what a
- *  model types is whatever it was given. */
+ *  model types is whatever it was given. The one exception is an upload: which files went to which site is audited. */
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { constants, copyFileSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { BrowserAudit } from "./audit.js";
 import type { BrowserHost } from "./host.js";
 import { codeRefusal, EVALUATE_TOOL, RUN_CODE_TOOL } from "./probes.js";
-import { auditUrl } from "./rules.js";
+import { auditUrl, UPLOAD_MAX_BYTES } from "./rules.js";
 import { BrowserError, type Box, type TabOwner } from "./types.js";
 
 /** The bridge script next to this module: bridgeClient.js in dist/, bridgeClient.ts under tsx (node strips its types). */
@@ -45,7 +49,17 @@ const BOX_MS = 1_000;
 const DESCRIPTION_CHARS = 60;
 
 export const USER_HOLDS_TAB = "The user is using this tab in AgentSwitch (they took it over) and did not hand it back within 2 minutes, so this call was not run. Try again later, or ask the user to hand the tab back.";
-export const FILES_REFUSED = "AgentSwitch's shared browser reads and writes no files for agents (filename, paths).";
+export const FILES_REFUSED = "AgentSwitch's shared browser writes no files for agents (filename) and reads none (paths) but the ones a terminal's agent uploads (browser_file_upload, browser_drop).";
+export const NOT_UPLOADED = "Not uploaded in AgentSwitch's shared browser:";
+const UPLOAD_RULE = "A page is given no credentials (keys, .env files, logins, tokens), none of AgentSwitch's own data, and no folders.";
+/** The tools whose `paths` are files for a page. */
+const UPLOAD_TOOLS = new Set(["browser_file_upload", "browser_drop"]);
+/** Files in one call. */
+export const MAX_UPLOAD_FILES = 16;
+/** A file handed to a page is kept this long (a form may read it only when it is sent), then goes at the next call. */
+export const UPLOAD_KEEP_MS = 30 * 60_000;
+/** Under a connection's folder: the files handed to pages, a folder per call. Not emptied with the rest after a call. */
+const UPLOADS_DIR = "uploads";
 export const RESIZE_REFUSED = "In AgentSwitch's shared browser a tab's size belongs to the screens showing it; browser_resize is not available.";
 export const HELD_LOGS_REFUSED = "The user used this tab in AgentSwitch; its network requests and console messages are not available to agents.";
 /** Tools that read a tab's network and console records (heldTraffic.ts keeps a hold's out of them). */
@@ -102,7 +116,7 @@ export type EngineOptions = {
 export type AgentEngine = (opts: EngineOptions) => Promise<EngineConnection>;
 
 /** What this module needs of the host. */
-export type AgentHost = Pick<BrowserHost, "get" | "tabsOf" | "watch" | "setStatus" | "setAction" | "close" | "allowed" | "agentActing" | "agentDone" | "fronted">;
+export type AgentHost = Pick<BrowserHost, "get" | "tabsOf" | "watch" | "setStatus" | "setAction" | "close" | "allowed" | "uploadable" | "agentActing" | "agentDone" | "fronted">;
 
 export type BrowserAgentsOptions = {
   readonly host: AgentHost;
@@ -111,6 +125,8 @@ export type BrowserAgentsOptions = {
   readonly dir: string;
   readonly audit?: BrowserAudit;
   readonly holdWaitMs?: number;
+  /** Tests: how long a file handed to a page is kept (`UPLOAD_KEEP_MS`). */
+  readonly uploadKeepMs?: number;
   readonly log?: (line: string) => void;
 };
 
@@ -217,7 +233,8 @@ export function describeCall(tool: string, args: Args): string | null {
     case "browser_take_screenshot": return "screenshot";
     case "browser_wait_for": return "wait";
     case "browser_handle_dialog": return args.accept ? "accept the dialog" : "dismiss the dialog";
-    case "browser_file_upload": return "upload";
+    case "browser_file_upload": return fileNames(args.paths) ? `upload ${fileNames(args.paths)}` : "dismiss the file chooser";
+    case "browser_drop": return `drop${fileNames(args.paths) ? ` ${fileNames(args.paths)}` : ""} on${quoted(args.element) || " the page"}`;
     case "browser_tabs": return args.action === "new" ? "new tab" : null;
     default: return null;
   }
@@ -228,7 +245,7 @@ function targetArg(tool: string, args: Args): string | null {
   const pick = (v: unknown) => (typeof v === "string" && v.trim() ? v : null);
   if (tool === "browser_drag") return pick(args.startTarget);
   if (tool === "browser_fill_form") return Array.isArray(args.fields) ? pick((args.fields[0] as Args | undefined)?.target) : null;
-  return ["browser_click", "browser_type", "browser_hover", "browser_select_option"].includes(tool) ? pick(args.target) : null;
+  return ["browser_click", "browser_type", "browser_hover", "browser_select_option", "browser_drop"].includes(tool) ? pick(args.target) : null;
 }
 
 /** An address as Playwright MCP completes it before navigating (`localhost…` → http, anything else bare → https). */
@@ -236,11 +253,25 @@ function completed(raw: string): string {
   try { new URL(raw); return raw; } catch { return raw.startsWith("localhost") ? `http://${raw}` : `https://${raw}`; }
 }
 
-/** Every file Playwright MCP left (snapshots, console logs, a download it tried), the folder itself kept. */
-function sweep(dir: string): void {
+/** Every file Playwright MCP left (snapshots, console logs, a download it tried), the folder itself kept — and the
+ *  files handed to pages, until they are `keepMs` old. */
+function sweep(dir: string, keepMs: number, now: number = Date.now()): void {
   let entries: string[] = [];
   try { entries = readdirSync(dir); } catch { return; }
-  for (const entry of entries) rmSync(join(dir, entry), { recursive: true, force: true });
+  for (const entry of entries) if (entry !== UPLOADS_DIR) rmSync(join(dir, entry), { recursive: true, force: true });
+  const uploads = join(dir, UPLOADS_DIR);
+  let batches: string[] = [];
+  try { batches = readdirSync(uploads); } catch { return; }
+  for (const batch of batches) {
+    const made = Number(batch.split("-")[0]);
+    if (!Number.isFinite(made) || now - made >= keepMs) rmSync(join(uploads, batch), { recursive: true, force: true });
+  }
+}
+
+/** The files of an upload as the overlay names them: `"shot.png"`, or `3 files`. Empty when there are none. */
+function fileNames(paths: unknown): string {
+  const list = Array.isArray(paths) ? paths.filter((p): p is string => typeof p === "string" && p.trim() !== "") : [];
+  return list.length === 1 ? `"${clean(basename(list[0]!))}"` : list.length ? `${list.length} files` : "";
 }
 
 export class BrowserAgents {
@@ -428,6 +459,15 @@ export class BrowserAgents {
     if (tool === "browser_close") { await this.closeAll(conn, id, owner); return; }
     const target = this.targetOf(engine, tool, args);
     if (LOG_TOOLS.has(tool) && target && exposed.includes(target)) { this.send(conn, failure(id, HELD_LOGS_REFUSED)); return; }
+    // An upload's files, checked again now (the wait above may have been long) and handed over as copies.
+    let handed = request;
+    let uploaded: readonly string[] = [];
+    if (UPLOAD_TOOLS.has(tool) && Array.isArray(args.paths) && args.paths.length) {
+      const staged = this.stage(conn, args.paths);
+      if (typeof staged === "string") { this.send(conn, failure(id, staged)); return; }
+      handed = { ...request, params: { ...params, arguments: { ...args, paths: staged.map((f) => f.copy) } } };
+      uploaded = staged.map((f) => f.shown);
+    }
     const before = engine.currentTab();
     if (target) {
       this.quietly(() => this.opts.host.setStatus(target, "busy"));
@@ -438,7 +478,7 @@ export class BrowserAgents {
     if (pointing) await this.opts.host.agentActing(owner).catch((err: unknown) => this.log(`browser: agent's tabs not redrawn: ${(err as Error)?.message}`));
     let answer: JsonRpcMessage | null;
     try {
-      answer = await this.forward(conn, request);
+      answer = await this.forward(conn, handed);
     } finally {
       if (pointing) this.quietly(() => this.opts.host.agentDone(owner));
     }
@@ -447,8 +487,12 @@ export class BrowserAgents {
     if (tool === "browser_tabs" && args.action === "select" && after) this.quietly(() => this.opts.host.fronted(after));
     for (const tab of new Set([target, after])) if (tab && this.opts.host.get(tab)) this.quietly(() => this.opts.host.setStatus(tab, "idle"));
     if (!target && after && shown) this.quietly(() => this.opts.host.setAction(after, { tool, description: shown }));
-    sweep(conn.outputDir);
+    sweep(conn.outputDir, this.opts.uploadKeepMs ?? UPLOAD_KEEP_MS);
     if (!answer) return;
+    if (uploaded.length && !failed(answer)) {
+      const onto = target ?? after;
+      this.opts.audit?.record({ tab: onto, action: "upload", via: "agent", detail: { owner: `${owner.kind}:${owner.id}`, site: auditUrl(onto ? this.opts.host.get(onto)?.url ?? "" : ""), files: uploaded } });
+    }
     if (tool === "browser_navigate" && after && !failed(answer)) {
       this.opts.audit?.record({ tab: after, action: "navigate", via: "agent", detail: { owner: `${owner.kind}:${owner.id}`, target: auditUrl(completed(String(args.url ?? ""))) } });
     }
@@ -465,7 +509,12 @@ export class BrowserAgents {
   /** The bridge's own refusals (the gate refuses most of them too; these hold whoever calls). */
   private refusal(session: Session, tool: string, args: Args): string | null {
     const owner = session.owner;
-    if ("filename" in args || "paths" in args) return FILES_REFUSED;
+    if ("filename" in args) return FILES_REFUSED;
+    if ("paths" in args) {
+      if (session.gate || !UPLOAD_TOOLS.has(tool)) return FILES_REFUSED;
+      const files = this.uploads(args.paths);
+      if (typeof files === "string") return files;
+    }
     if (tool === "browser_resize") return RESIZE_REFUSED;
     const code = codeRefusal(tool, args, session.gate);
     if (code) return code;
@@ -474,6 +523,46 @@ export class BrowserAgents {
     if (typeof url !== "string") return `${NOT_OPENED} the address must be text.`;
     try { this.opts.host.allowed(owner, completed(url)); return null; }
     catch (err) { return `${NOT_OPENED} ${err instanceof BrowserError ? err.message : "the address was refused."}`; }
+  }
+
+  /** The files an upload names, each one a page may have, or why not in words for the model. No `paths`, or none in
+   *  it, is no upload (the tool then dismisses the chooser). */
+  private uploads(paths: unknown): ReturnType<AgentHost["uploadable"]>[] | string {
+    if (paths === undefined || paths === null) return [];
+    if (!Array.isArray(paths) || paths.some((p) => typeof p !== "string")) return `${NOT_UPLOADED} paths must be a list of absolute file paths.`;
+    if (paths.length > MAX_UPLOAD_FILES) return `${NOT_UPLOADED} at most ${MAX_UPLOAD_FILES} files in one call.`;
+    const files: ReturnType<AgentHost["uploadable"]>[] = [];
+    for (const path of paths as string[]) {
+      try { files.push(this.opts.host.uploadable(path)); }
+      catch (err) {
+        if (!(err instanceof BrowserError)) return `${NOT_UPLOADED} the file was refused.`;
+        return `${NOT_UPLOADED} ${err.message}${err.code === "forbidden" ? ` ${UPLOAD_RULE}` : ""}`;
+      }
+    }
+    return files;
+  }
+
+  /** The files of an upload copied into the connection's folder (a clone where the volume makes one), a folder per
+   *  call and one per file under it so each keeps its name: what Playwright MCP is given, and what the page reads. */
+  private stage(conn: Connection, paths: unknown): { readonly copy: string; readonly shown: string }[] | string {
+    const files = this.uploads(paths);
+    if (typeof files === "string") return files;
+    const batch = join(conn.outputDir, UPLOADS_DIR, `${Date.now()}-${randomBytes(3).toString("hex")}`);
+    try {
+      return files.map((file, i) => {
+        const dir = join(batch, String(i));
+        mkdirSync(dir, { recursive: true, mode: 0o700 });
+        const copy = join(dir, file.name);
+        copyFileSync(file.real, copy, constants.COPYFILE_FICLONE);
+        // Not what it turned into since the check: something else than a file, or one past the limit.
+        const made = statSync(copy);
+        if (!made.isFile() || made.size > UPLOAD_MAX_BYTES) throw new Error("not the file that was checked");
+        return { copy, shown: file.shown };
+      });
+    } catch {
+      rmSync(batch, { recursive: true, force: true });
+      return `${NOT_UPLOADED} the file could not be read.`;
+    }
   }
 
   /** `browser_close`: the agent's own tabs, each once nobody holds it (a screen may take one while others close). */
@@ -574,28 +663,29 @@ function withRoots(message: JsonRpcMessage): JsonRpcMessage {
 const NOT_LISTED = new Set(["browser_resize", RUN_CODE_TOOL, EVALUATE_TOOL]);
 /** Parameters that name a file to write or to read (`FILES_REFUSED`). */
 const FILE_PARAMETERS = ["filename", "paths"];
-/** `browser_file_upload` with no `paths` dismisses the file chooser a page opened (which holds up every other call). */
-const UPLOAD_TOOL = "browser_file_upload";
-const UPLOAD_DESCRIPTION = "Dismiss the file chooser a page opened. AgentSwitch's shared browser uploads no files for agents: ask the user to choose the file in AgentSwitch (they can take the tab over).";
+/** What an upload tool's description says besides Playwright MCP's own. */
+const UPLOAD_NOTE = `In AgentSwitch's shared browser \`paths\` are absolute paths of files on this Mac, at most ${MAX_UPLOAD_FILES}. ${UPLOAD_RULE}`;
 
 type ListedTool = { name?: unknown; description?: unknown; inputSchema?: { properties?: Record<string, unknown>; required?: unknown } & Record<string, unknown> } & Record<string, unknown>;
 
 /** Playwright MCP's `tools/list` answer as a model with no gate in front reads it (the gate makes the same cuts for
  *  its model: BOUNDARY.md 工具与参数): without the tools this module refuses whatever they are given, without the
- *  parameters that name files — a call with one is refused, so the model is not offered it — and the upload tool
- *  described as the one thing it does here. Anything else of the answer is as it came. */
+ *  parameters that name files — a call with one is refused, so the model is not offered it — but the upload tools'
+ *  `paths`, with the rule for them in their descriptions. Anything else of the answer is as it came. */
 export function directTools(answer: JsonRpcMessage): JsonRpcMessage {
   const result = answer.result as ({ tools?: unknown } & Record<string, unknown>) | undefined;
   if (!result || !Array.isArray(result.tools)) return answer;
   const tools = (result.tools as ListedTool[]).filter((tool) => !(typeof tool?.name === "string" && NOT_LISTED.has(tool.name))).map((tool) => {
     const schema = tool?.inputSchema;
-    const named = schema?.properties && FILE_PARAMETERS.some((p) => p in schema.properties!);
-    if (!named && tool?.name !== UPLOAD_TOOL) return tool;
-    const properties = Object.fromEntries(Object.entries(schema?.properties ?? {}).filter(([key]) => !FILE_PARAMETERS.includes(key)));
-    const required = Array.isArray(schema?.required) ? (schema.required as unknown[]).filter((key) => !FILE_PARAMETERS.includes(String(key))) : schema?.required;
+    const uploads = typeof tool?.name === "string" && UPLOAD_TOOLS.has(tool.name);
+    const cut = FILE_PARAMETERS.filter((p) => !(uploads && p === "paths"));
+    const named = schema?.properties && cut.some((p) => p in schema.properties!);
+    if (!named && !uploads) return tool;
+    const properties = Object.fromEntries(Object.entries(schema?.properties ?? {}).filter(([key]) => !cut.includes(key)));
+    const required = Array.isArray(schema?.required) ? (schema.required as unknown[]).filter((key) => !cut.includes(String(key))) : schema?.required;
     return {
       ...tool,
-      ...(tool.name === UPLOAD_TOOL ? { description: UPLOAD_DESCRIPTION } : {}),
+      ...(uploads ? { description: `${typeof tool.description === "string" ? `${tool.description.replace(/\.\s*$/, "")}. ` : ""}${UPLOAD_NOTE}` } : {}),
       ...(schema ? { inputSchema: { ...schema, properties, ...(required !== undefined ? { required } : {}) } } : {}),
     };
   });

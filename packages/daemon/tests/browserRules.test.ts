@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { DAEMON_CONFIG_DIR, defaultProtected } from "../src/executors/protected.js";
-import { AGENT_FILE_REFUSAL, AGENTSWITCH_DIRS, auditUrl, checkLocalFile, checkUrl, CREDENTIAL_DIRS, CREDENTIAL_NAMES, isLoopbackAddress, isLoopbackHost, OWN_PORT_REFUSAL, placeOf, targetUrl, tilde, type FileRules } from "../src/browser/rules.js";
+import { AGENT_FILE_REFUSAL, AGENTSWITCH_DIRS, auditUrl, checkLocalFile, checkUploadFile, checkUrl, CREDENTIAL_DIRS, CREDENTIAL_NAMES, isLoopbackAddress, isLoopbackHost, OWN_PORT_REFUSAL, placeOf, targetUrl, tilde, type FileRules } from "../src/browser/rules.js";
 import { BrowserError, YOU, type TabOwner } from "../src/browser/types.js";
 
 const AGENT: TabOwner = { kind: "terminal", id: "t1", label: "codex · AgentSwitch" };
@@ -51,6 +51,42 @@ beforeAll(() => {
   rules = { protected: defaultProtected({ HOME: home, AGENTSWITCH_HOME: asHome, SECRET_GATE_HOME: gateHome, SECRET_GATE_PUBLIC: join(home, "gate-public") }), home, ownFolders: [asHome, gateHome] };
 });
 
+describe("files a terminal's agent may hand a page (2026-10-11)", () => {
+  it("takes an ordinary file, and says where it really is, the name the page sees and how the screens show it", () => {
+    symlinkSync(join(site, "index.html"), join(site, "latest.html"));
+    expect(checkUploadFile(join(site, "index.html"), rules)).toEqual({ real: join(site, "index.html"), name: "index.html", shown: "~/Projects/site/index.html" });
+    expect(checkUploadFile(join(site, "latest.html"), rules)).toEqual({ real: join(site, "index.html"), name: "latest.html", shown: "~/Projects/site/latest.html" });
+    // AgentSwitch's work folders are open to a person and so to an upload.
+    expect(checkUploadFile(join(asHome, "artifacts", "report.html"), rules).name).toBe("report.html");
+  });
+
+  it("refuses what a person could not open here, by name, by place and through a link; and anything but a file", () => {
+    const refused: [string, string, string][] = [
+      [join(asHome, "local-token"), "forbidden", "AgentSwitch 自己的数据"],
+      [join(asHome, "agentswitch.db"), "forbidden", "AgentSwitch 自己的数据"],
+      [join(asHome, "browser-profiles", "main", "Cookies"), "forbidden", "AgentSwitch 自己的数据"],
+      [join(site, "data", "local-token"), "forbidden", "AgentSwitch 自己的数据"],
+      [join(gateHome, "keys", "default.priv"), "forbidden", "AgentSwitch 自己的数据"],
+      [join(home, ".ssh", "config"), "forbidden", "凭据目录"],
+      [join(site, "innocent.html"), "forbidden", "凭据目录"],
+      [join(home, ".config", "gh", "hosts.yml"), "forbidden", "凭据目录"],
+      [join(site, ".env"), "forbidden", "凭据文件"],
+      [join(site, "auth.json"), "forbidden", "凭据文件"],
+      [site, "invalid", "文件夹"],
+      [join(site, "nothing-here.png"), "not_found", "文件不存在"],
+      ["index.html", "invalid", "绝对路径"],
+    ];
+    for (const [path, code, why] of refused) {
+      const err = refusal(() => checkUploadFile(path, rules));
+      expect(err.code, path).toBe(code);
+      expect(err.message, path).toContain(why);
+      // Said as what it is: not handed to a page (a person's path is "not opened").
+      if (code === "forbidden") expect(err.message, path).toMatch(/，不交给网页。$/);
+    }
+    expect(refusal(() => checkLocalFile(join(site, ".env"), rules)).message).toBe("~/Projects/site/.env 属于凭据文件（.env、私钥、证书、令牌配置等），不在浏览器中打开。");
+  });
+});
+
 describe("files a person may open", () => {
   it("allows an ordinary file and folder, and the public half of a key", () => {
     expect(checkLocalFile(join(site, "index.html"), rules)).toBe(join(site, "index.html"));
@@ -61,13 +97,14 @@ describe("files a person may open", () => {
 
   it("refuses credential file names wherever they are, before looking whether they exist", () => {
     for (const name of [".env", ".env.local", ".ENV", "server.pem", "tls.key", "cert.p12", "cert.pfx", "id_rsa", "id_ed25519", "id_ecdsa_sk",
-      ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".pgpass", "credentials", "credentials.json"]) {
+      ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".pgpass", "credentials", "credentials.json", ".credentials.json", "auth.json", "AUTH.JSON"]) {
       const err = refusal(() => checkLocalFile(join(site, name), rules));
       expect(err.code, name).toBe("forbidden");
       expect(err.message).toContain("属于凭据文件");
       expect(err.message).toContain("~/Projects/site/");
     }
     expect(CREDENTIAL_NAMES.some((re) => re.test("notes.md"))).toBe(false);
+    for (const name of ["author.json", "oauth.json", "auth.json.md"]) expect(CREDENTIAL_NAMES.some((re) => re.test(name)), name).toBe(false);
   });
 
   it("refuses the credential folders: dot-folders anywhere, the others under home, whatever the case", () => {

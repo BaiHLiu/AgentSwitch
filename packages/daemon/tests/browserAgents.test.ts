@@ -4,12 +4,12 @@
  *  the CSS size for a call that points at the page or takes its picture, the bridge's own refusals, `browser_close`,
  *  and what the overlay never shows (the typed text). */
 
-import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { BrowserAgents, bridgeCommand, describeCall, FILES_REFUSED, HELD_LOGS_REFUSED, RESIZE_REFUSED, terminalOwner, USER_HOLDS_TAB, type AgentConnection, type EngineConnection, type EngineOptions, type JsonRpcMessage, directTools, withoutFileLinks } from "../src/browser/agents.js";
+import { BrowserAgents, bridgeCommand, describeCall, FILES_REFUSED, HELD_LOGS_REFUSED, NOT_UPLOADED, RESIZE_REFUSED, terminalOwner, USER_HOLDS_TAB, type AgentConnection, type EngineConnection, type EngineOptions, type JsonRpcMessage, directTools, withoutFileLinks } from "../src/browser/agents.js";
 import { BrowserAudit } from "../src/browser/audit.js";
 import { BrowserHost } from "../src/browser/host.js";
 import { YOU, type TabOwner } from "../src/browser/types.js";
@@ -505,8 +505,10 @@ describe("the bridge's own refusals", () => {
     const refused: [string, Record<string, unknown>, string][] = [
       ["browser_take_screenshot", { filename: "/tmp/x.png" }, FILES_REFUSED],
       ["browser_snapshot", { filename: "snap.yml" }, FILES_REFUSED],
-      ["browser_file_upload", { paths: ["/Users/me/.ssh/id_ed25519"] }, FILES_REFUSED],
-      ["browser_drop", { target: "e1", paths: ["/etc/hosts"] }, FILES_REFUSED],
+      ["browser_file_upload", { paths: ["/Users/me/.ssh/id_ed25519"] }, NOT_UPLOADED],
+      ["browser_drop", { target: "e1", paths: ["hosts"] }, NOT_UPLOADED],
+      ["browser_click", { target: "e1", paths: ["/etc/hosts"] }, FILES_REFUSED],
+      ["browser_file_upload", { paths: [], filename: "x" }, FILES_REFUSED],
       ["browser_run_code_unsafe", { filename: "code.js" }, FILES_REFUSED],
       ["browser_resize", { width: 300, height: 300 }, RESIZE_REFUSED],
       ["browser_navigate", { url: "file:///etc/passwd" }, "Not opened"],
@@ -552,6 +554,11 @@ describe("the overlay", () => {
     expect(describeCall("browser_navigate", { url: "https://www.github.com/acme?token=abc" })).toBe("open github.com");
     expect(describeCall("browser_type", { element: "enc:v1:AAAAAAAAAAAAAAAAAAAAAAAA field" })).toBe('type into "[ciphertext] field"');
     expect(describeCall("browser_click", { element: "x".repeat(200) })!.length).toBeLessThan(80);
+    expect(describeCall("browser_file_upload", { paths: ["/Users/me/Desktop/shot.png"] })).toBe('upload "shot.png"');
+    expect(describeCall("browser_file_upload", { paths: ["/a/1.png", "/a/2.png", "/a/3.png"] })).toBe("upload 3 files");
+    expect(describeCall("browser_file_upload", {})).toBe("dismiss the file chooser");
+    expect(describeCall("browser_drop", { element: "Drop zone", target: "e9", paths: ["/a/1.png"] })).toBe('drop "1.png" on "Drop zone"');
+    expect(describeCall("browser_drop", { target: "e9", data: { "text/plain": "hunter2-plaintext" } })).toBe("drop on the page");
     expect(describeCall("browser_evaluate", { function: "() => location.href" })).toBeNull();
     expect(describeCall("browser_run_code_unsafe", { code: "async (page) => 1" })).toBeNull();
     for (const tool of ["browser_type", "browser_fill_form", "browser_select_option"]) {
@@ -566,14 +573,118 @@ describe("a session with no gate in front (a terminal's agent, 2026-10-08)", () 
       { name: "browser_navigate", inputSchema: { type: "object", properties: { url: {} }, required: ["url"] } },
       { name: "browser_take_screenshot", inputSchema: { type: "object", properties: { type: {}, filename: {}, scale: {} }, required: ["scale"] } },
       { name: "browser_file_upload", description: "Upload one or multiple files", inputSchema: { type: "object", properties: { paths: {} } } },
+      { name: "browser_drop", description: "Drop files onto an element.", inputSchema: { type: "object", properties: { target: {}, paths: {}, data: {}, filename: {} }, required: ["target"] } },
       { name: "browser_resize" }, { name: "browser_evaluate" }, { name: "browser_run_code_unsafe" },
     ] } });
     const tools = (listed.result as { tools: { name: string; description?: string; inputSchema?: { properties?: object; required?: string[] } }[] }).tools;
-    expect(tools.map((t) => t.name)).toEqual(["browser_navigate", "browser_take_screenshot", "browser_file_upload"]);
+    expect(tools.map((t) => t.name)).toEqual(["browser_navigate", "browser_take_screenshot", "browser_file_upload", "browser_drop"]);
     expect(Object.keys(tools[1]!.inputSchema!.properties!)).toEqual(["type", "scale"]);
     expect(tools[1]!.inputSchema!.required).toEqual(["scale"]);
-    expect(tools[2]!.description).toContain("Dismiss the file chooser");
-    expect(Object.keys(tools[2]!.inputSchema!.properties!)).toEqual([]);
+    // The upload tools keep the files they are for, and say which files a page may have.
+    expect(tools[2]!.description).toMatch(/^Upload one or multiple files\. In AgentSwitch's shared browser .*no credentials/);
+    expect(Object.keys(tools[2]!.inputSchema!.properties!)).toEqual(["paths"]);
+    expect(tools[3]!.description).toMatch(/^Drop files onto an element\. In AgentSwitch's shared browser/);
+    expect(Object.keys(tools[3]!.inputSchema!.properties!)).toEqual(["target", "paths", "data"]);
+    expect(tools[3]!.inputSchema!.required).toEqual(["target"]);
+  });
+
+  it("uploads a file a page may have: checked, handed over as a copy in the connection's folder, audited (2026-10-11)", async () => {
+    const { agents, engines, root, auditLines } = setup();
+    writeFileSync(join(root, "shot.png"), "picture");
+    symlinkSync(join(root, "shot.png"), join(root, "latest.png"));
+    const c = await connect(agents, agents.mint(CODEX));
+    await c.call("browser_navigate", { url: "https://lens.example/upload?session=abc" });
+    const answer = await c.call("browser_file_upload", { paths: [join(root, "shot.png"), join(root, "latest.png")] });
+    expect(isError(answer)).toBe(false);
+    const given = ((engines[0]!.received.at(-1)!.params as { arguments: { paths: string[] } }).arguments.paths);
+    // Each under the connection's own folder, under the name it was asked by, with what was in it.
+    expect(given.map((p) => basename(p))).toEqual(["shot.png", "latest.png"]);
+    for (const p of given) {
+      expect(p.startsWith(join(engines[0]!.opts.outputDir, "uploads") + sep)).toBe(true);
+      expect(readFileSync(p, "utf8")).toBe("picture");
+      expect(lstatSync(p).isFile()).toBe(true);
+    }
+    // Playwright MCP's own files went with the call; the upload stays for the page to read.
+    expect(readdirSync(engines[0]!.opts.outputDir)).toEqual(["uploads"]);
+    expect(auditLines().filter((l) => l.action === "upload").map((l) => [l.via, l.detail])).toEqual([
+      ["agent", { owner: "terminal:t1", site: "about:", files: ["~/shot.png", "~/latest.png"] }],
+    ]);
+    // A drop's files go the same way; one with only data has no file to check.
+    expect(isError(await c.call("browser_drop", { target: "e12", paths: [join(root, "shot.png")] }))).toBe(false);
+    expect(isError(await c.call("browser_drop", { target: "e12", data: { "text/plain": "hello" } }))).toBe(false);
+    // Dismissing the chooser is as before.
+    expect(isError(await c.call("browser_file_upload"))).toBe(false);
+    expect(isError(await c.call("browser_file_upload", { paths: [] }))).toBe(false);
+    expect(auditLines().filter((l) => l.action === "upload")).toHaveLength(2);
+  });
+
+  it("hands a page no credential, none of AgentSwitch's data, no folder, nothing missing — and Playwright MCP is not asked", async () => {
+    const { agents, engines, root, auditLines } = setup();
+    mkdirSync(join(root, "photos"));
+    mkdirSync(join(root, ".ssh"));
+    for (const name of [".env", "auth.json", ".credentials.json", "server.pem", join(".ssh", "known_hosts")]) writeFileSync(join(root, name), "secret");
+    writeFileSync(join(root, "notes.txt"), "fine");
+    symlinkSync(join(root, ".env"), join(root, "innocent.txt"));
+    const c = await connect(agents, agents.mint(CODEX));
+    const refused: [unknown, string][] = [
+      [[join(root, ".env")], "属于凭据文件"],
+      [[join(root, "auth.json")], "属于凭据文件"],
+      [[join(root, ".credentials.json")], "属于凭据文件"],
+      [[join(root, "server.pem")], "属于凭据文件"],
+      [[join(root, ".ssh", "known_hosts")], "位于凭据目录中"],
+      [[join(root, "innocent.txt")], "属于凭据文件"],
+      [[join(root, "browser", "sessions")], "文件夹"],
+      [[join(root, "photos")], "文件夹"],
+      [[join(root, "missing.png")], "文件不存在"],
+      [["notes.txt"], "绝对路径"],
+      [[join(root, "notes.txt"), join(root, ".env")], "属于凭据文件"],
+      [join(root, "notes.txt"), "must be a list"],
+      [[7], "must be a list"],
+      [Array.from({ length: 17 }, () => join(root, "notes.txt")), "at most 16 files"],
+    ];
+    for (const [paths, why] of refused) {
+      const answer = await c.call("browser_file_upload", { paths });
+      expect(isError(answer), String(paths)).toBe(true);
+      expect(text(answer), String(paths)).toContain(NOT_UPLOADED);
+      expect(text(answer), String(paths)).toContain(why);
+    }
+    expect(text(await c.call("browser_file_upload", { paths: [join(root, ".env")] }))).toContain("no credentials");
+    expect(engines[0]!.calls()).toEqual([]);
+    expect(auditLines().filter((l) => l.action === "upload")).toEqual([]);
+  });
+
+  it("keeps a file handed to a page only so long, and takes it away at a later call", async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "agentswitch-agents-")));
+    const driver = new FakeDriver();
+    const host = new BrowserHost({ driver, profileDir: join(root, "profile"), files: { protected: { roots: [], exempt: [] }, home: root }, ownPorts: () => [4711], log: () => undefined, mac: true });
+    hosts.push(host);
+    const engines: FakeConnection[] = [];
+    const agents = new BrowserAgents({ host, dir: join(root, "browser"), uploadKeepMs: 40, log: () => undefined,
+      engine: async (opts) => { const c = new FakeConnection(opts, host); engines.push(c); return c; } });
+    writeFileSync(join(root, "a.txt"), "a");
+    const c = await connect(agents, agents.mint(CODEX));
+    await c.call("browser_file_upload", { paths: [join(root, "a.txt")] });
+    const uploads = join(engines[0]!.opts.outputDir, "uploads");
+    expect(readdirSync(uploads)).toHaveLength(1);
+    await new Promise((r) => setTimeout(r, 60));
+    await c.call("browser_snapshot");
+    expect(readdirSync(uploads)).toEqual([]);
+    // The connection's folder goes with the connection, uploads and all.
+    await c.call("browser_file_upload", { paths: [join(root, "a.txt")] });
+    await c.conn.close();
+    expect(existsSync(engines[0]!.opts.outputDir)).toBe(false);
+  });
+
+  it("behind the gate nothing is uploaded: the gate refuses it, and so does the bridge", async () => {
+    const { agents, engines, root } = setup();
+    writeFileSync(join(root, "shot.png"), "picture");
+    const c = await connect(agents, agents.mint(CODEX, { gate: true }));
+    for (const tool of ["browser_file_upload", "browser_drop"]) {
+      const answer = await c.call(tool, { target: "e1", paths: [join(root, "shot.png")] });
+      expect(isError(answer)).toBe(true);
+      expect(text(answer)).toContain(FILES_REFUSED);
+    }
+    expect(engines[0]!.calls()).toEqual([]);
   });
 
   it("takes the links to Playwright MCP's own files out of an answer (as the real program writes them)", () => {

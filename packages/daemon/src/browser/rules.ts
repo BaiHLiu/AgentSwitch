@@ -7,7 +7,7 @@
  *  API answers 403 with the reason) and on every request the browser makes (host.ts's guard), so a page cannot link or
  *  embed its way to a refused file. */
 
-import { realpathSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isWithin, lineage, withoutDataVolume } from "../core/paths.js";
@@ -23,13 +23,13 @@ export const CREDENTIAL_DIRS: readonly string[] = [
 
 /** File names that are credentials wherever they are: environment files, private keys and certificates (the gate's
  *  `*.priv` too), SSH keys (not their `.pub` halves), the package managers' and git's token files, cloud credential
- *  files. */
+ *  files, and the agents' own logins (Claude Code's `.credentials.json`, Codex's and OpenCode's `auth.json`). */
 export const CREDENTIAL_NAMES: readonly RegExp[] = [
   /^\.env$/i, /^\.env\..+$/i,
   /\.pem$/i, /\.key$/i, /\.p12$/i, /\.pfx$/i, /\.priv$/i,
   /^id_[a-z0-9_-]+$/i,
   /^\.netrc$/i, /^\.npmrc$/i, /^\.pypirc$/i, /^\.git-credentials$/i, /^\.pgpass$/i,
-  /^credentials/i,
+  /^\.?credentials/i, /^auth\.json$/i,
 ];
 
 /** AgentSwitch's and the gate's folder names, refused wherever they are (a copy, a backup) besides the real ones. */
@@ -50,10 +50,13 @@ const UNKNOWN_ADDRESS = "无法识别的地址。";
 
 type Denied = "agentswitch" | "credential-dir" | "credential-file";
 const DENIED_TEXT: Record<Denied, string> = {
-  "agentswitch": "属于 AgentSwitch 自己的数据或凭据网关，不在浏览器中打开。",
-  "credential-dir": "位于凭据目录中（SSH、云服务、GPG、钥匙串等），不在浏览器中打开。",
-  "credential-file": "属于凭据文件（.env、私钥、证书、令牌配置等），不在浏览器中打开。",
+  "agentswitch": "属于 AgentSwitch 自己的数据或凭据网关",
+  "credential-dir": "位于凭据目录中（SSH、云服务、GPG、钥匙串等）",
+  "credential-file": "属于凭据文件（.env、私钥、证书、令牌配置等）",
 };
+/** What is not done with a refused file: opened (a person's path), or handed to a page (an agent's upload). */
+const NOT_OPENED = "不在浏览器中打开";
+const NOT_HANDED = "不交给网页";
 
 /** The Mac's disk ignores case, so every comparison does too. */
 const under = (p: string, root: string): boolean => {
@@ -98,17 +101,40 @@ function deniedAs(path: string, rules: FileRules): Denied | null {
 /** The path a person may open (absolute, resolved, as asked), or a refusal: refused as asked, missing, or refused once
  *  its symlinks are followed (and the data volume's prefix taken off). A folder is allowed (Chrome lists it; opening an
  *  entry is checked again). */
-export function checkLocalFile(path: string, rules: FileRules): string {
+export function checkLocalFile(path: string, rules: FileRules, refusedAs: string = NOT_OPENED): string {
   if (!isAbsolute(path)) throw new BrowserError("invalid", "路径须为绝对路径。");
   const asked = resolve(path);
   const shown = tilde(asked, rules.home);
   const first = deniedAs(asked, rules);
-  if (first) throw new BrowserError("forbidden", `${shown} ${DENIED_TEXT[first]}`);
+  if (first) throw new BrowserError("forbidden", `${shown} ${DENIED_TEXT[first]}，${refusedAs}。`);
   let real: string;
   try { real = withoutDataVolume(realpathSync.native(asked)); } catch { throw new BrowserError("not_found", `文件不存在：${shown}`); }
   const second = deniedAs(real, rules);
-  if (second) throw new BrowserError("forbidden", `${shown}（实际位置 ${tilde(real, rules.home)}）${DENIED_TEXT[second]}`);
+  if (second) throw new BrowserError("forbidden", `${shown}（实际位置 ${tilde(real, rules.home)}）${DENIED_TEXT[second]}，${refusedAs}。`);
   return asked;
+}
+
+/** No larger file is handed to a page for an agent. */
+export const UPLOAD_MAX_BYTES = 1024 ** 3;
+
+/** A file a terminal's agent may hand a page (docs/browser-v0.md §5 上传): one a person may open here by its path —
+ *  none of AgentSwitch's data, no credentials — and a file: a folder's entries would go unchecked. Returns where it
+ *  really is (what is read), the name the page is to see, and the path as the screens and the audit show it. */
+export function checkUploadFile(path: string, rules: FileRules): { readonly real: string; readonly name: string; readonly shown: string } {
+  const asked = checkLocalFile(path, rules, NOT_HANDED);
+  const shown = tilde(asked, rules.home);
+  let real: string;
+  let size: number;
+  let file: boolean;
+  try {
+    real = realpathSync.native(asked);
+    const stat = statSync(real);
+    size = stat.size;
+    file = stat.isFile();
+  } catch { throw new BrowserError("not_found", `文件不存在：${shown}`); }
+  if (!file) throw new BrowserError("invalid", `只能上传文件，不能上传文件夹：${shown}`);
+  if (size > UPLOAD_MAX_BYTES) throw new BrowserError("invalid", `文件超过 1 GiB，不上传：${shown}`);
+  return { real, name: basename(asked), shown };
 }
 
 /** A host name as compared: lower case, without IPv6 brackets or the root's trailing dot (`localhost.`). */

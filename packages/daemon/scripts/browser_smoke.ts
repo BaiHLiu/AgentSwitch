@@ -12,8 +12,9 @@
  *  A terminal's agent (2026-10-08, docs/profiles-v0.md §8: no gate in front; `BROWSER_SMOKE_ONLY=direct` runs this part
  *  alone): an MCP client speaks to the bridge itself. Its list is Playwright MCP's without the tools and parameters the
  *  bridge refuses; navigate, snapshot (the page as it is), type, click; a screenshot comes as a picture; no code, no
- *  page script, no file named; a held tab's call waits; nothing left in Playwright MCP's folder and no link to it in an
- *  answer.
+ *  page script, no file written; a held tab's call waits; nothing left in Playwright MCP's folder and no link to it in
+ *  an answer. An upload (2026-10-11): a file given to a page's chooser arrives with its name and content, as a copy
+ *  under the connection's folder, audited; a credential is refused and the chooser stays to be dismissed.
  *
  *  Then the agent bridge (step 3), through the real gate (the repo's secret-gate, with a throw-away key in the temporary
  *  folder and no gate service): an MCP client speaks to `secret-gate browser -- <bridge>`, the bridge to a local
@@ -37,7 +38,7 @@
  *  and leave the page 1280×800. */
 
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -497,7 +498,7 @@ async function directRoundTrip(): Promise<void> {
     res.end(`<!doctype html><title>Portal</title><style>body{margin:0}</style>
 <button id="m" onclick="document.title='merged'">Merge pull request</button>
 <input id="user" type="text" aria-label="User" oninput="document.title='user:'+this.value">
-<input id="file" type="file" aria-label="Attachment">
+<input id="file" type="file" aria-label="Attachment" onchange="this.files[0].text().then((t) => { document.title = 'file:' + this.files[0].name + ':' + t; })">
 <script>console.log('page ready')</script>`);
   });
   const sitePort = await new Promise<number>((r) => site.listen(0, "127.0.0.1", () => r((site.address() as AddressInfo).port)));
@@ -528,9 +529,11 @@ async function directRoundTrip(): Promise<void> {
     check(names.includes("browser_navigate") && names.includes("browser_take_screenshot") && names.includes("browser_snapshot") && names.includes("browser_click"), `the list is Playwright MCP's (${names.length} tools)`);
     check(!names.some((n) => ["browser_run_code_unsafe", "browser_evaluate", "browser_resize"].includes(n)) && !names.some((n) => n.startsWith("secret_")),
       "without the code tools and resize (refused here), and with none of the gate's");
-    const withFiles = listed.filter((t) => ["filename", "paths"].some((p) => p in (t.inputSchema?.properties ?? {}))).map((t) => t.name);
-    check(withFiles.length === 0, `no tool offers a parameter that names a file (${withFiles.join(", ") || "none"})`);
-    check(/Dismiss the file chooser/.test(listed.find((t) => t.name === "browser_file_upload")?.description ?? ""), "the upload tool says what it does here");
+    const writes = listed.filter((t) => "filename" in (t.inputSchema?.properties ?? {})).map((t) => t.name);
+    const reads = listed.filter((t) => "paths" in (t.inputSchema?.properties ?? {})).map((t) => t.name);
+    check(writes.length === 0, `no tool offers a file to write to (${writes.join(", ") || "none"})`);
+    check(reads.includes("browser_file_upload") && reads.every((n) => ["browser_file_upload", "browser_drop"].includes(n)), `only the upload tools take files (${reads.join(", ")})`);
+    check(/no credentials/.test(listed.find((t) => t.name === "browser_file_upload")?.description ?? ""), "the upload tool says which files a page may have");
 
     const nav = await mcp.call("browser_navigate", { url: siteUrl });
     show("navigate", nav.text);
@@ -578,9 +581,9 @@ async function directRoundTrip(): Promise<void> {
     const evaluated = await mcp.call("browser_evaluate", { function: "() => location.href" });
     check(evaluated.error && evaluated.text.includes("no page scripts"), "a page script is refused");
     const named = await mcp.call("browser_take_screenshot", { scale: "css", filename: join(userHome, "shot.png") });
-    check(named.error && named.text.includes("no files") && !existsSync(join(userHome, "shot.png")), "a screenshot to a named file is refused and not written");
+    check(named.error && named.text.includes("writes no files") && !existsSync(join(userHome, "shot.png")), "a screenshot to a named file is refused and not written");
     const uploaded = await mcp.call("browser_file_upload", { paths: [join(userHome, ".ssh", "id_ed25519")] });
-    check(uploaded.error && uploaded.text.includes("no files"), "an upload by path is refused");
+    check(uploaded.error && uploaded.text.includes("Not uploaded") && uploaded.text.includes("no credentials"), `a key is not uploaded (${uploaded.text.replace(/\s+/g, " ").slice(0, 110)})`);
     const resized = await mcp.call("browser_resize", { width: 300, height: 300 });
     check(resized.error && resized.text.includes("browser_resize is not available"), "resizing is refused");
     const file = await mcp.call("browser_navigate", { url: pathToFileURL(join(userHome, "site", "index.html")).href });
@@ -594,7 +597,26 @@ async function directRoundTrip(): Promise<void> {
       const dismissed = await mcp.call("browser_file_upload", {});
       show("dismissed", dismissed.text);
       check(!dismissed.error && !(await mcp.call("browser_snapshot")).error, `a file chooser is dismissed and the tab works on (${dismissed.text.replace(/\s+/g, " ").slice(0, 90)})`);
-    } else skipped("a file chooser is dismissed (no file button in the snapshot)");
+
+      // An upload (2026-10-11): the chooser gets a file a page may have — as a copy, under its own name.
+      mkdirSync(join(userHome, "site"), { recursive: true });
+      writeFileSync(join(userHome, "site", "notes.txt"), "hello upload");
+      writeFileSync(join(userHome, "site", ".env"), "TOKEN=plaintext");
+      await mcp.call("browser_click", { target: fileRef, element: "Attachment" });
+      const secret = await mcp.call("browser_file_upload", { paths: [join(userHome, "site", ".env")] });
+      check(secret.error && secret.text.includes("Not uploaded"), `a credential file is refused while the chooser waits (${secret.text.replace(/\s+/g, " ").slice(0, 110)})`);
+      const given = await mcp.call("browser_file_upload", { paths: [join(userHome, "site", "notes.txt")] });
+      show("upload", given.text);
+      check(!given.error, `a file is given to the page's chooser (${given.text.replace(/\s+/g, " ").slice(0, 110)})`);
+      await until(() => host.get(tab.id)?.title === "file:notes.txt:hello upload", "the page reads it under its name, with what is in it");
+      check(host.get(tab.id)?.action?.description === 'upload "notes.txt"', `the overlay says what was uploaded (${host.get(tab.id)?.action?.description})`);
+      check(!given.text.includes(agentsDir) && !given.text.includes(bhome), "the upload's answer points at no file of the service's");
+      const kept = existsSync(agentsDir) ? readdirSync(agentsDir).flatMap((d) => readdirSync(join(agentsDir, d))) : [];
+      check(kept.length === 1 && kept[0] === "uploads", `only the copy handed to the page stays in the connection's folder (${kept.join(", ") || "nothing"})`);
+      const audited = readFileSync(join(bhome, "browser", "audit.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l) as { action: string; detail?: { files?: string[]; site?: string } }).filter((l) => l.action === "upload");
+      check(audited.length === 1 && audited[0]!.detail?.files?.[0] === "~/site/notes.txt" && audited[0]!.detail?.site === `http://127.0.0.1:${sitePort}/login`,
+        `the upload is audited: the file and the page's site (${JSON.stringify(audited.map((l) => l.detail))})`);
+    } else skipped("a file chooser is dismissed, an upload is given (no file button in the snapshot)");
 
     host.take(tab.id, "phone-1");
     const waited = Date.now();
