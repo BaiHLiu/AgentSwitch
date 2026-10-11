@@ -50,6 +50,16 @@ final class NativeTerminalView: TerminalView {
         super.mouseDown(with: event)
     }
 
+    /// macOS 15's key for a context menu (⌃↩ unless changed in System Settings): the screen has no menu to show from
+    /// the keyboard, and passed on to the views above it the list's row showed its own over the screen (2026-10-11,
+    /// user: 我的ctrl+enter打开的是这东西，立即发送的快捷键被吃了). While the screen has the keyboard the key is the
+    /// program's, as every other key is.
+    @available(macOS 15.0, *)
+    override func showContextMenuForSelection(_ sender: Any?) {
+        guard let event = NSApp.currentEvent, event.type == .keyDown, event.window === window else { return }
+        keyDown(with: event)
+    }
+
     // MARK: seen or not (docs/app-v0.md §4, 2026-10-03)
 
     /// The screen is seen: its window on screen (not covered entirely, not minimised, the app not hidden) and the
@@ -233,11 +243,19 @@ final class TerminalScreenController: NSObject {
     }
 
     /// A key for this screen: Shift+Enter is a new line by name (the service encodes it as the program asked), taken
-    /// from SwiftTerm; any key makes this window the one that sets the size.
+    /// from SwiftTerm; Control+Enter is handed to SwiftTerm here, before AppKit can make a context menu of it; any key
+    /// makes this window the one that sets the size.
     private func takes(_ event: NSEvent) -> Bool {
         guard let window = view.window, event.window === window, window.firstResponder === view else { return false }
         userActed()
         let mods = event.modifierFlags.intersection([.shift, .control, .option, .command])
+        // Return (or the keypad's Enter) with Control alone is a key of the program's own. macOS 15 takes ⌃↩ for the
+        // context menu of what is selected, which here was the list's row (NativeTerminalView.showContextMenuForSelection):
+        // the screen gets the key first and sends it as the program asked (`CSI 13;5u` under the kitty protocol).
+        if event.keyCode == 36 || event.keyCode == 76, mods == .control, !view.hasMarkedText() {
+            view.keyDown(with: event)
+            return true
+        }
         // Return with Shift alone, not while an input method composes (its Return picks the candidate).
         guard event.keyCode == 36, mods == .shift, !view.hasMarkedText() else { return false }
         namedKey("shift-enter")

@@ -268,6 +268,57 @@ enum TerminalProbe {
         picture("simple-terminal")
     }
 
+    /// `-probeKeys YES`: Control+Enter in the native screen is the program's key (2026-10-11, user: 我的ctrl+enter打开的
+    /// 是这东西，立即发送的快捷键被吃了). ↩, ⇧↩, ⌃↩ and the keypad's ⌃Enter typed with events of its own, each
+    /// followed by what the program's screen then holds (a stand-in that prints the bytes it gets shows them); then
+    /// macOS 15's context-menu action sent to the keyboard's holder, as its ⌃↩ shortcut sends it: a menu that opens is
+    /// named and put away.
+    private static func keys(_ screen: TerminalScreenController, window: NSWindow, say: (String) -> Void) async {
+        final class Opened: @unchecked Sendable { var menus: [String] = [] }
+        let opened = Opened()
+        let watch = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: nil) { note in
+            nonisolated(unsafe) let object = note.object
+            MainActor.assumeIsolated {
+                guard let menu = object as? NSMenu else { return }
+                opened.menus.append(menu.items.map(\.title).filter { !$0.isEmpty }.joined(separator: " / "))
+                menu.cancelTrackingWithoutAnimation()
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(watch) }
+        func pause(_ ms: Int) async { try? await Task.sleep(for: .milliseconds(ms)) }
+        func key(_ chars: String, _ code: UInt16, _ flags: NSEvent.ModifierFlags = []) {
+            for type in [NSEvent.EventType.keyDown, .keyUp] {
+                guard let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
+                                               windowNumber: window.windowNumber, context: nil, characters: chars,
+                                               charactersIgnoringModifiers: chars.lowercased(), isARepeat: false, keyCode: code) else { continue }
+                NSApp.postEvent(e, atStart: false)
+            }
+        }
+        /// The last rows of the program's screen with anything on them.
+        func rows(_ count: Int = 2) -> String {
+            let t = screen.view.getTerminal()
+            return (0..<t.rows).compactMap { row -> String? in
+                guard let line = t.getLine(row: row) else { return nil }
+                let text = String((0..<line.count).map { t.getCharacter(for: line[$0]) }).trimmingCharacters(in: .whitespaces.union(CharacterSet(charactersIn: "\0")))
+                return text.isEmpty ? nil : text
+            }.suffix(count).joined(separator: " ⏎ ")
+        }
+        window.makeKey()
+        window.makeFirstResponder(screen.view)
+        await pause(600)
+        say("keyboard: \(window.firstResponder === screen.view ? "the screen" : "not the screen") | kitty keys asked for \(!screen.view.getTerminal().keyboardEnhancementFlags.isEmpty) | screen: \(rows())")
+        for (name, code, flags) in [("↩", UInt16(36), NSEvent.ModifierFlags([])), ("⇧↩", 36, .shift), ("⌃↩", 36, .control), ("⌃Enter (keypad)", 76, .control)] {
+            key("\r", code, flags)
+            await pause(900)
+            say("\(name): menus opened \(opened.menus) | screen: \(rows(1))")
+        }
+        // The action itself, down the chain from the keyboard's holder as the system sends it (the probe's window is
+        // behind the others, where its shortcut is not taken).
+        _ = (window.firstResponder ?? window).tryToPerform(Selector(("showContextMenuForSelection:")), with: nil)
+        await pause(600)
+        say("the context-menu action: menus opened \(opened.menus) | screen: \(rows(1))")
+    }
+
     static func run(_ terminals: MainWindowController, into dir: URL) {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         var log: [String] = []
@@ -285,6 +336,10 @@ enum TerminalProbe {
             guard let screen, let window = terminals.window else { say("no window or screen"); exit(1) }
             if UserDefaults.standard.bool(forKey: "probeSimple") {
                 await simple(terminals, id: id, window: window, into: dir, say: say)
+                exit(0)
+            }
+            if UserDefaults.standard.bool(forKey: "probeKeys") {
+                await keys(screen, window: window, say: say)
                 exit(0)
             }
             say("shown \(screen.probeShown ?? "-") seq \(screen.probeSeq) frame \(NSStringFromRect(screen.view.frame)) hidden \(screen.view.isHidden) grid \(screen.view.getTerminal().cols)x\(screen.view.getTerminal().rows)")
