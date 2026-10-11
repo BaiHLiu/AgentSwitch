@@ -107,6 +107,8 @@ struct ComposeField: NSViewRepresentable {
         }
         if view.string != text, !view.hasMarkedText() {
             view.string = text
+            // Put in from outside (sent, another draft): what was typed before cannot be undone into this text.
+            coordinator.undo.removeAllActions()
             view.needsDisplay = true
             coordinator.measure()
         }
@@ -134,6 +136,10 @@ struct ComposeField: NSViewRepresentable {
         }
     }
 
+    static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
+        coordinator.undo.removeAllActions()
+    }
+
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: ComposeField
@@ -142,8 +148,14 @@ struct ComposeField: NSViewRepresentable {
         var replaced: UUID?
         /// The focus request last acted on; -1: the field takes the keyboard as it first shows.
         var focused = -1
+        /// The field's own undo, gone with the field. Left to the window's, its typing stays there after the field
+        /// is replaced (another terminal's reply box, the other view), and the next ⌘Z anywhere in the window calls the
+        /// freed text view: the app quit that way on 2026-10-11. ⌘Z here also never undoes another field's typing.
+        let undo = UndoManager()
 
         init(_ parent: ComposeField) { self.parent = parent }
+
+        func undoManager(for view: NSTextView) -> UndoManager? { undo }
 
         func textDidChange(_ notification: Notification) {
             guard let view else { return }

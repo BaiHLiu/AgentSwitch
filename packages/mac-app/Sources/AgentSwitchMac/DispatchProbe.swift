@@ -7,7 +7,10 @@ import AppKit
 /// window (the app is not made active), waits for the record, and writes `record.png`; `-probeTask <id>` also opens that
 /// task's page (`task.png`). `-probeCalls YES` then goes through every `DispatchService` call the page and the settings
 /// group make against the service — reads, a message sent, a question answered, an approval decided — and writes what
-/// came back to `calls.txt`, so the Core's decoding is checked against real responses. Nothing else of the app starts.
+/// came back to `calls.txt`, so the Core's decoding is checked against real responses. `-probeUndo YES` types into the
+/// input and presses ⌘Z and ⇧⌘Z, then sends and presses ⌘Z again (keys of its own; the window is not the key window, so
+/// the action each ⌘Z stands for is then sent down the responder chain by hand); what the input and the two undo stacks
+/// (its own, the window's) held after each goes to `undo.txt`. Nothing else of the app starts.
 @MainActor
 enum DispatchProbe {
     static var directory: URL? { UserDefaults.standard.string(forKey: "dispatchProbe").map { URL(fileURLWithPath: $0) } }
@@ -26,6 +29,10 @@ enum DispatchProbe {
                 try? await Task.sleep(for: .seconds(3))
                 shot(main, dir.appendingPathComponent("task.png"))
             }
+            if UserDefaults.standard.bool(forKey: "probeUndo") {
+                await undo(main, into: dir.appendingPathComponent("undo.txt"))
+                shot(main, dir.appendingPathComponent("undo.png"))
+            }
             if UserDefaults.standard.bool(forKey: "probeCalls") {
                 let lines = await calls(client)
                 try? lines.joined(separator: "\n").write(to: dir.appendingPathComponent("calls.txt"), atomically: true, encoding: .utf8)
@@ -41,6 +48,70 @@ enum DispatchProbe {
         guard let view = main.window?.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: rep)
         try? rep.representation(using: .png, properties: [:])?.write(to: file)
+    }
+
+    /// The input's ⌘Z: typing and ↩ are key events, ⌘Z a key event and then its action. None of what is typed may be
+    /// in the window's undo stack — typing left there outlives the field it was typed in (ComposeField.Coordinator.undo).
+    /// Written line by line: a run that dies on a key leaves what it saw before it.
+    private static func undo(_ main: MainWindowController, into file: URL) async {
+        var out: [String] = []
+        func say(_ line: String) {
+            out.append(line)
+            try? out.joined(separator: "\n").write(to: file, atomically: true, encoding: .utf8)
+        }
+        guard let window = main.window else { return say("no window") }
+        func pause(_ ms: Int) async { try? await Task.sleep(for: .milliseconds(ms)) }
+        func key(_ chars: String, _ code: UInt16, _ flags: NSEvent.ModifierFlags = []) {
+            for type in [NSEvent.EventType.keyDown, .keyUp] {
+                guard let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
+                                               windowNumber: window.windowNumber, context: nil, characters: chars,
+                                               charactersIgnoringModifiers: chars.lowercased(), isARepeat: false, keyCode: code) else { continue }
+                NSApp.postEvent(e, atStart: false)
+            }
+        }
+        window.makeKey()
+        await pause(500)
+        guard let field = window.firstResponder as? ComposeTextView else {
+            return say("the input does not have the keyboard: \(window.firstResponder.map { String(describing: type(of: $0)) } ?? "nobody") has it")
+        }
+        // The window's key handling sends the action to nobody in particular, which starts at the key window; the
+        // probe's window is behind the others and is not it, so the action then goes down the same chain by hand.
+        let byHand = NSApp.keyWindow !== window
+        func edit(_ chars: String, _ flags: NSEvent.ModifierFlags, _ action: String) async {
+            key(chars, 6, flags)
+            await pause(300)
+            if byHand { _ = (window.firstResponder ?? window).tryToPerform(Selector((action)), with: nil) }
+            await pause(300)
+        }
+        say("the input's undo is its own \(field.undoManager !== window.undoManager); "
+            + (byHand ? "the window is not the key window: after each ⌘Z its action is sent down the responder chain by hand" : "the window is the key window"))
+        func state(_ at: String) {
+            say("\(at): input '\(field.string)'\(field.hasMarkedText() ? " (being composed)" : "") "
+                + "its undo \(field.undoManager?.canUndo ?? false) redo \(field.undoManager?.canRedo ?? false) "
+                + "| the window's undo \(window.undoManager?.canUndo ?? false) redo \(window.undoManager?.canRedo ?? false)")
+        }
+        for (ch, code) in [("a", UInt16(0)), ("b", 11), ("c", 8)] { key(ch, code) }
+        await pause(500)
+        if field.string != "abc" {
+            // An input method took the keys: the letters are put in as it would put them in at the end.
+            state("typed by keys")
+            field.unmarkText()
+            field.string = ""
+            field.didChangeText()
+            field.undoManager?.removeAllActions()
+            field.insertText("abc", replacementRange: field.selectedRange())
+            await pause(300)
+        }
+        state("typed")
+        await edit("z", .command, "undo:")
+        state("⌘Z")
+        await edit("Z", [.command, .shift], "redo:")
+        state("⇧⌘Z")
+        key("\r", 36)
+        await pause(1500)
+        state("↩ (sent)")
+        await edit("z", .command, "undo:")
+        state("⌘Z after it was sent")
     }
 
     /// Each call once; a line per call: what it returned in brief, or the error.

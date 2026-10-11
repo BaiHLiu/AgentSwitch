@@ -167,17 +167,29 @@ struct SettingsTextEditor: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.text = $text
         guard let view = scroll.documentView as? NSTextView else { return }
-        // Only a change from outside (a load, the example, a revert) replaces what is in the view.
-        if view.string != text { view.string = text }
+        // Only a change from outside (a load, the example, a revert) replaces what is in the view; what was typed
+        // before cannot be undone into the new text.
+        if view.string != text {
+            view.string = text
+            context.coordinator.undo.removeAllActions()
+        }
         if view.isEditable != editable { view.isEditable = editable }
         view.textColor = editable ? .labelColor : .secondaryLabelColor
+    }
+
+    static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
+        coordinator.undo.removeAllActions()
     }
 
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var text: Binding<String>
+        /// The editor's own undo, gone with it (ComposeField.Coordinator.undo says why not the window's).
+        let undo = UndoManager()
 
         init(text: Binding<String>) { self.text = text }
+
+        func undoManager(for view: NSTextView) -> UndoManager? { undo }
 
         func textDidChange(_ notification: Notification) {
             guard let view = notification.object as? NSTextView else { return }
