@@ -16,6 +16,8 @@ const TELL_TIMEOUT_MS = 5_000;
 const ASK_TIMEOUT_MS = 4_000;
 /** How long one look at the nodes serves every screen that asks. */
 const STATUS_TTL_MS = 2_000;
+/** What a node said of its Live Activity is listed beside this node's own for this long after it was heard. */
+const LIVE_KEPT_MS = 10_000;
 /** A node's addresses, name and gate key are asked again this often while it answers. */
 const LEARN_EVERY_MS = 5 * 60_000;
 
@@ -37,6 +39,9 @@ export type Added =
   | { readonly ok: false; readonly status: 400 | 401 | 429 | 502; readonly error: string };
 
 /** `revoked`: it answers, and no longer knows this node's device (removed there). */
+/** What a node this one uses said its own Live Activity shows (`GET /live` there), as last heard. */
+export type NodeLive = { readonly id: string; readonly name: string; readonly at: number; readonly body: Record<string, unknown> };
+
 export type NodeStatus = PeerView & { readonly state: "online" | "offline" | "revoked"; readonly address: string | null; readonly waiting: number | null };
 
 export type NodesOptions = {
@@ -64,6 +69,12 @@ export class Nodes {
   private readonly ticketDevices = new Map<string, string>();
   private readonly learned = new Map<string, number>();
   private statusCache: { readonly at: number; readonly value: Promise<NodeStatus[]> } | null = null;
+  /** Each node's last answer to `GET /live`, by its id (docs/mesh-v0.md §5.2 跨节点的提醒). */
+  private readonly heard = new Map<string, NodeLive>();
+  /** When `lives` was last read, and whether the nodes are being looked at for it. */
+  private livesRead = 0;
+  private looking = false;
+  private closed = false;
 
   constructor(private readonly o: NodesOptions) {
     this.book = o.book;
@@ -207,16 +218,40 @@ export class Nodes {
     return value;
   }
 
+  /** What the nodes this one uses said last of their own Live Activity, without waiting for any of them: this node's
+   *  `GET /live` is read every second and must not hang on a node that is slow or gone. While it is being read the
+   *  nodes are looked at every `STATUS_TTL_MS` by themselves (`keepLooking`), so what is told is that fresh whenever
+   *  it is asked for; an answer older than `LIVE_KEPT_MS` is no longer told. */
+  lives(): NodeLive[] {
+    this.livesRead = this.now();
+    this.keepLooking();
+    const since = this.now() - LIVE_KEPT_MS;
+    return this.book.list().flatMap((peer) => { const live = this.heard.get(peer.id); return live && live.at >= since ? [live] : []; });
+  }
+
+  /** A look at the nodes now and again every `STATUS_TTL_MS`, for as long as `lives` was read lately; nothing while
+   *  this node uses no node, or nobody reads. */
+  private keepLooking(): void {
+    if (this.looking || !this.book.list().length) return;
+    this.looking = true;
+    const look = (): void => {
+      if (this.closed || this.now() - this.livesRead > LIVE_KEPT_MS || !this.book.list().length) { this.looking = false; return; }
+      void this.statuses().catch(() => undefined).finally(() => { setTimeout(look, STATUS_TTL_MS).unref(); });
+    };
+    look();
+  }
+
   private async status(peer: Peer): Promise<NodeStatus> {
     const host = await this.dialer.reach(reachable(peer)).catch(() => null);
-    if (!host) return { ...peerView(peer), state: "offline", address: null, waiting: null };
+    if (!host) { this.heard.delete(peer.id); return { ...peerView(peer), state: "offline", address: null, waiting: null }; }
     const target = { host, port: peer.port, fingerprint: peer.fingerprint };
     // What waits for the user there, by the count the node's own Live Activity shows; a node that does not offer it
     // (404) still says whether it knows this device.
     const live = await this.dialer.json(target, "GET", "/live", { token: peer.token, timeoutMs: ASK_TIMEOUT_MS }).catch(() => null);
-    if (!live) { this.dialer.forget(peer.fingerprint); return { ...peerView(peer), state: "offline", address: null, waiting: null }; }
-    if (live.status === 401) return { ...peerView(peer), state: "revoked", address: host, waiting: null };
+    if (!live) { this.dialer.forget(peer.fingerprint); this.heard.delete(peer.id); return { ...peerView(peer), state: "offline", address: null, waiting: null }; }
+    if (live.status === 401) { this.heard.delete(peer.id); return { ...peerView(peer), state: "revoked", address: host, waiting: null }; }
     const now = this.book.patch(peer.id, { last: host }) ?? peer;
+    if (live.status === 200) this.heard.set(peer.id, { id: peer.id, name: now.name, at: this.now(), body: live.body }); else this.heard.delete(peer.id);
     void this.learn(now, host);
     return { ...peerView(now), state: "online", address: host, waiting: live.status === 200 && typeof live.body.waiting === "number" ? live.body.waiting : null };
   }
@@ -242,6 +277,7 @@ export class Nodes {
   }
 
   close(): void {
+    this.closed = true;
     this.dialer.close();
   }
 }

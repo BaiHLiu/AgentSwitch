@@ -179,6 +179,42 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(p.receive(snap([], ended: [terminal], at: 30), at: t0, watchingTask: "t3"), .failed, "a terminal of the same id is not the task")
     }
 
+    /// docs/mesh-v0.md §5.2 跨节点的提醒 (2026-10-11, user: 我用其他mac的时候没有实时通知): this Mac's service lists what
+    /// waits on the nodes it uses and what ended there, each with its node. Two nodes may both have a task `t5`.
+    func testAnotherNodesRowsAndResultsAreToldApartByTheirNode() throws {
+        let json = """
+        {"rows":[
+          {"id":"t5","kind":"task","title":"这台的任务","step":"","startedAt":1790000000000,"needsYou":true,"ask":{"kind":"approval","id":"a1","tool":"Bash","target":"ls","where":"~"}},
+          {"id":"t5","kind":"task","title":"那台的任务","step":"","startedAt":1790000000000,"needsYou":true,"ask":{"kind":"approval","id":"a1","tool":"Bash","target":"ls","where":"~"},
+           "node":{"id":"7c1e5a90b3d2","name":"Studio"}}],
+         "running":0,"waiting":2,
+         "ended":[{"kind":"terminal","id":"k1","title":"那台的终端","line":"好了","ok":true,"at":1790000001000,"node":{"id":"7c1e5a90b3d2","name":"Studio"}}],
+         "open":0,"now":1790000002000}
+        """
+        let live = try JSONDecoder().decode(LiveSnapshot.self, from: Data(json.utf8))
+        XCTAssertNil(live.rows[0].node)
+        XCTAssertEqual(live.rows[1].node, LiveSnapshot.Node(id: "7c1e5a90b3d2", name: "Studio"))
+        XCTAssertEqual(live.rows.map(\.key), ["t5", "7c1e5a90b3d2/t5"], "the same id on two nodes is two rows")
+        XCTAssertEqual(live.ended[0].itemKey, "7c1e5a90b3d2/k1")
+        XCTAssertNotEqual(LivePresenter.askKey(live.rows[0]), LivePresenter.askKey(live.rows[1]), "and two requests")
+
+        // The other node's request sounds, though this Mac's of the same id was known already.
+        var p = LivePresenter()
+        let own = live.rows[0], theirs = live.rows[1]
+        p.receive(snap([own], at: 0), at: t0)
+        XCTAssertEqual(p.receive(snap([own, theirs], at: 1), at: t0.addingTimeInterval(1)), .needsYou)
+
+        // A terminal `k1` on screen in a window on this Mac is not that node's `k1`: its result is told. With the
+        // window on that node and the terminal on screen, it is not.
+        let theirEnd = LiveSnapshot.End(kind: .terminal, id: "k1", title: "k1", line: "好了", ok: true, at: t0.addingTimeInterval(9), node: theirs.node)
+        var here = LivePresenter()
+        here.receive(snap([], at: 8), at: t0.addingTimeInterval(8))
+        XCTAssertEqual(here.receive(snap([], ended: [theirEnd], at: 10), at: t0.addingTimeInterval(10), watching: ["k1"]), .done)
+        var there = LivePresenter()
+        there.receive(snap([], at: 8), at: t0.addingTimeInterval(8))
+        XCTAssertNil(there.receive(snap([], ended: [theirEnd], at: 10), at: t0.addingTimeInterval(10), watching: [LiveSnapshot.key("k1", on: "7c1e5a90b3d2")]))
+    }
+
     func testAResultNeverCoversARequest() {
         var p = LivePresenter()
         p.receive(snap([row("t1"), row("t2")], at: 0), at: t0)

@@ -76,13 +76,23 @@ final class MainWindowState {
     /// The node the window's pages are of; nil: this Mac's own service.
     private(set) var node: NodeStatus?
     var nodeId: String? { node?.id }
-    /// The pages the rail offers: Clash is this Mac's own.
-    var pages: [MainPage] { node == nil ? MainPage.allCases : MainPage.allCases.filter { $0 != .clash } }
+    /// What the node the window is on says it has (`GET /node`); empty until it has answered, and on this Mac.
+    private(set) var nodeHas: Set<String> = []
+    /// The pages the rail offers: every one on this Mac; on another node Clash only once that node has said it has it
+    /// (Clash Verge is there).
+    var pages: [MainPage] { node == nil ? MainPage.allCases : MainPage.allCases.filter { $0 != .clash || nodeHas.contains("clash") } }
+
+    /// The node on screen said what it has.
+    func nodeSaid(_ info: NodeInfo) {
+        let has = Set(info.has)
+        if has != nodeHas { nodeHas = has }
+    }
 
     /// The pages are another node's from now on: what the ones before put in the bars is gone with them.
     func use(node: NodeStatus?) {
         guard node?.id != self.node?.id else { return }
         self.node = node
+        nodeHas = []
         dispatchTitle = nil
         showsBack = false
         openTask = nil

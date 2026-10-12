@@ -28,6 +28,8 @@ enum LivePreview {
             ("options", presenter([s.options, s.downloads], now: now)),
             ("question", presenter([s.question], now: now)),
             ("more", presenter([s.terminal, s.question, s.bug, s.downloads, s.browse], now: now)),
+            // docs/mesh-v0.md §5.2 跨节点的提醒: a request on another node this Mac uses, beside this Mac's own.
+            ("node", presenter([s.onNode, s.terminal], now: now)),
             ("done", ended(s.done, now: now)),
             ("incomplete", ended(s.failed, now: now)),
         ]
@@ -73,6 +75,11 @@ enum LivePreview {
         var terminal: LiveSnapshot.Row {
             .init(id: "k1", kind: .terminal, title: "fix-login", step: "Bash: npm test -- --watch=false", model: "Claude Code", agent: "claude-code",
                   startedAt: now - 42, needsYou: true, ask: .decide(id: "p1", tool: "Bash", target: "npm test -- --watch=false", place: "~/Projects/web"), doing: "Allow?")
+        }
+        var onNode: LiveSnapshot.Row {
+            .init(id: "k9", kind: .terminal, title: "整理发布脚本", step: "Bash: ./release.sh --dry-run", model: "Codex", agent: "codex",
+                  startedAt: now - 17, needsYou: true, ask: .decide(id: "p9", tool: "Bash", target: "./release.sh --dry-run", place: "~/Projects/site"), doing: "Allow?",
+                  node: .init(id: "7c1e5a90b3d2", name: "Studio"))
         }
         var approval: LiveSnapshot.Row {
             .init(id: "t5", kind: .task, title: "登录 x.com 发一条动态", step: "浏览器 · 点击", startedAt: now - 130, needsYou: true,

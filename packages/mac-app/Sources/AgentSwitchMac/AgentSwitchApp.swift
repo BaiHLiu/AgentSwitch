@@ -53,8 +53,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     lazy var windows = TerminalWindows(client: { [model] in model.client })
     /// The menu bar's Live Activity (assistant-v0 §4): its own status item, left of the app's. A task opens on the main
     /// window's Dispatch page, a terminal on its Terminals page; what is open there in the window in use needs no telling.
-    lazy var live = LiveActivity(model: model, openTerminal: { [weak self] id in self?.main.show(terminal: id) },
-                                 openTask: { [weak self] id in self?.main.show(task: id) },
+    lazy var live = LiveActivity(model: model, openTerminal: { [weak self] id, node in self?.main.show(terminal: id, node: node) },
+                                 openTask: { [weak self] id, node in self?.main.show(task: id, node: node) },
                                  watching: { [weak self] in (self?.main.watchingTerminals ?? []).union(self?.windows.watching ?? []) },
                                  watchingTask: { [weak self] in self?.main.watchingTask })
     /// Which of our windows are open: the Dock icon shows while any is.

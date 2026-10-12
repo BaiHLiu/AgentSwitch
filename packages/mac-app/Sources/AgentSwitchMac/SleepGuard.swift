@@ -25,7 +25,9 @@ final class SleepGuard {
 
     /// From each look at the service (`nil`: not up) and the remote's phones.
     func update(_ live: LiveSnapshot?, phoneOnline: Bool, at now: Date = Date()) {
-        let awake = policy.wantsAwake(working: !(live?.rows.isEmpty ?? true), openTerminals: live?.open ?? 0,
+        // This Mac's own work: a request waiting on another node it uses (listed beside its own since 2026-10-11) is
+        // that node's to stay awake for.
+        let awake = policy.wantsAwake(working: live?.rows.contains { $0.node == nil } ?? false, openTerminals: live?.open ?? 0,
                                       phoneOnline: phoneOnline, onBattery: Self.onBattery, at: now)
         let want = awake && UserDefaults.standard.bool(forKey: Self.enabledKey)
         guard want != held else { return }

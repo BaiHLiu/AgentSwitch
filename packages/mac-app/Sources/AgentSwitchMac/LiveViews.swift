@@ -275,7 +275,7 @@ struct LiveCard: View {
                 }
             } else {
                 VStack(alignment: .leading, spacing: 11) {
-                    ForEach(presenter.cardRows) { row in rowView(row, frame: frame, now: now) }
+                    ForEach(presenter.cardRows, id: \.key) { row in rowView(row, frame: frame, now: now) }
                 }
                 if presenter.moreRows > 0 {
                     Text("+\(presenter.moreRows) More").mono(12).foregroundStyle(LiveLook.ink3).padding(.top, 11)
@@ -309,6 +309,7 @@ struct LiveCard: View {
                 }
                 .frame(width: 12)
                 LiveTitle(text: row.title) { actions.open(row) }
+                if let node = row.node { LiveNodeName(name: node.name) }
                 Spacer(minLength: 4)
                 if let agent = row.agent, let rows = PixelArt.agents[agent] {
                     PixelSprite(rows: rows, pixel: 2, color: LiveLook.ink2, strength: 0.8, shadow: false, onDark: true).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
@@ -366,6 +367,7 @@ struct LiveCard: View {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 LiveSquare(color: end.ok ? LiveLook.done : LiveLook.failed).frame(width: 12)
                 LiveTitle(text: end.title) { actions.openEnd(end) }
+                if let node = end.node { LiveNodeName(name: node.name) }
                 Spacer(minLength: 4)
             }
             HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -374,6 +376,17 @@ struct LiveCard: View {
             }
             .padding(.leading, 22)
         }
+    }
+}
+
+/// `@ Studio` after a row's title: the node it is on, when that is not this Mac (the main window's bar says a node the
+/// same way).
+private struct LiveNodeName: View {
+    let name: String
+
+    var body: some View {
+        Text("@ \(name)").mono(11.5, weight: .medium).foregroundStyle(LiveLook.busy).lineLimit(1).truncationMode(.tail)
+            .frame(maxWidth: 120, alignment: .leading).fixedSize(horizontal: true, vertical: false).layoutPriority(1)
     }
 }
 

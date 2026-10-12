@@ -87,7 +87,9 @@ public struct PageActivity: Equatable, Sendable {
         case .terminals: kind = .terminal
         case .browser, .clash: return .none
         }
-        let rows = snapshot?.rows.filter { $0.kind == kind } ?? []
+        // The node's own: what this Mac's service lists of the other nodes it uses (docs/mesh-v0.md §5.2 跨节点的提醒) is
+        // for the menu bar's card, not for these pages' marks.
+        let rows = snapshot?.rows.filter { $0.kind == kind && $0.node == nil } ?? []
         let waiting = rows.filter(\.needsYou).count
         return PageActivity(busy: rows.count - waiting, waiting: waiting)
     }

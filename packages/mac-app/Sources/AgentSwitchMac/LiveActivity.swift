@@ -26,8 +26,8 @@ final class LiveActivity {
     private(set) var pending: Set<String> = []
 
     @ObservationIgnored private let model: AppModel
-    @ObservationIgnored private let openTerminal: (String) -> Void
-    @ObservationIgnored private let openTask: (String) -> Void
+    @ObservationIgnored private let openTerminal: (String, String?) -> Void
+    @ObservationIgnored private let openTask: (String, String?) -> Void
     /// Every answer of `GET /live` (nil: none), shown or not: the main window's bar counts from it.
     @ObservationIgnored var onSnapshot: (LiveSnapshot?) -> Void = { _ in }
     @ObservationIgnored private var item: NSStatusItem?
@@ -47,7 +47,9 @@ final class LiveActivity {
     @ObservationIgnored private let watchingTask: () -> String?
     @ObservationIgnored private let sleepGuard = SleepGuard()
 
-    init(model: AppModel, openTerminal: @escaping (String) -> Void, openTask: @escaping (String) -> Void,
+    /// `openTerminal`, `openTask`: an id and the node it is on (nil: this Mac). `watching`, `watchingTask`: named among
+    /// every node's (`LiveSnapshot.key`).
+    init(model: AppModel, openTerminal: @escaping (String, String?) -> Void, openTask: @escaping (String, String?) -> Void,
          watching: @escaping () -> Set<String> = { [] }, watchingTask: @escaping () -> String? = { nil }) {
         self.model = model
         self.openTerminal = openTerminal
@@ -171,8 +173,8 @@ final class LiveActivity {
     private func open(_ row: LiveSnapshot.Row) {
         close()
         switch row.kind {
-        case .terminal: openTerminal(row.id)
-        case .task: openTask(row.id)
+        case .terminal: openTerminal(row.id, row.node?.id)
+        case .task: openTask(row.id, row.node?.id)
         }
     }
 
@@ -186,8 +188,8 @@ final class LiveActivity {
         presenter.opened(end)
         close()
         switch end.kind {
-        case .terminal: openTerminal(end.id)
-        case .task: openTask(end.id)
+        case .terminal: openTerminal(end.id, end.node?.id)
+        case .task: openTask(end.id, end.node?.id)
         }
         sync()
     }
@@ -196,7 +198,8 @@ final class LiveActivity {
         let key = row.ask?.id ?? row.id
         guard !pending.contains(key) else { return }
         pending.insert(key)
-        let client = client
+        // Another node's request is answered there, through this Mac's service (docs/mesh-v0.md §5.2).
+        let client = row.node.map { model.client(on: $0.id) } ?? client
         Task {
             do { try await send(client) } catch { liveLog.error("answer: \(error.localizedDescription, privacy: .public)") }
             pending.remove(key)

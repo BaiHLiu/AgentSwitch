@@ -10,11 +10,21 @@ struct ClashPage: View {
     var demo: ClashView?
 
     var body: some View {
-        ClashIntegrationView(shown: demo == nil && state.page == .clash && state.windowVisible, demo: demo)
+        // On another node the page is that node's Clash (docs/mesh-v0.md §5.2; 2026-10-11, user: 我希望远程mac上我也能管理它的clash).
+        ClashIntegrationView(shown: demo == nil && state.page == .clash && state.windowVisible, demo: demo, node: state.nodeId)
             .scrollContentBackground(.hidden)
             .frame(maxWidth: 680)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black)
+    }
+}
+
+/// The page shows another node's Clash: its words say "that Mac", and what only that Mac can do is not offered.
+private struct ClashOnNodeKey: EnvironmentKey { static let defaultValue = false }
+private extension EnvironmentValues {
+    var clashOnNode: Bool {
+        get { self[ClashOnNodeKey.self] }
+        set { self[ClashOnNodeKey.self] = newValue }
     }
 }
 
@@ -64,6 +74,10 @@ struct ClashIntegrationView: View {
     /// The page is on screen: what Clash Verge runs is asked for only then.
     var shown = true
     var demo: ClashView?
+    /// The node whose Clash this is; nil: this Mac's. Every call goes to that node's service; what only the Mac Clash
+    /// Verge runs on can do (handing it the subscription) is said, not offered.
+    var node: String?
+    private var client: DaemonClient { model.client(on: node) }
     @State private var loaded: ClashView?
     @State private var error: String?
     /// A fetch from the subscription service is under way.
@@ -97,6 +111,7 @@ struct ClashIntegrationView: View {
             }
         }
         .formStyle(.grouped)
+        .environment(\.clashOnNode, node != nil)
         .sheet(item: $editing) { item in
             ClashTextEditor(title: item.title, help: item.help, initial: item.text, custom: item.custom) { text in await saveEdited(item.template, text: text) }
         }
@@ -143,7 +158,7 @@ struct ClashIntegrationView: View {
     private func check() {
         guard !checking else { return }
         checking = true
-        let client = model.client
+        let client = client
         Task {
             do { checked = try await client.checkClash(); error = nil }
             catch { self.error = said(error) }
@@ -152,7 +167,7 @@ struct ClashIntegrationView: View {
     }
 
     private func edit(_ template: ClashTemplate) {
-        let client = model.client
+        let client = client
         Task {
             do {
                 let rules = try await client.clashTemplate(template)
@@ -163,7 +178,7 @@ struct ClashIntegrationView: View {
     }
 
     private func editDNS() {
-        let client = model.client
+        let client = client
         Task {
             do {
                 let dns = try await client.clashDNS()
@@ -179,20 +194,20 @@ struct ClashIntegrationView: View {
         guard var next = view?.settings else { return "还没有读到设置。" }
         if let template { next.templates[template].rules = text.map(ClashText.lines) } else { next.dns.text = text }
         do {
-            loaded = try await model.client.saveClash(next)
+            loaded = try await client.saveClash(next)
             error = nil
             return nil
         } catch { return said(error) }
     }
 
     private func load() async {
-        do { loaded = try await model.client.clash(); error = nil }
+        do { loaded = try await client.clash(); error = nil }
         catch { if loaded == nil { self.error = said(error) } }
     }
 
     /// One call to the service; what it has afterwards is shown.
     private func run(_ work: @escaping (DaemonClient) async throws -> ClashView) {
-        let client = model.client
+        let client = client
         Task {
             do { loaded = try await work(client); error = nil }
             catch { self.error = said(error) }
@@ -203,7 +218,7 @@ struct ClashIntegrationView: View {
     private func fetch(_ work: @escaping (DaemonClient) async throws -> ClashView) {
         guard !fetching else { return }
         fetching = true
-        let client = model.client
+        let client = client
         Task {
             do { loaded = try await work(client); error = nil }
             catch { self.error = said(error) }
@@ -214,7 +229,7 @@ struct ClashIntegrationView: View {
     private func test(_ service: ClashService, all: Bool) {
         guard !testing.contains(service) else { return }
         testing.insert(service)
-        let client = model.client
+        let client = client
         Task {
             do {
                 let tried = try await client.clashDelays(service, all: all)
@@ -246,6 +261,7 @@ struct ClashIntegrationView: View {
 private struct ClashStatusSection: View {
     let view: ClashView
     let error: String?
+    @Environment(\.clashOnNode) private var onNode
 
     var body: some View {
         Section {
@@ -254,7 +270,12 @@ private struct ClashStatusSection: View {
             }
             if view.todo.isEmpty { Label("Clash Verge 正在使用 AgentSwitch 的订阅，TUN 已打开。", systemImage: "checkmark.circle").foregroundStyle(.green) }
             if view.found, view.source != nil, !view.active {
-                Button("Add to Clash Verge…") { if let url = URL(string: view.install) { NSWorkspace.shared.open(url) } }
+                if onNode {
+                    // The link that hands Clash Verge the subscription opens on the Mac Clash Verge runs on.
+                    Text("这一步在那台 Mac 上完成：在它的 AgentSwitch › Clash 页点 Add to Clash Verge…。").font(.callout).foregroundStyle(.secondary)
+                } else {
+                    Button("Add to Clash Verge…") { if let url = URL(string: view.install) { NSWorkspace.shared.open(url) } }
+                }
             }
             if let fetched = view.fetchedAt {
                 LabeledContent("Clash Verge Fetched") { Text(TimeText.moment(Date(timeIntervalSince1970: fetched / 1000))) }
@@ -263,7 +284,7 @@ private struct ClashStatusSection: View {
         } header: {
             Text("Clash Verge")
         } footer: {
-            Footer("AgentSwitch 把订阅原样拿来，加上 Claude 和 OpenAI 的分组与规则，在本机提供给 Clash Verge（只有这台 Mac 读得到）。不改 Clash Verge 的任何文件；不想用了，切回原来的订阅或删掉 AgentSwitch 这一个即可。换节点、调顺序、改直连都立刻生效；只有多出或少掉一组分组时要 Clash Verge 重新取一次，它每小时会自己来取——想更快，在 Clash Verge 里编辑 AgentSwitch 订阅，把更新间隔改成几分钟。")
+            Footer("AgentSwitch 把订阅原样拿来，加上 Claude 和 OpenAI 的分组与规则，\(onNode ? "在那台 Mac 上" : "在本机")提供给 Clash Verge（只有\(onNode ? "那台" : "这台") Mac 读得到）。不改 Clash Verge 的任何文件；不想用了，切回原来的订阅或删掉 AgentSwitch 这一个即可。换节点、调顺序、改直连都立刻生效；只有多出或少掉一组分组时要 Clash Verge 重新取一次，它每小时会自己来取——想更快，在 Clash Verge 里编辑 AgentSwitch 订阅，把更新间隔改成几分钟。")
         }
     }
 }
@@ -275,6 +296,7 @@ private struct ClashCheckSection: View {
     let rows: [ClashCheckRow]?
     let checking: Bool
     let actions: ClashActions
+    @Environment(\.clashOnNode) private var onNode
 
     var body: some View {
         Section {
@@ -301,7 +323,7 @@ private struct ClashCheckSection: View {
         } header: {
             Text("Routing Check")
         } footer: {
-            Footer("从这台 Mac 经 Clash 发几条普通的连接出去，再问内核每一条命中了哪条规则、从哪个分组的哪个节点出去；Claude 和 OpenAI 还会问对方看到的来源地址。打勾的是照规则走了，打叉的没有；灰点是这里没有要求（那一项没开），只是告诉你它现在怎么走。不改 Clash 的任何设置。")
+            Footer("从\(onNode ? "那台" : "这台") Mac 经 Clash 发几条普通的连接出去，再问内核每一条命中了哪条规则、从哪个分组的哪个节点出去；Claude 和 OpenAI 还会问对方看到的来源地址。打勾的是照规则走了，打叉的没有；灰点是这里没有要求（那一项没开），只是告诉你它现在怎么走。不改 Clash 的任何设置。")
         }
     }
 }
@@ -312,6 +334,7 @@ private struct ClashSubscriptionSection: View {
     let view: ClashView
     let fetching: Bool
     let actions: ClashActions
+    @Environment(\.clashOnNode) private var onNode
     @State private var link = ""
     @State private var removing = false
 
@@ -336,7 +359,7 @@ private struct ClashSubscriptionSection: View {
         } header: {
             Text("Subscription")
         } footer: {
-            Footer("底本：一条订阅链接、一个 Clash 的 yaml 文件，或者 Clash Verge 里现有的一个订阅（抄一份过来）。AgentSwitch 自己保存它并按间隔去取新的，里面有节点的地址和密码：只存在这台 Mac 上 AgentSwitch 自己的目录里，只有你能读。")
+            Footer("底本：一条订阅链接、一个 Clash 的 yaml 文件，或者 Clash Verge 里现有的一个订阅（抄一份过来）。AgentSwitch 自己保存它并按间隔去取新的，里面有节点的地址和密码：只存在\(onNode ? "那台" : "这台") Mac 上 AgentSwitch 自己的目录里，只有你能读。")
         }
         .confirmationDialog("Remove the subscription from AgentSwitch?", isPresented: $removing) {
             Button("Remove", role: .destructive, action: actions.remove)

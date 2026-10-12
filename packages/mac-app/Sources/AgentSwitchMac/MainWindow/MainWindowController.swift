@@ -91,11 +91,13 @@ final class MainWindowController: NSObject {
     }
 
     /// One terminal on screen (the Live Activity, the probe): the Terminals page switches to it, or opens on it.
-    func show(terminal id: String) {
-        // In a window of its own: that one comes forward.
-        if windows?.raise(id) == true { return }
-        // The Live Activity's terminals are this Mac's.
-        use(node: nil)
+    /// `node`: the node it is on (the Live Activity lists other nodes' too: docs/mesh-v0.md §5.2); nil: this Mac.
+    func show(terminal id: String, node: String? = nil) {
+        // In a window of its own (this Mac's only): that one comes forward.
+        if node == nil, windows?.raise(id) == true { return }
+        // The window's pages become that node's; a node no longer listed is not gone to.
+        if let node, model.nodes.node(node) == nil { return }
+        use(node: node.flatMap { model.nodes.node($0) })
         let watched = inUse
         if window == nil { open(terminal: id) } else { terminals?.show(terminal: id) }
         go(to: .terminals, animated: watched)
@@ -103,9 +105,10 @@ final class MainWindowController: NSObject {
     }
 
     /// One task's page on Dispatch (the Live Activity): the window asks the page to open it (`requestedTask`).
-    func show(task id: String) {
+    func show(task id: String, node: String? = nil) {
+        if let node, model.nodes.node(node) == nil { return }
         let watched = inUse
-        use(node: nil)
+        use(node: node.flatMap { model.nodes.node($0) })
         open()
         state.request(task: id)
         go(to: .dispatch, animated: watched)
@@ -121,13 +124,14 @@ final class MainWindowController: NSObject {
     /// The terminals out in windows of their own changed: the page leaves them, or may show them again.
     func detachedChanged(_ ids: Set<String>) { terminals?.setDetached(ids) }
 
-    /// The terminals on screen in the window in use (one a pane): the Live Activity says nothing of their turns.
-    var watchingTerminals: Set<String> { terminals?.watching ?? [] }
+    /// The terminals on screen in the window in use (one a pane): the Live Activity says nothing of their turns. Named
+    /// among every node's, the window may be on another node.
+    var watchingTerminals: Set<String> { Set((terminals?.watching ?? []).map { LiveSnapshot.key($0, on: state.nodeId) }) }
 
     /// The task whose page is open in the window in use: the Live Activity says nothing of its result.
     var watchingTask: String? {
         guard let window, window.isKeyWindow, window.isVisible, state.page == .dispatch else { return nil }
-        return state.openTask
+        return state.openTask.map { LiveSnapshot.key($0, on: state.nodeId) }
     }
 
     /// What `GET /live` said (the Live Activity's poll): the pages' marks and Dispatch's counts — this Mac's, so not
@@ -158,7 +162,8 @@ final class MainWindowController: NSObject {
         let frame = window.frame
         build(in: window, terminal: nil)
         window.setFrame(frame, display: true)
-        // Clash is this Mac's own: from it, another node's window opens on its terminals.
+        // What the other node has is not known yet (its Clash page comes once it has said): from Clash, the window
+        // opens on that node's terminals.
         let page = state.pages.contains(state.page) ? state.page : .terminals
         swap(to: page)
         windowChanged()
@@ -180,8 +185,15 @@ final class MainWindowController: NSObject {
         }
         model.nodes.watched += 1
         nodeWatch = Task { [weak self] in
+            // What the node has (its Clash page is offered only when it says so): asked until it has answered.
+            var asked = false
             while !Task.isCancelled {
                 guard let self else { return }
+                if !asked, let info = try? await self.model.client(on: id).nodeInfo() {
+                    guard !Task.isCancelled, self.state.nodeId == id else { return }
+                    asked = true
+                    self.state.nodeSaid(info)
+                }
                 let snapshot = try? await self.model.client(on: id).live()
                 guard !Task.isCancelled, self.state.nodeId == id else { return }
                 self.state.liveChanged(snapshot)

@@ -28,10 +28,10 @@ final class NativeTerminalsPage: NSObject, TerminalsPage {
     private var keyMonitor: Any?
     private var stopped = false
 
-    /// `node`: the node whose terminals these are (docs/mesh-v0.md §5.2); nil: this Mac's. Another node's page keeps
-    /// nothing of its layout: what is remembered is this Mac's own page.
+    /// `node`: the node whose terminals these are (docs/mesh-v0.md §5.2); nil: this Mac's. Each node's page remembers
+    /// its own layout (`defaults(node:)`), apart from this Mac's page and from every other node's.
     init(model appModel: AppModel, node: String? = nil) {
-        model = TerminalsModel(client: { appModel.client(on: node) }, defaults: node == nil ? Self.defaults : nil)
+        model = TerminalsModel(client: { appModel.client(on: node) }, defaults: node.map(Self.defaults(node:)) ?? Self.defaults)
         host = NSHostingView(rootView: TerminalsPageView(model: model))
         host.sizingOptions = []
         super.init()
@@ -49,6 +49,27 @@ final class NativeTerminalsPage: NSObject, TerminalsPage {
         if MainWindowController.probing { return nil }
         #endif
         return .standard
+    }
+
+    /// What another node's page remembers (2026-10-11, user: 切换过来的时候，默认记住上次打开了哪些…再打开的时候记住窗口排列):
+    /// the panes and the terminal in each, the one in focus, the folders folded, the list's filter, what was picked for a
+    /// new terminal — in a store of that node's own, so the window comes back to a node as it was left. Its ids and
+    /// folders are that node's: they would mean nothing among this Mac's. The list starts as wide as this Mac's.
+    private static func defaults(node: String) -> UserDefaults? {
+        guard let own = defaults, let kept = UserDefaults(suiteName: store(node: node)) else { return nil }
+        if kept.object(forKey: TerminalsModel.Keys.sideWidth) == nil, let width = own.object(forKey: TerminalsModel.Keys.sideWidth) {
+            kept.set(width, forKey: TerminalsModel.Keys.sideWidth)
+        }
+        return kept
+    }
+
+    private static func store(node: String) -> String {
+        "\(Bundle.main.bundleIdentifier ?? "com.agentswitch.mac").node.\(node.filter { $0.isLetter || $0.isNumber || $0 == "-" })"
+    }
+
+    /// A node is no longer used: what its page remembered goes with it.
+    static func forget(node: String) {
+        UserDefaults.standard.removePersistentDomain(forName: store(node: node))
     }
 
     // MARK: what the window asks

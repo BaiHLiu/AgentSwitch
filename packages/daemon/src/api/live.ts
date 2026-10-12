@@ -3,7 +3,8 @@
  *  for in a form the card can answer (allow / deny, one option), and the tasks that ended in the last minute. The phone's
  *  Live Activity follows the same rules (AgentSwitchKit LiveSummary): titles, steps and conclusions read the same on
  *  both. Built from the store and the terminal host on each call; nothing is kept. The Mac app asks every second while
- *  the service is up; local only (the remote allowlist does not list it). */
+ *  the service is up. A paired device may read it too (the remote list has it since the mesh: another node's screens
+ *  count what waits here); this node's own screens get, beside it, what waits on the nodes it uses (`withNodes`). */
 
 import type { Hono } from "hono";
 import { homedir } from "node:os";
@@ -25,7 +26,11 @@ export type LiveAsk =
   | { readonly kind: "permission" | "approval"; readonly id: string; readonly tool: string; readonly target: string; readonly where: string }
   | { readonly kind: "question"; readonly id: string; readonly questionId: string; readonly text: string; readonly options: readonly string[]; readonly answerable: boolean };
 
+/** Another node a row or a result is of (docs/mesh-v0.md §5.2 跨节点的提醒); absent: this node's own. */
+export type LiveNode = { readonly id: string; readonly name: string };
+
 export type LiveRow = {
+  readonly node?: LiveNode;
   readonly id: string;
   readonly kind: "task" | "terminal";
   /** The thread's title for its first task, else what was asked; a terminal's name. */
@@ -48,6 +53,7 @@ export type LiveRow = {
 
 /** A result: a task that ended, or a terminal's turn (assistant-v0 §4 "结果要提示"). `taskId` for a task, as before. */
 export type LiveEnd = {
+  readonly node?: LiveNode;
   readonly kind: "task" | "terminal"; readonly id: string; readonly taskId?: string;
   readonly title: string; readonly line: string; readonly ok: boolean; readonly at: number;
 };
@@ -68,12 +74,66 @@ export type LiveSnapshot = {
 
 export function mountLive(app: Hono, deps: ApiDeps): void {
   app.get("/live", (c) => {
-    const snapshot = liveSnapshot(deps.store, deps.terminals?.host, Date.now());
+    const own = liveSnapshot(deps.store, deps.terminals?.host, Date.now());
+    // For this node's own screens: what waits on the nodes it uses, and what ended there, beside its own (user,
+    // 2026-10-11: 我用其他mac的时候没有实时通知). A paired device gets this node's own alone: no node passes another's on.
+    const snapshot = remoteCaller(c.env) ? own : withNodes(own, deps.liveElsewhere?.() ?? []);
     // For the Mac's own app: the page a terminal last had opened in its own browser for a person to act on, so the
     // app can bring that window forward (docs/profiles-v0.md §5.3). Not a phone's to know.
     const shown = remoteCaller(c.env) ? null : deps.profileBrowsers?.shown ?? null;
     return c.json(shown ? { ...snapshot, shown } : snapshot);
   });
+}
+
+/** From one node: this many rows that wait, this many results. */
+const NODE_ROWS = 20;
+const NODE_ENDS = 10;
+
+const text = (v: unknown, max: number): string => (typeof v === "string" ? (v.length > max ? v.slice(0, max) : v) : "");
+
+/** `own` with what the nodes this one uses said of themselves (`others`: each node's answer to its own `GET /live`):
+ *  their rows that wait for the user and their results, each marked with its node, the waiting count with them. What
+ *  merely runs there is not listed (the card is for what needs you and what came of it). Their clocks are their own:
+ *  each time is moved by how far that node's `now` is from this one's. Another machine's JSON: read field by field,
+ *  nothing taken on trust, a row a node passed on from a third never taken. */
+export function withNodes(own: LiveSnapshot, others: readonly { readonly id: string; readonly name: string; readonly body: Record<string, unknown> }[]): LiveSnapshot {
+  if (!others.length) return own;
+  const rows: LiveRow[] = [];
+  const ends: LiveEnd[] = [];
+  for (const other of others) {
+    const node: LiveNode = { id: other.id, name: other.name };
+    const shift = typeof other.body.now === "number" && Number.isFinite(other.body.now) ? own.now - other.body.now : 0;
+    const time = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v + shift : own.now);
+    const kind = (v: unknown): "task" | "terminal" => (v === "terminal" ? "terminal" : "task");
+    for (const raw of (Array.isArray(other.body.rows) ? other.body.rows : []) as Record<string, unknown>[]) {
+      if (!raw || typeof raw !== "object" || raw.node !== undefined || raw.needsYou !== true || typeof raw.id !== "string" || !raw.id) continue;
+      if (rows.filter((r) => r.node?.id === node.id).length >= NODE_ROWS) break;
+      rows.push({ node, id: raw.id, kind: kind(raw.kind), title: text(raw.title, TITLE_CHARS * 4), step: text(raw.step, STEP_CHARS * 4), doing: text(raw.doing, 24),
+        model: typeof raw.model === "string" ? text(raw.model, 80) : null, agent: typeof raw.agent === "string" ? text(raw.agent, 40) : null,
+        startedAt: time(raw.startedAt), needsYou: true, ask: askFrom(raw.ask) });
+    }
+    for (const raw of (Array.isArray(other.body.ended) ? other.body.ended : []) as Record<string, unknown>[]) {
+      if (!raw || typeof raw !== "object" || raw.node !== undefined || typeof raw.ok !== "boolean") continue;
+      const id = typeof raw.id === "string" && raw.id ? raw.id : typeof raw.taskId === "string" ? raw.taskId : "";
+      if (!id) continue;
+      if (ends.filter((e) => e.node?.id === node.id).length >= NODE_ENDS) break;
+      ends.push({ node, kind: kind(raw.kind), id, title: text(raw.title, TITLE_CHARS * 4), line: text(raw.line, ENDED_CHARS * 4), ok: raw.ok, at: time(raw.at) });
+    }
+  }
+  if (!rows.length && !ends.length) return own;
+  const all = [...own.rows, ...rows].sort((a, b) => Number(b.needsYou) - Number(a.needsYou) || b.startedAt - a.startedAt);
+  return { ...own, rows: all, waiting: own.waiting + rows.length, ended: [...own.ended, ...ends].sort((a, b) => b.at - a.at).slice(0, 10) };
+}
+
+/** A request as another node sent it, in the card's form; null for anything else. */
+function askFrom(v: unknown): LiveAsk | null {
+  if (!v || typeof v !== "object") return null;
+  const a = v as Record<string, unknown>;
+  if (typeof a.id !== "string" || !a.id) return null;
+  if (a.kind === "permission" || a.kind === "approval") return { kind: a.kind, id: a.id, tool: text(a.tool, 80), target: text(a.target, TARGET_CHARS * 4), where: text(a.where, 400) };
+  if (a.kind !== "question") return null;
+  const options = (Array.isArray(a.options) ? a.options : []).filter((o): o is string => typeof o === "string").slice(0, 8).map((o) => text(o, 200));
+  return { kind: "question", id: a.id, questionId: text(a.questionId, 80), text: text(a.text, 600), options, answerable: a.answerable === true };
 }
 
 export const ENDED_MS = 60_000;

@@ -78,7 +78,11 @@ final class NodesStore {
     func stopUsing(_ node: NodeStatus, both: Bool, _ model: AppModel) async {
         busy = true
         defer { busy = false }
-        do { try await model.client.removeNode(id: node.id, both: both) } catch { model.errorMessage = error.localizedDescription }
+        do {
+            try await model.client.removeNode(id: node.id, both: both)
+            // What the window remembered of its pages goes with it.
+            NativeTerminalsPage.forget(node: node.id)
+        } catch { model.errorMessage = error.localizedDescription }
         await refresh(model)
         await model.refreshDevices()
     }
