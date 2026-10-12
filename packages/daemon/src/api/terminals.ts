@@ -728,6 +728,9 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
       const own = transcript && before ? host.ownSession(id) : null;
       if (own) await host.stopped(id);
       const info = host.remove(id);
+      // Codex's record names a picture sent to it by its place in this folder: a copy outlives the folder
+      // (docs/simple-view-v0.md §4). Claude Code keeps the picture in its own record.
+      if (info.harness === "codex") deps.sessions?.keepPicturesIn(attachDir(id));
       rmSync(attachDir(id), { recursive: true, force: true });
       const removed = own ? deleteTranscript(info.harness, own) : [];
       audit.record({ terminal: id, action: "delete", via: via(c), detail: { transcript: removed.length } });

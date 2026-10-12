@@ -90,6 +90,7 @@ import { codexTextRouter } from "./router/routers/codex.js";
 import { DEFAULT_EXECUTOR_TIMEOUT_MS, QUOTA_TTL_MS } from "./core/limits.js";
 import { loadWorkdir } from "./files/workdir.js";
 import { defaultSessionSources, SessionMonitor, type SessionSources } from "./sessions/monitor.js";
+import { KeptPictures } from "./sessions/pictures.js";
 import { openCodeDeleter, type OpenCodeDelete } from "./sessions/opencode.js";
 import { broadFolders, sessionsNear, SESSIONS_READ } from "./sessions/folders.js";
 import { TerminalAudit } from "./terminals/audit.js";
@@ -117,6 +118,10 @@ export const DEFAULT_PORT = 4711;
 const THREAD_SWEEP_INTERVAL_MS = 3600_000;
 /** How often Clash Integration looks whether its subscription is due to be fetched again. */
 const CLASH_TICK_MS = 60_000;
+/** How often the Codex records are looked at for the picture files they name when no screen reads the list (a pasted
+ *  picture's file lasts about three days), and how soon after the service starts (docs/simple-view-v0.md §4). */
+const PICTURES_EVERY_MS = 30 * 60_000;
+const PICTURES_FIRST_MS = 20_000;
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const MAX_PORT = 65_535;
 
@@ -207,6 +212,8 @@ export type Daemon = {
   readonly targets: Targets;
   /** AgentSwitch's own terminals (docs/terminal-v0.md), or null when off. */
   readonly terminals: TerminalHost | null;
+  /** The Mac's own sessions as they are watched (docs/control-v0.md §3), or null when off. */
+  readonly sessions: SessionMonitor | null;
   /** The shared browser (docs/browser-v0.md), or null when off. */
   readonly browser: BrowserHost | null;
   /** Closes the shared browser's Chrome (a few seconds at most); `close()` does not wait for it. */
@@ -474,7 +481,7 @@ export function buildDaemon(cfg: DaemonConfig, overrides: BuildOverrides = {}): 
     }),
   });
   const app = mountNodes(mountRemoteAdmin(new Hono().route("/", api), { store, remote, onRevoke: (id) => nodes.inboundGone(id) }), { nodes, home: cfg.home });
-  return { app, api, remote, nodes, engine, store, quota, targets, clash, terminals: terminalHost, browser: browser?.host ?? null, setLocalPort: (port) => { localPort = port; },
+  return { app, api, remote, nodes, engine, store, quota, targets, clash, terminals: terminalHost, sessions: sessions ?? null, browser: browser?.host ?? null, setLocalPort: (port) => { localPort = port; },
     stopBrowser: async () => { await profileBrowsers?.stop(); await browser?.agents.shutdown(); await browser?.host.shutdown(); await browser?.stop(); },
     close: () => { nodes.close(); terminalHost?.closeAll(); void profileBrowsers?.stop(); void exits.stop(); void browser?.agents.shutdown(); void browser?.host.shutdown(); reporter.stop(); store.close(); routingLog.close(); conversation.close(); } };
 }
@@ -611,7 +618,14 @@ export async function serve(cfg: DaemonConfig): Promise<{ daemon: Daemon; close:
   const opencodeExec = cfg.executors === "real" && (cfg.opencodeExecutor ?? "serve") === "serve" ? await startOpenCodeExecServer(cfg) : undefined;
   // OpenCode's variants (its models' thinking levels) for the terminals' menus, from the executors' server.
   if (modelOffers && opencodeExec) modelOffers.watchOpenCode(() => openCodeVariants((method, path) => opencodeExec.call(method, path), join(cfg.home, "opencode-exec")));
-  const daemon = buildDaemon(cfg, { targets, ...(modelOffers ? { modelOffers } : {}), ...(opencode ? { opencode } : {}), ...(opencodeExec ? { opencodeExec } : {}) });
+  // Codex names a picture by where its file was: the running service keeps copies, which outlive the file
+  // (docs/simple-view-v0.md §4). Under the home, where no managed executor writes; nothing from a folder no agent may
+  // read. Here and not in buildDaemon: a daemon built by a test copies no one's pictures.
+  const pictures = cfg.watchSessions
+    ? new KeptPictures(join(cfg.home, "sessions", "pictures"), { closed: defaultProtected({ ...process.env, AGENTSWITCH_HOME: cfg.home }).readDenied ?? [] })
+    : undefined;
+  const daemon = buildDaemon(cfg, { targets, ...(modelOffers ? { modelOffers } : {}), ...(opencode ? { opencode } : {}), ...(opencodeExec ? { opencodeExec } : {}),
+    ...(pictures ? { sessionSources: { ...defaultSessionSources(cfg.home), pictures } } : {}) });
   const remote: RemoteListener | undefined = daemon.remote
     ? await startRemote(daemon, daemon.remote).catch((err: Error) => { daemon.close(); void opencode?.stop(); void opencodeExec?.stop(); throw err; })
     : undefined;
@@ -627,7 +641,13 @@ export async function serve(cfg: DaemonConfig): Promise<{ daemon: Daemon; close:
   // Clash Integration's subscription, fetched again when its interval has passed (docs/clash-v0.md §7.1).
   const clashTimer = setInterval(() => { void daemon.clash.tick(); }, CLASH_TICK_MS);
   clashTimer.unref();
-  const close = () => { clearInterval(sweeper); clearInterval(clashTimer); stopOffers?.(); server.close(); void remote?.close(); daemon.close(); void opencode?.stop(); void opencodeExec?.stop(); };
+  // The pictures Codex's records name, copied while their files are there, whether or not a screen reads the list.
+  const keepPictures = () => { try { daemon.sessions?.keepPictures(); } catch { /* the next round */ } };
+  const picturesFirst = setTimeout(keepPictures, PICTURES_FIRST_MS);
+  picturesFirst.unref();
+  const picturesTimer = setInterval(keepPictures, PICTURES_EVERY_MS);
+  picturesTimer.unref();
+  const close = () => { clearInterval(sweeper); clearInterval(clashTimer); clearTimeout(picturesFirst); clearInterval(picturesTimer); stopOffers?.(); server.close(); void remote?.close(); daemon.close(); void opencode?.stop(); void opencodeExec?.stop(); };
   // A signal: Chrome is let quit on its own first (a killed one leaves its code-sign clone behind), then the rest.
   return { daemon, close, stop: async () => { await daemon.stopBrowser().catch(() => undefined); close(); } };
 }

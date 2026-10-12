@@ -686,10 +686,14 @@ const IMAGE_TYPES: Readonly<Record<string, string>> = { png: "image/png", jpg: "
 /** What is served as a picture: never a type a browser would run (SVG), whatever the record calls it. */
 const SERVED = new Set(Object.values(IMAGE_TYPES));
 
+/** How a picture that is a file somewhere is read: the file itself (`pictureFile`), or a reader that also keeps a copy
+ *  and shows it once the file is gone (sessions/pictures.ts). */
+export type PictureReader = (file: string) => RecordImage | null;
+
 /** The `n`-th picture of the user's message `item` (its id: where its line begins). Claude Code keeps the picture in
- *  the line itself; Codex keeps where the file is (`local_image`), which is read if it is still there and a picture
- *  by its name. Null: no such message, no such picture, or one too large. */
-export function readImage(harness: RecordHarness, path: string, item: string, n: number): RecordImage | null {
+ *  the line itself; Codex keeps where the file is (`local_image`), which `file` reads — by default the file itself,
+ *  if it is still there and a picture by its name. Null: no such message, no such picture, or one too large. */
+export function readImage(harness: RecordHarness, path: string, item: string, n: number, file: PictureReader = pictureFile): RecordImage | null {
   const at = Number(item.split(".")[0]);
   const { size } = fileRev(path);
   if (!Number.isInteger(at) || at < 0 || at >= size || !Number.isInteger(n) || n < 0) return null;
@@ -706,17 +710,29 @@ export function readImage(harness: RecordHarness, path: string, item: string, n:
   const url = str(picture.image_url) || str(picture.url);
   const inline = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(url);
   if (inline) return decoded(inline[1]!, inline[2]!);
-  return pictureFile(str(picture.path));
+  const kept = str(picture.path);
+  return kept ? file(kept) : null;
+}
+
+/** The picture files a Codex line names: `sent` with a message (`local_image`), `seen` by a step (`ImageView`). Only
+ *  what the line says; none of them is opened here. */
+export function codexPictureFiles(line: Json): { sent: string[]; seen: string[] } {
+  if (line.type !== "event_msg" || obj(line.payload).type !== "item_completed") return { sent: [], seen: [] };
+  const item = obj(obj(line.payload).item);
+  if (item.type === "UserMessage") {
+    return { sent: (Array.isArray(item.content) ? item.content.map(obj) : []).filter((p) => /image/i.test(str(p.type))).map((p) => str(p.path)).filter(Boolean), seen: [] };
+  }
+  return { sent: [], seen: item.type === "ImageView" && str(item.path) ? [str(item.path)] : [] };
 }
 
 /** The `k`-th picture a step brought back (2026-10-07, user: 这种readpng能不能展开后看到真的png内容呢): of the `n`-th step of
  *  the run of work `work`. Claude Code keeps it in the line of the tool's result; for Codex the file it looked at is
  *  read, if it is still there and a picture by its name. Null: no such step, no such picture, or one too large. */
-export function readStepImage(harness: RecordHarness, path: string, o: { work: string; n: number; k: number; cwd?: string }): RecordImage | null {
+export function readStepImage(harness: RecordHarness, path: string, o: { work: string; n: number; k: number; cwd?: string }, file: PictureReader = pictureFile): RecordImage | null {
   if (!Number.isInteger(o.k) || o.k < 0) return null;
   const shots = stepOf(harness, path, o)?.shots;
   if (!shots) return null;
-  if ("file" in shots) return o.k === 0 ? pictureFile(shots.file) : null;
+  if ("file" in shots) return o.k === 0 ? file(shots.file) : null;
   const line = readLines(path, shots.at, Math.min(fileRev(path).size, shots.at + IMAGE_LINE_BYTES)).lines.find((l) => l.at === shots.at)?.value;
   const result = line && parts(line).find((p) => p.type === "tool_result" && str(p.tool_use_id) === shots.id);
   const picture = (Array.isArray(result?.content) ? result.content.map(obj) : []).filter((p) => p.type === "image")[o.k];
@@ -724,10 +740,15 @@ export function readStepImage(harness: RecordHarness, path: string, o: { work: s
   return source.type === "base64" && str(source.data) ? decoded(str(source.media_type), str(source.data)) : null;
 }
 
+/** The type a file is served as, by its name: null for a name that is not a picture's (or not a whole path). */
+export function pictureType(file: string): string | null {
+  return (file.startsWith("/") && IMAGE_TYPES[file.split(".").pop()?.toLowerCase() ?? ""]) || null;
+}
+
 /** A picture file on this Mac, by its name a picture and no larger than is shown. */
-function pictureFile(file: string): RecordImage | null {
-  const type = IMAGE_TYPES[file.split(".").pop()?.toLowerCase() ?? ""];
-  if (!file.startsWith("/") || !type) return null;
+export function pictureFile(file: string): RecordImage | null {
+  const type = pictureType(file);
+  if (!type) return null;
   try {
     const st = statSync(file);
     if (!st.isFile() || st.size > IMAGE_BYTES) return null;

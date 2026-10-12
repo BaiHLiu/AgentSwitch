@@ -24,6 +24,7 @@ import { elsewhereCheck, type ElsewhereCheck, type Proc } from "../src/terminals
 import { TARGETS_PATH } from "./helpers.js";
 import { holdsReply } from "../src/api/terminals.js";
 import type { RecordItem } from "../src/sessions/record.js";
+import { KeptPictures } from "../src/sessions/pictures.js";
 
 const FAKE = resolve(import.meta.dirname, "fixtures", "fakeTerminalAgent.mjs");
 const closers: (() => void)[] = [];
@@ -1330,6 +1331,39 @@ describe("terminals over HTTP", () => {
     expect(screen()).not.toContain("got: ");   // pasted, not sent
     expect((await call("DELETE", `/terminals/${id}`)).status).toBe(200);
     expect(existsSync(join(tmpdir(), "agentswitch-attach", id))).toBe(false);
+  });
+
+  // 2026-10-11, user: 远程其他mac里codex的简略模式图片加载不出来. Codex's record names a picture sent to it by its place in the
+  // terminal's folder, which goes with the terminal (docs/simple-view-v0.md §4).
+  it("a Codex terminal's attached pictures are kept by the service when the terminal and its folder go", async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "agentswitch-codex-pictures-")));
+    const home = mkdtempSync(join(tmpdir(), "agentswitch-terminals-"));
+    const pictures = new KeptPictures(join(home, "sessions", "pictures"));
+    const cfg: DaemonConfig = { home, targetsPath: TARGETS_PATH, port: 0, router: "echo", executors: "echo", browser: false, quotaTtlMs: 1000, maxTasks: 4, opencodePort: 0, opencodeBinary: "", watchSessions: true };
+    const daemon = buildDaemon(cfg, {
+      terminalLauncher: fakeLauncher(() => "http://127.0.0.1:9", true),
+      sessionSources: { claudeProjects: join(root, "claude"), codexSessions: join(root, "codex"), opencodeDb: join(root, "none.db"), excluded: [], pictures },
+    });
+    closers.push(() => daemon.close());
+    const call = async (method: string, path: string, body?: unknown) => {
+      const res = await daemon.api.request(path, { method, ...(body ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}) });
+      return { status: res.status, json: (await res.json().catch(() => ({}))) as Record<string, any> };
+    };
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2]);
+    const attach = async (harness: string) => {
+      const id = (await call("POST", "/terminals", { harness, cwd: root })).json.terminal.id as string;
+      const form = new FormData();
+      form.append("file", new Blob([png], { type: "image/png" }), "shot.png");
+      const staged = (await (await daemon.api.request("/uploads", { method: "POST", body: form })).json()) as { files: { id: string }[] };
+      const file = (await call("POST", `/terminals/${id}/attach`, { uploads: [staged.files[0]!.id] })).json.files[0] as { path: string };
+      expect(existsSync(file.path)).toBe(true);
+      expect((await call("DELETE", `/terminals/${id}`)).status).toBe(200);
+      expect(existsSync(file.path)).toBe(false);
+      return file.path;
+    };
+    expect(pictures.sent(await attach("codex"))).toEqual({ type: "image/png", data: Buffer.from(png) });
+    // Claude Code keeps the picture in its own record: nothing of its terminal's is copied.
+    expect(pictures.sent(await attach("claude-code"))).toBeNull();
   });
 
   // 2026-09-30, user: 图片只能插入到消息开头，选了直接发送……要和 cc 一样，给占位符，发送时按我输入的预期发过去.

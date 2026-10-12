@@ -11,6 +11,7 @@ import { claudeFacts, claudeMessages } from "./claude.js";
 import { codexFacts, codexMessages } from "./codex.js";
 import { openCodeMessages, openCodeSessions, type OpenCodeDelete } from "./opencode.js";
 import { piFacts, piMessages } from "./pi.js";
+import type { KeptPictures } from "./pictures.js";
 import { MAX_RECORD_LIMIT, readChanges, readImage, readRecord, readStep, readStepImage, recordFromMessages, type FileDiff, type RecordImage, type SessionRecord, type StepDetail } from "./record.js";
 import { ACTIVE_MS, oneLine, TITLE_CHARS, type SessionHarness, type SessionMessage, type SessionMode, type SessionSummary } from "./types.js";
 
@@ -30,6 +31,9 @@ export type SessionSources = {
   readonly ownIds?: () => ReadonlySet<string>;
   /** Folders decided at run time whose sessions are AgentSwitch's (the default work folder). */
   readonly ownFolders?: () => readonly string[];
+  /** Copies of the pictures a Codex record names only by their file's place (sessions/pictures.ts); absent: a
+   *  picture is shown while its file is there, and no longer. */
+  readonly pictures?: KeptPictures;
 };
 
 export function defaultSessionSources(dataHome: string, env: NodeJS.ProcessEnv = process.env): SessionSources {
@@ -119,14 +123,14 @@ export class SessionMonitor {
   stepImage(harness: SessionHarness, id: string, work: string, n: number, k: number, ours = false): RecordImage | null {
     const found = this.open(harness, id, ours);
     if (!found?.path || (harness !== "claude-code" && harness !== "codex")) return null;
-    try { return readStepImage(harness, found.path, { work, n, k, cwd: found.session.cwd }); } catch { return null; }
+    try { return readStepImage(harness, found.path, { work, n, k, cwd: found.session.cwd }, this.sources.pictures?.seen); } catch { return null; }
   }
 
   /** A picture the user sent with a message of the session: the `n`-th of the record's item `item`. */
   image(harness: SessionHarness, id: string, item: string, n: number, ours = false): RecordImage | null {
     const found = this.open(harness, id, ours);
     if (!found?.path || (harness !== "claude-code" && harness !== "codex")) return null;
-    try { return readImage(harness, found.path, item, n); } catch { return null; }
+    try { return readImage(harness, found.path, item, n, this.sources.pictures?.sent); } catch { return null; }
   }
 
   /** A session and where it is kept. `ours`: it is the session of a terminal of ours, read wherever it runs — the list
@@ -141,6 +145,7 @@ export class SessionMonitor {
     if (!path) return null;
     try {
       const st = statSync(path);
+      if (harness === "codex") this.sources.pictures?.noticed(path, st.size, st.mtimeMs);
       const facts = harness === "claude-code" ? claudeFacts(path, st.mtimeMs) : harness === "pi" ? piFacts(path, st.mtimeMs) : codexFacts(path, st.mtimeMs);
       return facts ? { session: this.summary(harness, { startedAt: st.birthtimeMs || st.ctimeMs, ...facts }, this.now()), path } : null;
     } catch { return null; }
@@ -180,6 +185,21 @@ export class SessionMonitor {
     return found;
   }
 
+  /** Every Codex record looked at for the picture files it names, and the copies tidied: what the list does as it is
+   *  read, for the hours no screen reads it (a pasted picture's file lasts about three days). */
+  keepPictures(): void {
+    const pictures = this.sources.pictures;
+    if (!pictures) return;
+    for (const ref of jsonlFiles(this.sources.codexSessions, 3, this.now(), this.scanFiles)) pictures.noticed(ref.path, ref.size, ref.mtime);
+    pictures.tidy();
+  }
+
+  /** The picture files in `dir` are kept now: the folder is about to go (a terminal's attached files, which Codex's
+   *  record names by their place). */
+  keepPicturesIn(dir: string): void {
+    this.sources.pictures?.keepIn(dir);
+  }
+
   /** What a session changed, file by file: in one run of work, else in its last turn. Null when it is not listed, the
    *  run is not there, or the agent's record carries no changes (OpenCode, pi). */
   changes(harness: SessionHarness, id: string, work?: string, ours = false): FileDiff[] | null {
@@ -190,6 +210,8 @@ export class SessionMonitor {
 
   private scan(refs: FileRef[], harness: "claude-code" | "codex" | "pi", now: number): (SessionSummary | null)[] {
     return refs.map((ref) => {
+      // Codex names a picture by its file's place: what the record grew by is read for them while they are there.
+      if (harness === "codex") this.sources.pictures?.noticed(ref.path, ref.size, ref.mtime);
       const hit = this.cache.get(ref.path);
       if (hit && hit.mtime === ref.mtime && hit.size === ref.size) return hit.summary && { ...hit.summary, active: now - hit.summary.updatedAt < ACTIVE_MS };
       let summary: SessionSummary | null = null;
