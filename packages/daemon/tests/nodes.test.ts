@@ -1,8 +1,11 @@
 /** docs/mesh-v0.md end to end: two nodes, each a daemon with its own certificate and a real HTTPS listener on
  *  127.0.0.1, paired through a link as two Macs would be. Echo router and executors only. */
 
-import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
 import { createServer, type AddressInfo } from "node:net";
+import { Readable } from "node:stream";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -247,6 +250,69 @@ describe("the pinned connection", () => {
     await expect(dialer.json({ ...there, fingerprint: "cd".repeat(32) }, "POST", "/pair", { json: { code: "x", name: "n", platform: "p" } })).rejects.toBeInstanceOf(PinMismatch);
     await expect(dialer.send({ host: "203.0.113.9", port: 1, fingerprint: "cd".repeat(32) }, { method: "GET", path: "/" })).rejects.toThrow("not an address a node can be at");
     dialer.close();
+  });
+
+  // 2026-10-11, user: 粘贴图片有的时候卡半天. A file sent into a link that went quiet without closing waited the whole of
+  // its 120 s (scripts/mesh_upload_probe.ts): what is sent may take as long as it keeps moving, and no longer.
+  describe.runIf(existsSync(SYSTEM_OPENSSL))("a body sent as a stream", () => {
+    type Handler = (req: IncomingMessage, res: ServerResponse) => void;
+    const servers: HttpsServer[] = [];
+    const folders: string[] = [];
+    afterEach(() => {
+      for (const s of servers.splice(0)) { s.close(); s.closeAllConnections(); }
+      for (const dir of folders.splice(0)) rmSync(dir, { recursive: true, force: true });
+    });
+    async function listening(handler: Handler) {
+      const dir = mkdtempSync(join(tmpdir(), "agentswitch-dial-"));
+      folders.push(dir);
+      const tls = ensureTls(dir);
+      const server = createHttpsServer({ key: tls.key, cert: tls.cert }, handler);
+      servers.push(server);
+      await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+      return { host: "127.0.0.1", port: (server.address() as AddressInfo).port, fingerprint: tls.fingerprint };
+    }
+    const megabytes = (n: number) => Readable.from((function* () { const chunk = Buffer.alloc(1024 * 1024, 7); for (let i = 0; i < n; i++) yield chunk; })());
+
+    it("is given up once the connection takes nothing more of it, long before the head's own wait", async () => {
+      // The other side never reads: what the system will buffer goes, then nothing moves.
+      const there = await listening(() => undefined);
+      const dialer = new Dialer();
+      const began = Date.now();
+      await expect(dialer.send(there, { method: "POST", path: "/uploads", body: megabytes(2048), headTimeoutMs: 60_000, stallTimeoutMs: 400 })).rejects.toThrow("took nothing more of what was sent for 400 ms");
+      expect(Date.now() - began).toBeLessThan(15_000);
+      dialer.close();
+    }, 30_000);
+
+    it("has its answer's own wait from its last byte", async () => {
+      const there = await listening((req) => { req.resume(); });   // all of it read, never answered
+      const dialer = new Dialer();
+      const began = Date.now();
+      await expect(dialer.send(there, { method: "POST", path: "/uploads", body: megabytes(2), headTimeoutMs: 60_000, stallTimeoutMs: 5_000, answerTimeoutMs: 400 })).rejects.toThrow("within 400 ms of the last of what was sent");
+      expect(Date.now() - began).toBeLessThan(10_000);
+      dialer.close();
+    }, 30_000);
+
+    it("goes through while it keeps moving, however long the whole takes, and with an answer that takes its time", async () => {
+      // Read in bursts with a pause after every 4 MB, answered half a second after the last byte: longer in all than
+      // the wait for standing still, never standing still that long.
+      let got = 0, burst = 0;
+      const there = await listening((req, res) => {
+        req.on("data", (chunk: Buffer) => {
+          got += chunk.length;
+          burst += chunk.length;
+          if (burst >= 4 * 1024 * 1024) { burst = 0; req.pause(); setTimeout(() => req.resume(), 120); }
+        });
+        req.on("end", () => setTimeout(() => res.end(JSON.stringify({ got })), 500));
+      });
+      const dialer = new Dialer();
+      const began = Date.now();
+      const res = await dialer.send(there, { method: "POST", path: "/uploads", body: megabytes(48), headTimeoutMs: 60_000, stallTimeoutMs: 1_000, answerTimeoutMs: 5_000 });
+      let said = "";
+      for await (const chunk of res as AsyncIterable<Buffer>) said += chunk.toString("utf8");
+      expect(JSON.parse(said)).toEqual({ got: 48 * 1024 * 1024 });
+      expect(Date.now() - began).toBeGreaterThan(1_000);
+      dialer.close();
+    }, 30_000);
   });
 
   it("dials private, link-local, Tailscale and loopback addresses and Tailscale names, nothing else", () => {

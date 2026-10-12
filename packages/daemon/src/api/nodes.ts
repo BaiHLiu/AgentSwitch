@@ -26,9 +26,16 @@ const NEEDS_KEY = { error: `the nodes key is needed (${NODES_KEY_HEADER})` } as 
 /** What a caller's request carries on to the node. Its `Authorization` is this node's own token and stays here. */
 const REQUEST_HEADERS = ["accept", "content-type", "content-length", "if-none-match", "range", "last-event-id"] as const;
 const RESPONSE_HEADERS = ["content-type", "content-length", "etag", "cache-control", "content-disposition", "last-modified", "retry-after", "accept-ranges", "content-range"] as const;
-/** Until the node starts to answer; an upload is read whole before it does. */
+/** Until the node starts to answer; with something sent along (JSON) longer. */
 const HEAD_TIMEOUT_MS = 30_000;
 const UPLOAD_HEAD_TIMEOUT_MS = 120_000;
+/** A file sent along (multipart, read whole by the node before it answers) may take as long as it keeps moving: this
+ *  long standing still ends it, and its answer has what any request has (`HEAD_TIMEOUT_MS`) from its last byte — which
+ *  is "handed to the system", so what is still on its way over a slow link is inside that wait. Until 2026-10-11 a file
+ *  had the 120 s whatever happened, and one sent into a link that had just gone quiet without closing — the other Mac
+ *  asleep, a Wi-Fi left — waited all of them (measured with scripts/mesh_upload_probe.ts; user: 粘贴图片有的时候卡半天). */
+const FILE_STALL_MS = 15_000;
+const FILE_LONGEST_MS = 15 * 60_000;
 
 const AddBody = z.object({ link: z.string().min(1).max(8192), back: z.boolean().optional() });
 const MeshBody = z.object({ keyboard: z.boolean() });
@@ -87,9 +94,12 @@ async function forward(c: Context, nodes: Nodes, peer: Peer): Promise<Response> 
   const body = raw ? Readable.fromWeb(raw as unknown as NodeWebStream<Uint8Array>) : null;
   const unreachable = (why: string): Response => c.json({ error: `${peer.name} cannot be reached: ${why}`, node: peer.id }, 502, { [NODE_HEADER]: peer.id, [NODE_ERROR_HEADER]: "unreachable" });
   const where = { fingerprint: peer.fingerprint, port: peer.port, last: peer.last, lan: peer.lan, tailnet: peer.tailnet };
+  const file = body !== null && (c.req.header("content-type") ?? "").trim().toLowerCase().startsWith("multipart/form-data");
+  const waits = file ? { headTimeoutMs: FILE_LONGEST_MS, stallTimeoutMs: FILE_STALL_MS, answerTimeoutMs: HEAD_TIMEOUT_MS }
+    : { headTimeoutMs: body ? UPLOAD_HEAD_TIMEOUT_MS : HEAD_TIMEOUT_MS };
   const ask = async (fresh: boolean) => {
     const host = await nodes.dialer.reach(where, fresh);
-    return host ? nodes.dialer.send({ host, port: peer.port, fingerprint: peer.fingerprint }, { method, path, headers, body, signal: c.req.raw.signal, headTimeoutMs: body ? UPLOAD_HEAD_TIMEOUT_MS : HEAD_TIMEOUT_MS }) : null;
+    return host ? nodes.dialer.send({ host, port: peer.port, fingerprint: peer.fingerprint }, { method, path, headers, body, signal: c.req.raw.signal, ...waits }) : null;
   };
   let res;
   try {

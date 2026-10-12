@@ -78,6 +78,13 @@ export type Sent = {
   readonly signal?: AbortSignal;
   /** Until the response's head; a body (an event stream) may go on as long as it likes. */
   readonly headTimeoutMs?: number;
+  /** For a body sent as a stream: the longest it may stand still while it is sent — nothing more of it taken by the
+   *  connection. A link that went quiet without closing (the other Mac asleep, a Wi-Fi left) takes what the system
+   *  will buffer and then nothing. */
+  readonly stallTimeoutMs?: number;
+  /** For a body sent as a stream: once all of it is sent, how long the response's head may take, in place of what is
+   *  left of `headTimeoutMs` (a file's answer follows its last byte). */
+  readonly answerTimeoutMs?: number;
 };
 
 export type Reachable = { readonly fingerprint: string; readonly port: number; readonly last: string | null; readonly lan: readonly string[]; readonly tailnet: readonly string[] };
@@ -125,23 +132,41 @@ export class Dialer {
   private once(target: Target, sent: Sent): Promise<IncomingMessage> {
     return new Promise((resolve, reject) => {
       const req = request({ host: target.host, port: target.port, method: sent.method, path: sent.path, headers: { ...sent.headers }, agent: this.agent(target.fingerprint) });
-      const timer = sent.headTimeoutMs ? setTimeout(() => req.destroy(new Error(`no answer from ${target.host} within ${sent.headTimeoutMs} ms`)), sent.headTimeoutMs) : undefined;
+      let timer = sent.headTimeoutMs ? setTimeout(() => req.destroy(new Error(`no answer from ${target.host} within ${sent.headTimeoutMs} ms`)), sent.headTimeoutMs) : undefined;
+      let stall: NodeJS.Timeout | undefined;
+      const clear = (): void => { clearTimeout(timer); clearTimeout(stall); };
       const aborted = (): void => { req.destroy(new Error("aborted")); };
       sent.signal?.addEventListener("abort", aborted, { once: true });
       req.once("response", (res) => {
-        clearTimeout(timer);
+        clear();
         sent.signal?.removeEventListener("abort", aborted);
         const drop = (): void => { res.destroy(); };
         sent.signal?.addEventListener("abort", drop, { once: true });
         res.once("close", () => sent.signal?.removeEventListener("abort", drop));
         resolve(res);
       });
-      req.once("error", (err) => { clearTimeout(timer); sent.signal?.removeEventListener("abort", aborted); reject(Object.assign(err, { reused: req.reusedSocket })); });
+      req.once("error", (err) => { clear(); sent.signal?.removeEventListener("abort", aborted); reject(Object.assign(err, { reused: req.reusedSocket })); });
       if (sent.signal?.aborted) { aborted(); return; }
       const body = sent.body;
       if (!body) req.end();
       else if (Buffer.isBuffer(body)) req.end(body);
-      else { body.once("error", (err) => req.destroy(err)); body.pipe(req); }
+      else {
+        body.once("error", (err) => req.destroy(err));
+        // The pipe below stops reading the body while the connection takes no more: no `data`, nothing moving.
+        const moved = (): void => {
+          clearTimeout(stall);
+          stall = setTimeout(() => req.destroy(new Error(`${target.host} took nothing more of what was sent for ${sent.stallTimeoutMs} ms`)), sent.stallTimeoutMs);
+        };
+        if (sent.stallTimeoutMs) { moved(); body.on("data", moved); }
+        req.once("finish", () => {
+          clearTimeout(stall);
+          body.off("data", moved);
+          if (!sent.answerTimeoutMs) return;
+          clearTimeout(timer);
+          timer = setTimeout(() => req.destroy(new Error(`no answer from ${target.host} within ${sent.answerTimeoutMs} ms of the last of what was sent`)), sent.answerTimeoutMs);
+        });
+        body.pipe(req);
+      }
     });
   }
 

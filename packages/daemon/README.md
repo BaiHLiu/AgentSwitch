@@ -554,6 +554,11 @@ agentswitch devices                    # who uses this node; `devices revoke <id
 - `scripts/mesh_smoke.sh`: two throw-away services on this machine, paired and used from the command line. It builds
   every process's environment from nothing: a shell inside an AgentSwitch terminal carries the real service's
   `AGENTSWITCH_HOME`, and a `serve` that inherits it runs on the real state.
+- A file sent to another node (`POST /nodes/:id/uploads`, multipart) may take as long as it keeps moving: 15 s of the
+  connection taking nothing more of it ends it, and its answer has 30 s from its last byte. Other requests wait 30 s
+  for the answer's head, 120 s with a JSON body. `scripts/mesh_upload_probe.ts` times the way from one node's own
+  listener to the other's (two services in one process, throw-away homes; `--frozen` adds a link that stops carrying
+  anything without closing): on this machine 1 / 8 / 20 MB take about 5 / 20 / 40 ms.
 
 ## Start-up (serve)
 
