@@ -2,9 +2,10 @@ import AgentSwitchMacCore
 import SwiftUI
 
 // Code on the Dispatch page (docs/dispatch-v0.md §2, demo `mac-window.html` `.cb`, 2026-10-03, user: dispatch里加上代码块
-// 支持吧，这样看着太难受了): a fenced block in the mono font on the code wash, square, framed; one line per line — a long
-// one scrolls sideways rather than wrapping, so a command never reads as two — its language and `Copy` above it. Inline
-// code sits on the same wash. What a person typed is read for code only (TypedText); model output is Markdown.
+// 支持吧，这样看着太难受了): a fenced block in the mono font on the code wash, framed — square in the pixel look, with the
+// record's round corners in the classic one (2026-10-11, user: 这个直接矩形不像是classic里该有的东西); one line per line — a
+// long one scrolls sideways rather than wrapping, so a command never reads as two — its language and `Copy` above it.
+// Inline code sits on the same wash. What a person typed is read for code only (TypedText); model output is Markdown.
 
 /// A fenced block; `Copy` puts its text on the clipboard (`Copied` for a moment).
 struct CodeBlockView: View {
@@ -31,7 +32,8 @@ struct CodeBlockView: View {
         }
         .frame(minWidth: 160, alignment: .leading)
         .background(Look.code)
-        .overlay(Rectangle().strokeBorder(Look.line, lineWidth: 1))
+        // Clipped to the corners too: a long line scrolled sideways stays inside them.
+        .framed(Look.line, radius: 6)
     }
 
     private var lines: some View {

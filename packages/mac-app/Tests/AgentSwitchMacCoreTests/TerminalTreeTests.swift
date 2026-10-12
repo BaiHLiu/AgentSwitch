@@ -39,6 +39,38 @@ final class TerminalTreeTests: XCTestCase {
         XCTAssertEqual(lines(later), lines(folders))
     }
 
+    // 2026-10-11, user: 这里要加上筛选某个agent的会话 和筛选活跃会话的功能.
+    func testTheFilterKeepsOneAgentsRowsAndWhatIsActiveAndNoEmptyFolder() {
+        let terminals = [term("t1", "\(w)/A", created: 1), TerminalInfo(id: "t2", harness: "codex", cwd: "\(w)/A", name: "t2", status: "working", createdAt: 2),
+                         TerminalInfo(id: "t3", harness: "codex", cwd: "\(w)/B/deep", name: "t3", status: "exited", createdAt: 3)]
+        let sessions = [session("s1", "\(w)/A"), SessionSummary(harness: "codex", id: "s2", cwd: "\(w)/B", title: "s2", updatedAt: 1),
+                        SessionSummary(harness: "opencode", id: "s3", cwd: "\(w)/C", title: "s3", updatedAt: 1, active: true)]
+        let tree = TerminalTree.build(terminals: terminals, sessions: sessions)
+        XCTAssertEqual(lines(tree), ["WorkSpace/", "  A/", "    · t1", "    · t2", "    · s1", "  B/", "    · s2", "    deep/", "      · t3", "  C/", "    · s3"])
+        XCTAssertEqual(TerminalTree.filtered(tree, by: TerminalListFilter()), tree, "no filter: the tree as it is")
+        // One agent's: its terminals and its sessions; a folder with nothing of its goes, the folder that gathers the
+        // others stays while one of them does.
+        XCTAssertEqual(lines(TerminalTree.filtered(tree, by: TerminalListFilter(agent: "codex"))),
+                       ["WorkSpace/", "  A/", "    · t2", "  B/", "    · s2", "    deep/", "      · t3"])
+        // What is active: the terminals that run, the sessions being written now.
+        XCTAssertEqual(lines(TerminalTree.filtered(tree, by: TerminalListFilter(active: true))), ["WorkSpace/", "  A/", "    · t1", "    · t2", "  C/", "    · s3"])
+        XCTAssertEqual(lines(TerminalTree.filtered(tree, by: TerminalListFilter(agent: "codex", active: true))), ["WorkSpace/", "  A/", "    · t2"])
+        XCTAssertEqual(TerminalTree.filtered(tree, by: TerminalListFilter(agent: "pi")), [])
+        // The folders that stay keep their names and their places.
+        let nested = TerminalTree.filtered(tree, by: TerminalListFilter(agent: "codex")).first?.children.first { $0.name == "B" }
+        XCTAssertEqual(nested?.children.map(\.name), ["deep"])
+
+        // The agents offered: those in the list, in the page's order; one alone is nothing to choose between; the one
+        // chosen stays offered when nothing of its is left; chosen again, it is taken off.
+        XCTAssertEqual(TerminalListFilter.agents(terminals: terminals, sessions: sessions), ["claude-code", "codex", "opencode"])
+        XCTAssertEqual(TerminalListFilter.agents(terminals: [terminals[0]], sessions: [sessions[0]]), [])
+        XCTAssertEqual(TerminalListFilter.agents(terminals: [terminals[0]], sessions: [], chosen: "pi"), ["claude-code", "pi"])
+        XCTAssertEqual(TerminalListFilter(active: true).choosing("codex"), TerminalListFilter(agent: "codex", active: true))
+        XCTAssertEqual(TerminalListFilter(agent: "codex", active: true).choosing("codex"), TerminalListFilter(active: true))
+        XCTAssertEqual(TerminalListFilter(agent: "codex").choosing("pi"), TerminalListFilter(agent: "pi"))
+        XCTAssertFalse(TerminalListFilter().isOn)
+    }
+
     // 2026-10-03, user: 怎么分别显示了两个worktop.
     func testAFolderWithSessionsOfItsOwnThatHoldsOthersIsOneLine() {
         let folders = TerminalTree.build(terminals: [], sessions: [session("own", "\(w)/Worktop"), session("c1", "\(w)/Worktop/Codex"),

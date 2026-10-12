@@ -32,6 +32,7 @@ struct TerminalSidebar: View {
     var body: some View {
         VStack(spacing: 0) {
             SearchLine(model: model)
+            if model.filters { FilterLine(model: model) }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(model.rows) { row in
@@ -91,6 +92,61 @@ private struct SearchLine: View {
         .overlay(RoundedRectangle(cornerRadius: look.isClassic ? 7 : 0)
             .strokeBorder(look.isClassic ? (focused ? Color.signal.opacity(0.45) : Color.clear) : (focused ? Look.ink2 : Look.line), lineWidth: look.isClassic ? 2.5 : 1))
         .padding(EdgeInsets(top: look.isClassic ? 10 : 8, leading: look.isClassic ? 8 : 10, bottom: look.isClassic ? 6 : 4, trailing: look.isClassic ? 8 : 10))
+    }
+}
+
+/// Under the search line (2026-10-11, user: 这里要加上筛选某个agent的会话 和筛选活跃会话的功能): each agent's mark — one
+/// alone, clicked again every agent's — and `Active`: the terminals that run and the sessions being written now.
+private struct FilterLine: View {
+    let model: TerminalsModel
+    @Environment(\.interfaceLook) private var look
+
+    var body: some View {
+        HStack(spacing: look.isClassic ? 2 : 4) {
+            ForEach(model.filterAgents, id: \.self) { agent in
+                FilterMark(on: model.filter.agent == agent, help: "\(HarnessName.display(agent)) Only") {
+                    model.filter = model.filter.choosing(agent)
+                } label: { on in
+                    PixelSprite(rows: PixelArt.agents[agent] ?? PixelArt.agents["pi"]!, pixel: 2, color: on ? Look.ink : Look.ink2, strength: on ? 1 : 0.6, shadow: false)
+                }
+            }
+            Spacer(minLength: 6)
+            FilterMark(on: model.filter.active, help: "Running Terminals and Sessions Being Written Now") {
+                model.filter.active.toggle()
+            } label: { on in
+                Text("Active").font(look.isClassic ? .system(size: 11, weight: on ? .semibold : .medium) : .system(size: 11.5, weight: on ? .bold : .regular, design: .monospaced))
+                    .foregroundStyle(on ? (look.isClassic ? Color.signal : Look.ink) : Look.ink2)
+                    .padding(.horizontal, look.isClassic ? 3 : 1)
+            }
+        }
+        .padding(EdgeInsets(top: 0, leading: look.isClassic ? 10 : 12, bottom: look.isClassic ? 4 : 3, trailing: look.isClassic ? 10 : 12))
+    }
+}
+
+/// One of the filter line's switches: on, it sits on a wash of the signal colour (classic) or over a signal line
+/// (pixel); off, it is as quiet as the list's other marks.
+private struct FilterMark<Label: View>: View {
+    let on: Bool
+    let help: String
+    let action: () -> Void
+    @ViewBuilder let label: (Bool) -> Label
+    @State private var hovering = false
+    @Environment(\.interfaceLook) private var look
+
+    var body: some View {
+        Button(action: action) {
+            label(on)
+                .padding(.horizontal, 6)
+                .frame(minWidth: 26, minHeight: 20)
+                .background(RoundedRectangle(cornerRadius: look.isClassic ? 5 : 0)
+                    .fill(look.isClassic ? (on ? Color.signal.opacity(0.2) : hovering ? ListLook.selected : Color.clear) : (hovering && !on ? ListLook.selected : Color.clear)))
+                .overlay(alignment: .bottom) { if on, !look.isClassic { Rectangle().fill(Color.signal).frame(height: 2) } }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(help)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 
@@ -183,10 +239,12 @@ private struct FolderLine: View {
         HStack(spacing: 6) {
             if folder.live > 0 {
                 if look.isClassic {
-                    Text(String(folder.live)).font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(folder.waiting ? Color.white : Look.ink2)
-                        .padding(.horizontal, 4).frame(minWidth: 15, minHeight: 15)
-                        .background(Capsule().fill(folder.waiting ? Color.waiting : Look.line))
+                    // A solid mark, as a notification's count is (it was grey on grey): the green of a running
+                    // terminal's dot, amber while one waits for you.
+                    Text(String(folder.live)).font(.system(size: 11, weight: .bold)).monospacedDigit()
+                        .foregroundStyle(folder.waiting ? Color.white : Color.black.opacity(0.8))
+                        .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 18)
+                        .background(Capsule().fill(folder.waiting ? Color.waiting : Color.ok))
                 } else {
                     // Amber and blinking while one waits for you (it may be folded away).
                     Text("▪\(folder.live)").font(.system(size: 11, design: .monospaced)).foregroundStyle(folder.waiting ? Color.waiting : Color.ok)

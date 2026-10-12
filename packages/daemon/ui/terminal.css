@@ -512,7 +512,9 @@ body.pane-dragging, body.pane-dragging * { cursor: grabbing !important; }
 .classic .dir.parent .name { font-weight: 500; }
 .classic .dir .name .git { font-size: 11px; color: var(--ink3); margin-left: 8px; }
 .classic .dir .count { align-items: center; font-weight: 400; }
-.classic .dir .count b { min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; font: 700 10px/15px var(--ui); text-align: center; background: var(--ink4); color: var(--ink2); }
+/* A solid mark, as a notification's count is (it was grey on grey): the green of a running terminal's dot, amber while one waits for you. */
+.classic .dir .count b { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; font: 700 11px/18px var(--ui); font-variant-numeric: tabular-nums; text-align: center;
+  background: var(--green); color: rgba(0, 0, 0, 0.8); }
 .classic .dir .count b.w { background: var(--amber); color: #fff; }
 .classic .dir.holds { background: var(--sel); }
 .classic .dir.holds::before { display: none; }

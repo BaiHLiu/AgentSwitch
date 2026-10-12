@@ -128,6 +128,14 @@ body { background: #1b1b1d; color: var(--ink); font: 13px/1.5 var(--ui); display
 .find input { font: inherit; color: var(--ink); background: none; border: 0; outline: 0; padding: 0; min-width: 0; caret-color: var(--signal); }
 .find input::placeholder { color: var(--ink3); }
 .find kbd { font: 11px var(--mono); color: var(--ink3); }
+/* filter (2026-10-11, user: 这里要加上筛选某个agent的会话 和筛选活跃会话的功能): under the search line, each agent's mark —
+   one alone, clicked again every agent's — and Active (the terminals that run, the sessions being written now); what is
+   on stands over a signal line. The folders that stay keep their places. */
+.filt { flex: none; display: flex; align-items: center; gap: 4px; margin: 0 12px 3px; font-size: 11.5px; color: var(--ink2); user-select: none; }
+.filt > span { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 20px; padding: 0 6px; border-bottom: 2px solid transparent; opacity: .75; }
+.filt > span:hover { background: var(--sel); }
+.filt > span.on { color: var(--ink); border-bottom-color: var(--signal); opacity: 1; font-weight: 700; }
+.filt .act { margin-left: auto; }
 .found { color: var(--ink3); font-size: 11px; padding: 2px 12px 4px 12px; }
 .none { color: var(--ink3); font: 12.5px/1.6 var(--ui, -apple-system, sans-serif); padding: 16px 14px; }
 mark { background: var(--signal); color: #000; padding: 0 1px; }
@@ -313,6 +321,7 @@ mark { background: var(--signal); color: #000; padding: 0 1px; }
   </div>
   <aside class="side">
     <label class="find"><span class="slash">/</span><input id="find" placeholder="Search" spellcheck="false" autocomplete="off"><kbd>⌘F</kbd></label>
+    <div class="filt" id="filt"></div>
     <div class="list v-tree" id="list"></div>
     <div class="grip" id="grip" title="Drag · double-click resets · ⌘B hides"></div>
   </aside>
@@ -467,7 +476,17 @@ function tree() {
     children: shown.filter((c) => holder(c) === path).map((c) => make(c, c.slice(path.length + 1))) });
   return shown.filter((p) => holder(p) === null).map((p) => make(p, p.split("/").pop()));
 }
-const everyItem = (node) => [...(node.own?.items ?? []), ...node.children.flatMap(everyItem)];
+// The list's filter: one agent's rows alone (null: every agent's), and what is active alone.
+let filtAgent = null, filtActive = false;
+const keeps = (i) => (!filtAgent || i.ag === filtAgent) && (!filtActive || (i.kind === "term" ? i.st !== "exited" : i.active === true));
+const allItems = (node) => [...(node.own?.items ?? []), ...node.children.flatMap(allItems)];
+const everyItem = (node) => allItems(node).filter(keeps);
+function renderFilt() {
+  const there = new Set(tree().flatMap(allItems).map((i) => i.ag));
+  const agents = ["cc", "codex", "oc", "pi"].filter((a) => there.has(a) || a === filtAgent);
+  document.getElementById("filt").innerHTML = agents.map((a) => `<span class="${a === filtAgent ? "on" : ""}" data-filt="${a}" title="${AGENT_NAME[a]} Only">${sprite(AGENT_PX[a], { px: 2 })}</span>`).join("")
+    + `<span class="act ${filtActive ? "on" : ""}" data-filt="active" title="Running Terminals and Sessions Being Written Now">Active</span>`;
+}
 /** Every folder, depth first, named under the folders it sits in (Worktop/培训/靶场), for the search. */
 const everyFolder = (nodes, above = "") => nodes.flatMap((n) => {
   const name = above ? `${above}/${n.label}` : n.label;
@@ -520,6 +539,7 @@ function renderSearch(q) {
 }
 
 function render() {
+  renderFilt();
   const list = document.getElementById("list");
   list.className = `list v-${variant}`;
   const q = (document.getElementById("find")?.value ?? "").trim().toLowerCase();
@@ -531,10 +551,12 @@ function render() {
   // gathers others has the quieter line.
   const renderFolder = (node, depth) => {
     const f = node.own;
+    // The filter left nothing in it or under it: no line.
+    if ((filtAgent || filtActive) && !everyItem(node).length) return;
     const shut = closed.has(node.path);
     out.push(`<div class="dir ${f ? "" : "parent"}" data-dir="${node.path}" style="padding-left:calc(10px + ${depth * 2}ch)"><span class="chev">${shut ? "▸" : "▾"}</span><span class="name">${esc(node.label)}/${git(f?.git)}</span><span class="count">${counts(everyItem(node))}</span><span class="add">+</span></div>`);
     if (shut) return;
-    const items = f?.items ?? [];
+    const items = (f?.items ?? []).filter(keeps);
     const terms = items.filter((i) => i.kind === "term");
     const sessions = items.filter((i) => i.kind === "session");
     const open = expanded.has(node.path);
@@ -1055,6 +1077,12 @@ document.getElementById("grip").addEventListener("pointerdown", (e) => {
 });
 document.getElementById("grip").addEventListener("dblclick", () => { sideWidth = 300; win.style.setProperty("--side-open", "300px"); });
 document.getElementById("find").addEventListener("input", () => render());
+document.getElementById("filt").addEventListener("click", (e) => {
+  const k = e.target.closest("[data-filt]")?.dataset.filt;
+  if (!k) return;
+  if (k === "active") filtActive = !filtActive; else filtAgent = filtAgent === k ? null : k;
+  render();
+});
 document.addEventListener("keydown", (e) => {
   if (e.metaKey && e.key.toLowerCase() === "f") { e.preventDefault(); win.classList.remove("closed"); document.getElementById("find").focus(); return; }
   if (e.key === "Escape" && document.activeElement === document.getElementById("find")) { document.getElementById("find").value = ""; render(); document.getElementById("find").blur(); return; }

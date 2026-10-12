@@ -51,10 +51,45 @@ public enum TerminalListRow: Equatable, Sendable, Identifiable {
     }
 }
 
+/// What of the list is shown (docs/terminal-v0.md §1 Mac, 2026-10-11, user: 这里要加上筛选某个agent的会话 和筛选活跃会话的功能):
+/// one agent's terminals and sessions alone, and what is active alone — the terminals that run, and the sessions the
+/// service says are being written now (one open in another program). Both can be on.
+public struct TerminalListFilter: Equatable, Sendable {
+    /// An agent's id (`codex`); nil: every agent's.
+    public var agent: String?
+    public var active: Bool
+
+    public init(agent: String? = nil, active: Bool = false) {
+        self.agent = agent
+        self.active = active
+    }
+
+    public var isOn: Bool { agent != nil || active }
+
+    public func keeps(_ terminal: TerminalInfo) -> Bool { (agent == nil || terminal.harness == agent) && (!active || terminal.running) }
+    public func keeps(_ session: SessionSummary) -> Bool { (agent == nil || session.harness == agent) && (!active || session.active) }
+
+    /// `agent` alone; chosen again, every agent's.
+    public func choosing(_ agent: String) -> TerminalListFilter { TerminalListFilter(agent: self.agent == agent ? nil : agent, active: active) }
+
+    /// The agents to choose from, in the page's order: those with a terminal or a session in the list, and the one
+    /// chosen even when nothing of its is left (so it can be taken off). None while there is one agent and no choice:
+    /// nothing to choose between.
+    public static func agents(terminals: [TerminalInfo], sessions: [SessionSummary], chosen: String? = nil) -> [String] {
+        let there = Set(terminals.map(\.harness)).union(sessions.map(\.harness))
+        let known = TerminalListText.agents.map(\.id)
+        var listed = known.filter(there.contains) + there.subtracting(known).sorted()
+        if let chosen, !listed.contains(chosen) { listed.append(chosen) }
+        return listed.count > 1 || chosen != nil ? listed : []
+    }
+}
+
 public enum TerminalListRows {
     /// A folder shows this many of its sessions until `More` is asked for.
     public static let sessionsShown = 3
     public static let noSessions = "暂无会话。"
+    /// The filter left nothing.
+    public static let noneKept = "没有符合筛选条件的会话。"
 
     /// The terminals in the order they were opened: ⌘1–9 follow it, wherever the tree puts them.
     public static func order(_ terminals: [TerminalInfo]) -> [String] {

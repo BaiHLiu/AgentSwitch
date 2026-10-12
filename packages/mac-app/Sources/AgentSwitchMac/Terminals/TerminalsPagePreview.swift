@@ -10,6 +10,8 @@ import SwiftUI
 /// - `terminals-panes`: three panes — the second in focus with a request's card, the third empty;
 /// - `terminals-create`, `terminals-create-pane`: the new-terminal panel alone, and in a pane among several;
 /// - `terminals-search`: a search with titles and words that matched;
+/// - `terminals-filter`, `terminals-filter-active`, `terminals-filter-none`: the list with one agent's rows alone, with
+///   what is active alone, and with a filter that leaves nothing;
 /// - `terminals-sheet`: closing a running terminal asked first;
 /// - `terminals-rename`: a name being changed; the list's folders folded around the terminal on screen;
 /// - `terminals-closed`: the list put away;
@@ -59,6 +61,9 @@ enum TerminalsPagePreview {
             model.createError = "文件夹不存在：~/Desktop/WorkSpace/Projects/Nowhere"
         }
         try await shot(to: file("terminals-search")) { $0.query = "登录" }
+        try await shot(to: file("terminals-filter")) { $0.filter = TerminalListFilter(agent: "claude-code") }
+        try await shot(to: file("terminals-filter-active")) { $0.filter = TerminalListFilter(active: true) }
+        try await shot(to: file("terminals-filter-none")) { $0.filter = TerminalListFilter(agent: "pi", active: true) }
         try await shot(to: file("terminals-sheet")) { model in
             Task { _ = await model.ask(TerminalSheet(title: "关闭「修登录页的跳转」？", body: "将结束 Claude Code 进程。会话记录保留，可稍后继续。", confirm: "Close", destructive: true, check: "同时删除会话记录（无法恢复）")) }
         }

@@ -80,6 +80,13 @@ final class TerminalsModel {
     /// Folders showing all their sessions (`More` asked for).
     var expanded: Set<String> = []
     var query = "" { didSet { if query != oldValue { searchChanged() } } }
+    /// What of the list is shown: one agent's rows alone, the active ones alone (kept, as the folded folders are).
+    var filter: TerminalListFilter {
+        didSet {
+            defaults?.set(filter.agent, forKey: Keys.filterAgent)
+            defaults?.set(filter.active, forKey: Keys.filterActive)
+        }
+    }
     /// The sessions whose words matched (`harness:id` → the words around the match), for the query `saidFor`.
     private(set) var said: [String: String] = [:]
     private(set) var saidFor = ""
@@ -146,6 +153,7 @@ final class TerminalsModel {
         static let agent = "terminals.agent", models = "terminals.models", mode = "terminals.mode", folder = "terminals.folder"
         static let efforts = "terminals.efforts"
         static let simple = "terminals.simple", simplePanes = "terminals.simplePanes"
+        static let filterAgent = "terminals.filterAgent", filterActive = "terminals.filterActive"
     }
 
     enum Side {
@@ -164,6 +172,7 @@ final class TerminalsModel {
         let width = defaults?.double(forKey: Keys.sideWidth) ?? 0
         sideWidth = width >= Double(Side.min) ? CGFloat(width) : Side.width
         collapsed = Set(defaults?.stringArray(forKey: Keys.collapsed) ?? [])
+        filter = TerminalListFilter(agent: defaults?.string(forKey: Keys.filterAgent), active: defaults?.bool(forKey: Keys.filterActive) ?? false)
         pickedAgent = defaults?.string(forKey: Keys.agent) ?? "claude-code"
         pickedModels = defaults?.dictionary(forKey: Keys.models) as? [String: String] ?? [:]
         pickedEfforts = defaults?.dictionary(forKey: Keys.efforts) as? [String: String] ?? [:]
@@ -197,14 +206,21 @@ final class TerminalsModel {
 
     var tree: [TerminalTree.Folder] { TerminalTree.build(terminals: terminals, sessions: sessions, git: gits) }
 
-    /// The list's rows: the tree, or what a search left of it.
+    /// The agents the list's filter offers.
+    var filterAgents: [String] { TerminalListFilter.agents(terminals: terminals, sessions: sessions, chosen: filter.agent) }
+    /// The list has a line of filters: something to filter, or a filter to take off.
+    var filters: Bool { filter.isOn || !terminals.isEmpty || !sessions.isEmpty }
+
+    /// The list's rows: the tree — all of it, or what the filter keeps —, or what a search left of that.
     var rows: [TerminalListRow] {
+        let shown = TerminalTree.filtered(tree, by: filter)
+        if filter.isOn, shown.isEmpty { return [.note(TerminalListRows.noneKept)] }
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else {
-            return TerminalListRows.build(tree, git: gits, collapsed: collapsed, expanded: expanded, current: current?.id, order: order)
+            return TerminalListRows.build(shown, git: gits, collapsed: collapsed, expanded: expanded, current: current?.id, order: order)
         }
         let words = saidFor == q.lowercased() ? said : [:]
-        return TerminalListRows.found(TerminalSearch.run(tree, query: q, said: words), query: q, order: order)
+        return TerminalListRows.found(TerminalSearch.run(shown, query: q, said: words), query: q, order: order)
     }
 
     /// The panes placed in `size`: all of them, or the one in focus alone while it is zoomed.
