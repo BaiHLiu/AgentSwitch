@@ -263,8 +263,12 @@ extension TerminalsModel {
             focused?.say("Opening 「\(name)」")
             defer { opening = nil }
             do {
+                // How it asks: as its record says; a record that does not say (pi's, OpenCode's) as last picked for a new
+                // terminal, and with nothing picked yet — the panel was never opened on this page — the service's own
+                // choice. An empty mode was sent then, and refused (2026-10-11: 无法继续「你好」：mode: Invalid option).
+                let picked = TerminalListText.modes.contains { $0.id == pickedMode } ? pickedMode : nil
                 var body = ResumeTerminalRequest(harness: session.harness, cwd: session.cwd, agentSessionId: session.sessionId,
-                                                 title: session.title.isEmpty ? nil : session.title, mode: session.mode ?? pickedMode,
+                                                 title: session.title.isEmpty ? nil : session.title, mode: session.mode ?? picked,
                                                  cols: gridHere?.cols, rows: gridHere?.rows, profile: profile)
                 var first: (cwd: String, alike: [String], near: String?)?
                 while true {
