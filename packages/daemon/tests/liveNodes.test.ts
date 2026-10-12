@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import { withNodes, type LiveSnapshot } from "../src/api/live.js";
+import { steadyAhead } from "../src/nodes/nodes.js";
 
 const own: LiveSnapshot = {
   rows: [{ id: "t5", kind: "task", title: "这台的任务", step: "", doing: "Run", model: null, agent: null, startedAt: 9_000, needsYou: false, ask: null }],
@@ -59,5 +60,26 @@ describe("this node's live summary with its nodes'", () => {
     expect(got.rows.filter((r) => r.node)).toHaveLength(20);
     expect(got.waiting).toBe(20);
     expect(got.ended).toHaveLength(10);
+  });
+  it("gives a result there the same time on every read of one answer, and of the next", () => {
+    // The node's answer is kept two seconds and read every second (user, 2026-10-12: 远程的mac任务完成之后会在我这里无限提示:
+    // the time moved with each read, so the Mac took one result for a new one every second).
+    const body = { now: 5_000, rows: [{ id: "k1", kind: "terminal", title: "等着", needsYou: true, startedAt: 4_000 }], ended: [{ kind: "terminal", id: "k9", title: "那台的终端", line: "好了", ok: true, at: 4_800 }] };
+    const heard = { ...studio(body), ahead: 5_000 };
+    const first = withNodes(own, [heard]);
+    const later = withNodes({ ...own, now: 11_000 }, [heard]);
+    expect(first.ended.find((e) => e.node)!.at).toBe(9_800);
+    expect(later.ended.find((e) => e.node)!.at).toBe(9_800);
+    expect(later.rows.find((r) => r.node)!.startedAt).toBe(9_000);
+    // The next answer came a little slower: the clocks are held as far apart as they were.
+    const ahead = steadyAhead(5_000, 5_040);
+    expect(ahead).toBe(5_000);
+    expect(withNodes({ ...own, now: 12_000 }, [{ ...studio({ ...body, now: 7_000 }), ahead }]).ended.find((e) => e.node)!.at).toBe(9_800);
+  });
+
+  it("measures the clocks again when they have moved apart", () => {
+    expect(steadyAhead(undefined, 5_040)).toBe(5_040);
+    expect(steadyAhead(5_000, 3_600_000)).toBe(3_600_000);
+    expect(steadyAhead(5_000, -4_000)).toBe(-4_000);
   });
 });

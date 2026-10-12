@@ -29,7 +29,7 @@ const MAX_LIST_LIMIT = 500;
 export type ApiDeps = {
   /** What the nodes this one uses last said of their own Live Activity (docs/mesh-v0.md §5.2 跨节点的提醒): listed
    *  beside this node's own for its own screens. Never waits for a node. */
-  readonly liveElsewhere?: () => readonly { readonly id: string; readonly name: string; readonly body: Record<string, unknown> }[];
+  readonly liveElsewhere?: () => readonly { readonly id: string; readonly name: string; readonly body: Record<string, unknown>; readonly ahead?: number }[];
   /** Turns plaintext credentials in a submission into tokens before anything is stored (router-v0 §9); absent in echo mode. */
   readonly sealer?: Sealer;
   /** Clash Integration (docs/clash-v0.md). */

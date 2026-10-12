@@ -18,6 +18,9 @@ const ASK_TIMEOUT_MS = 4_000;
 const STATUS_TTL_MS = 2_000;
 /** What a node said of its Live Activity is listed beside this node's own for this long after it was heard. */
 const LIVE_KEPT_MS = 10_000;
+/** A node's clock is taken to stand as far from this one's as it was last measured, while a new measure is within this
+ *  of the old: one answer is a little slower than the next, and a time that moved with it would name a new result. */
+const CLOCK_SLACK_MS = 3_000;
 /** A node's addresses, name and gate key are asked again this often while it answers. */
 const LEARN_EVERY_MS = 5 * 60_000;
 
@@ -40,7 +43,16 @@ export type Added =
 
 /** `revoked`: it answers, and no longer knows this node's device (removed there). */
 /** What a node this one uses said its own Live Activity shows (`GET /live` there), as last heard. */
-export type NodeLive = { readonly id: string; readonly name: string; readonly at: number; readonly body: Record<string, unknown> };
+export type NodeLive = {
+  readonly id: string; readonly name: string; readonly at: number; readonly body: Record<string, unknown>;
+  /** How far this node's clock is ahead of that one's, by the `now` in its answers; absent while it sends none. */
+  readonly ahead?: number;
+};
+
+/** How far apart two clocks are taken to be: as before (`held`) while the new measure is near it, else the new one. */
+export function steadyAhead(held: number | undefined, measured: number): number {
+  return held !== undefined && Math.abs(measured - held) <= CLOCK_SLACK_MS ? held : measured;
+}
 
 export type NodeStatus = PeerView & { readonly state: "online" | "offline" | "revoked"; readonly address: string | null; readonly waiting: number | null };
 
@@ -71,6 +83,8 @@ export class Nodes {
   private statusCache: { readonly at: number; readonly value: Promise<NodeStatus[]> } | null = null;
   /** Each node's last answer to `GET /live`, by its id (docs/mesh-v0.md §5.2 跨节点的提醒). */
   private readonly heard = new Map<string, NodeLive>();
+  /** How far this node's clock is ahead of each node's, as last taken (`steadyAhead`). */
+  private readonly ahead = new Map<string, number>();
   /** When `lives` was last read, and whether the nodes are being looked at for it. */
   private livesRead = 0;
   private looking = false;
@@ -193,6 +207,8 @@ export class Nodes {
     this.book.remove(peer.id);
     this.dialer.drop(peer.fingerprint);
     this.learned.delete(peer.id);
+    this.heard.delete(peer.id);
+    this.ahead.delete(peer.id);
     this.statusCache = null;
     let inboundRevoked = false;
     if (opts.both && peer.inbound) {
@@ -251,9 +267,20 @@ export class Nodes {
     if (!live) { this.dialer.forget(peer.fingerprint); this.heard.delete(peer.id); return { ...peerView(peer), state: "offline", address: null, waiting: null }; }
     if (live.status === 401) { this.heard.delete(peer.id); return { ...peerView(peer), state: "revoked", address: host, waiting: null }; }
     const now = this.book.patch(peer.id, { last: host }) ?? peer;
-    if (live.status === 200) this.heard.set(peer.id, { id: peer.id, name: now.name, at: this.now(), body: live.body }); else this.heard.delete(peer.id);
+    if (live.status === 200) this.heard.set(peer.id, this.hear(now, live.body)); else this.heard.delete(peer.id);
     void this.learn(now, host);
     return { ...peerView(now), state: "online", address: host, waiting: live.status === 200 && typeof live.body.waiting === "number" ? live.body.waiting : null };
+  }
+
+  /** A node's answer to `GET /live` as kept: with how far its clock stands from this one's, held steady from one
+   *  answer to the next (`steadyAhead`) and through a gap in them. */
+  private hear(peer: Peer, body: Record<string, unknown>): NodeLive {
+    const at = this.now();
+    const theirs = body.now;
+    if (typeof theirs !== "number" || !Number.isFinite(theirs)) return { id: peer.id, name: peer.name, at, body };
+    const ahead = steadyAhead(this.ahead.get(peer.id), at - theirs);
+    this.ahead.set(peer.id, ahead);
+    return { id: peer.id, name: peer.name, at, body, ahead };
   }
 
   /** What a node says of itself, asked when it is paired and every `LEARN_EVERY_MS` after: its name and kind, where it

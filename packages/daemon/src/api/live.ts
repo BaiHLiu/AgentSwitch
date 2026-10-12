@@ -94,15 +94,18 @@ const text = (v: unknown, max: number): string => (typeof v === "string" ? (v.le
 /** `own` with what the nodes this one uses said of themselves (`others`: each node's answer to its own `GET /live`):
  *  their rows that wait for the user and their results, each marked with its node, the waiting count with them. What
  *  merely runs there is not listed (the card is for what needs you and what came of it). Their clocks are their own:
- *  each time is moved by how far that node's `now` is from this one's. Another machine's JSON: read field by field,
+ *  each time is moved by how far that node's clock stands from this one's (`ahead`, measured when the answer was
+ *  heard and held steady — not by this read's `now`: one answer is read many times, and a result whose time moved
+ *  with each read was a new result to the Mac every second; user, 2026-10-12: 远程的mac任务完成之后会在我这里无限提示).
+ *  Without `ahead` (a caller that kept none) the answer is taken as just heard. Another machine's JSON: read field by field,
  *  nothing taken on trust, a row a node passed on from a third never taken. */
-export function withNodes(own: LiveSnapshot, others: readonly { readonly id: string; readonly name: string; readonly body: Record<string, unknown> }[]): LiveSnapshot {
+export function withNodes(own: LiveSnapshot, others: readonly { readonly id: string; readonly name: string; readonly body: Record<string, unknown>; readonly ahead?: number }[]): LiveSnapshot {
   if (!others.length) return own;
   const rows: LiveRow[] = [];
   const ends: LiveEnd[] = [];
   for (const other of others) {
     const node: LiveNode = { id: other.id, name: other.name };
-    const shift = typeof other.body.now === "number" && Number.isFinite(other.body.now) ? own.now - other.body.now : 0;
+    const shift = other.ahead ?? (typeof other.body.now === "number" && Number.isFinite(other.body.now) ? own.now - other.body.now : 0);
     const time = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v + shift : own.now);
     const kind = (v: unknown): "task" | "terminal" => (v === "terminal" ? "terminal" : "task");
     for (const raw of (Array.isArray(other.body.rows) ? other.body.rows : []) as Record<string, unknown>[]) {
