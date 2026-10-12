@@ -5,7 +5,14 @@
  *  in OPENCODE_PASSWORD), and polls it: a running session is working; a pending question, or a permission request when
  *  the terminal asks (manual), is waiting; nothing is idle. A permission request also goes to the screens as a card and
  *  is answered on the server; answered in the TUI first, the card is withdrawn. With `--auto` the TUI approves what is
- *  not denied itself, so no cards. The server ends with the terminal, or when the service goes (its stdin closes). */
+ *  not denied itself, so no cards. The server ends with the terminal, or when the service goes (its stdin closes).
+ *
+ *  The server also says which session the TUI is on and which sub-agents run (2026-10-11, user: opencode的子代理好像并没有
+ *  有效的识别到 … 有的时候会出现两个同样名字的session): a sub-agent is a session of its own with a `parentID`, running
+ *  beside the one that sent it. The terminal is told its session — without it the list showed a new OpenCode terminal
+ *  and, a line below, the session it was writing, under one name — and its sub-agents by their sessions. Only what
+ *  this server runs is read (`/api/session/active`, then each running session's own line): the list of every session
+ *  of the folder is shared with other OpenCodes and is not asked for this. */
 
 import type { PermissionRequest } from "../executors/opencodeServeMap.js";
 import { basicAuth, startStdioServe, stopStdioServe, type StdioServe, type StdioServeOptions } from "../harness/opencodeStdio.js";
@@ -19,6 +26,9 @@ const MAX_FAILURES = 10;
 /** Looks at a server that lists no models yet before the model a terminal was started on is tried all the same. */
 const MODEL_LOOKS = 20;
 const DENIED = "在 AgentSwitch 上被拒绝。";
+/** Sessions asked about in one look, and how far up a sub-agent's senders are followed. */
+const LEARN_A_LOOK = 8;
+const MAX_DEPTH = 6;
 
 type Json = Record<string, unknown>;
 
@@ -61,8 +71,14 @@ const refOf = (model: string): { providerID: string; id: string } | null => {
 export class OpenCodeCompanion implements Companion {
   /** When the companion was made: a session of this folder made since is the TUI's own. */
   private readonly since = Date.now();
-  /** The session last seen running on this server: the one the TUI is on. */
+  /** The session last seen running on this server that is not a sub-agent's: the one the TUI is on. */
   private lastActive: string | null = null;
+  /** What each session seen running is: the session it was sent from (a sub-agent's has one), its title, its agent.
+   *  Asked once a session; one the server would not describe is taken for the TUI's own, as before. */
+  private readonly known = new Map<string, { readonly parent: string | null; readonly title: string; readonly agent: string }>();
+  /** What the terminal was last told: its session, its sub-agents (their ids). */
+  private told: string | null = null;
+  private toldAgents = "";
   private server: StdioServe | null = null;
   private link: CompanionLink | null = null;
   private timer: NodeJS.Timeout | null = null;
@@ -137,13 +153,55 @@ export class OpenCodeCompanion implements Companion {
     if (this.wanted) await this.settle();
     if (this.stopped) return;
     const running = Object.keys(active);
-    if (running.length) this.lastActive = running[running.length - 1]!;
+    await this.learn(running);
+    if (this.stopped) return;
+    const own = running.filter((id) => !this.known.get(id)?.parent);
+    // A sub-agent's session running alone (its sender waits on it) still says whose turn this is.
+    const top = own[own.length - 1] ?? (running.length ? this.top(running[running.length - 1]!) : null);
+    if (top) this.lastActive = top;
+    this.tell(running);
     const listed = new Set(requests.map((r) => r.id));
     for (const [id, ctl] of this.open) if (!listed.has(id)) { ctl.abort(); this.open.delete(id); }
     for (const id of this.handled) if (!listed.has(id)) this.handled.delete(id);
     if (this.o.asks) for (const req of requests) if (!this.open.has(req.id) && !this.handled.has(req.id)) this.surface(req);
     const waiting = forms.length > 0 || (this.o.asks && requests.length > 0);
     this.link.status(waiting ? "waiting" : Object.keys(active).length ? "working" : "idle");
+  }
+
+  /** What the sessions in `ids` are, for those not asked about yet (a few a look: a burst of sub-agents is learnt
+   *  over the next looks). */
+  private async learn(ids: readonly string[]): Promise<void> {
+    const fresh = ids.filter((id) => !this.known.has(id)).slice(0, LEARN_A_LOOK);
+    await Promise.all(fresh.map(async (id) => {
+      try {
+        const s = ((await this.call("GET", `/api/session/${encodeURIComponent(id)}?${this.loc}`))?.data ?? {}) as Json;
+        this.known.set(id, { parent: typeof s.parentID === "string" && s.parentID ? s.parentID : null, title: typeof s.title === "string" ? s.title : "", agent: typeof s.agent === "string" ? s.agent : "" });
+      } catch {
+        this.known.set(id, { parent: null, title: "", agent: "" });
+      }
+    }));
+  }
+
+  /** The session a sub-agent's session was sent from, however deep; a session that is nobody's sub-agent is itself. */
+  private top(id: string): string {
+    let at = id;
+    for (let depth = 0; depth < MAX_DEPTH; depth++) {
+      const parent = this.known.get(at)?.parent;
+      if (!parent) break;
+      at = parent;
+    }
+    return at;
+  }
+
+  /** The terminal is told the session the TUI is on (the one last seen running, else the one it was started on) when
+   *  that is first known or changes, and the sub-agents that run when that list changes. */
+  private tell(running: readonly string[]): void {
+    const at = this.o.args.indexOf("--session");
+    const session = this.lastActive ?? (at >= 0 ? this.o.args[at + 1] ?? null : null);
+    if (session && session !== this.told) { this.told = session; this.link?.session?.(session); }
+    const agents = running.filter((id) => this.known.get(id)?.parent).map((id) => { const k = this.known.get(id)!; return { id, type: k.agent || "agent", name: k.title || k.agent || "agent" }; });
+    const ids = agents.map((a) => a.id).join(" ");
+    if (ids !== this.toldAgents) { this.toldAgents = ids; this.link?.subagents?.(agents); }
   }
 
   /** The session the TUI is on, as far as its server shows: the one it was started on (`--session`), else the one

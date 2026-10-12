@@ -38,7 +38,7 @@ async function fakeServer(password: string) {
       { id: "ling-flash", providerID: "opencode", enabled: true, variants: [] },
       { id: "retired", providerID: "opencode", enabled: false, variants: [] },
     ] as { id: string; providerID: string; enabled: boolean; variants: { id: string }[] }[],
-    sessions: [] as { id: string; time: { created: number }; model?: { id: string; providerID: string; variant?: string } }[],
+    sessions: [] as { id: string; time: { created: number }; model?: { id: string; providerID: string; variant?: string }; parentID?: string; title?: string; agent?: string }[],
     switches: [] as { session: string; model: unknown }[] };
   const body = (req: IncomingMessage) => new Promise<unknown>((ok) => { let t = ""; req.on("data", (d) => { t += d; }); req.on("end", () => ok(t ? JSON.parse(t) : null)); });
   const server = createServer(async (req, res) => {
@@ -88,14 +88,18 @@ function fakeServe(url: string, password: string, started: { env?: Readonly<Reco
 function fakeLink() {
   const statuses: string[] = [];
   const cards: { tool: string; input: unknown; signal: AbortSignal; answer: (d: PermissionDecision | null) => void }[] = [];
+  const sessions: string[] = [];
+  const agents: { id: string; type: string; name: string }[][] = [];
   const link: CompanionLink = {
+    session: (id) => { sessions.push(id); },
+    subagents: (list) => { agents.push(list.map((a) => ({ ...a }))); },
     status: (s) => { if (statuses[statuses.length - 1] !== s) statuses.push(s); },
     ask: (tool, input, signal) => new Promise((answer) => {
       cards.push({ tool, input, signal, answer });
       signal.addEventListener("abort", () => answer(null), { once: true });
     }),
   };
-  return { statuses, cards, link, last: () => statuses[statuses.length - 1] };
+  return { statuses, cards, sessions, agents, link, last: () => statuses[statuses.length - 1] };
 }
 
 describe("OpenCode terminal companion", () => {
@@ -227,6 +231,54 @@ describe("OpenCode terminal companion", () => {
     expect(state.switches).toHaveLength(1);
   });
 
+  // 2026-10-11, user: opencode的子代理好像并没有有效的识别到 … 有的时候会出现两个同样名字的session，有一个关掉就没了.
+  it("tells the terminal the session the TUI is on and the sub-agents that run, a sub-agent's session never taken for the TUI's", async () => {
+    const { state, url } = await fakeServer("pw7");
+    state.sessions = [{ id: "ses_root", time: { created: 1 } }, { id: "ses_kid", parentID: "ses_root", title: "找登录入口", agent: "explore", time: { created: 2 } },
+      { id: "ses_deep", parentID: "ses_kid", title: "", agent: "", time: { created: 3 } }];
+    const c = new OpenCodeCompanion({ binary: "/bin/opencode", cwd: tmpdir(), env: {}, args: [], asks: true, pollMs: 10, serve: fakeServe(url, "pw7") });
+    closers.push(() => c.stop());
+    await c.start();
+    const screens = fakeLink();
+    c.attach(screens.link);
+    await until(() => screens.last() === "idle");
+    expect(screens.sessions).toEqual([]);   // nothing ran yet: the TUI has made no session
+    state.active = { ses_root: { type: "busy" } };
+    await until(() => screens.sessions.length === 1);
+    expect(screens.sessions).toEqual(["ses_root"]);
+    // A sub-agent starts: a session of its own, listed after its sender's.
+    state.active = { ses_root: { type: "busy" }, ses_kid: { type: "busy" } };
+    await until(() => screens.agents.length === 1);
+    expect(screens.agents[0]).toEqual([{ id: "ses_kid", type: "explore", name: "找登录入口" }]);
+    // Its sender waits on it, and it sends one of its own: still the same session, two sub-agents.
+    state.active = { ses_kid: { type: "busy" }, ses_deep: { type: "busy" } };
+    await until(() => screens.agents.length === 2);
+    expect(screens.agents[1]).toEqual([{ id: "ses_kid", type: "explore", name: "找登录入口" }, { id: "ses_deep", type: "agent", name: "agent" }]);
+    state.active = {};
+    await until(() => screens.agents.length === 3);
+    expect(screens.agents[2]).toEqual([]);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(screens.sessions).toEqual(["ses_root"]);   // told once; a sub-agent's session was never the TUI's
+    expect(await c.setModel({ model: "opencode/ling-flash" })).toEqual({ model: "opencode/ling-flash", variant: null });
+    expect(state.switches).toEqual([{ session: "ses_root", model: { providerID: "opencode", id: "ling-flash" } }]);
+    // Another session of the TUI's runs (`/new`, or one picked in it): the terminal follows.
+    state.sessions.push({ id: "ses_next", time: { created: 9 } });
+    state.active = { ses_next: { type: "busy" } };
+    await until(() => screens.sessions.length === 2);
+    expect(screens.sessions[1]).toBe("ses_next");
+  });
+
+  it("a session gone on with is the terminal's from the start, before anything runs", async () => {
+    const { url } = await fakeServer("pw8");
+    const c = new OpenCodeCompanion({ binary: "/bin/opencode", cwd: tmpdir(), env: {}, args: ["--session", "ses_old"], asks: true, pollMs: 10, serve: fakeServe(url, "pw8") });
+    closers.push(() => c.stop());
+    await c.start();
+    const screens = fakeLink();
+    c.attach(screens.link);
+    await until(() => screens.sessions.length === 1);
+    expect(screens.sessions).toEqual(["ses_old"]);
+  });
+
   it("withdraws a card answered in the TUI, and allows once", async () => {
     const { state, url } = await fakeServer("pw3");
     const c = new OpenCodeCompanion({ binary: "/bin/opencode", cwd: tmpdir(), env: {}, args: [], asks: true, pollMs: 10, serve: fakeServe(url, "pw3") });
@@ -328,6 +380,27 @@ describe("terminal host with a companion", () => {
     host.kill(info.id);
     await until(() => host.get(info.id)!.status === "exited");
     expect(companion.stops).toBeGreaterThan(0);
+  });
+
+  it("a companion's word of the session and the sub-agents: the terminal holds the session, its row has the sub-agents", async () => {
+    const companion = new ScriptedCompanion({ args: [FAKE], env: process.env as Record<string, string> });
+    const host = new TerminalHost({ launcher: () => ({ file: process.execPath, args: ["-e", "process.exit(3)"], env: process.env as Record<string, string>, hooks: false, companion }) });
+    closers.push(() => host.closeAll());
+    const info = await host.spawn({ harness: "opencode", cwd: tmpdir() });
+    await until(() => companion.link);
+    expect(host.get(info.id)!.agentSessionId).toBeNull();
+    companion.link!.session!("ses_root");
+    expect(host.get(info.id)!.agentSessionId).toBe("ses_root");
+    expect(host.ownSession(info.id)).toBe("ses_root");   // a new terminal's first session is its own
+    companion.link!.subagents!([{ id: "ses_kid", type: "explore", name: "找登录入口" }, { id: "ses_two", type: "", name: "" }]);
+    expect(host.get(info.id)!.subagents.map((a) => [a.id, a.type, a.name])).toEqual([["ses_kid", "explore", "找登录入口"], ["ses_two", "agent", "agent"]]);
+    companion.link!.subagents!([{ id: "ses_two", type: "", name: "" }]);
+    expect(host.get(info.id)!.subagents.map((a) => a.id)).toEqual(["ses_two"]);
+    companion.link!.subagents!([]);
+    expect(host.get(info.id)!.subagents).toEqual([]);
+    companion.link!.session!("ses_next");
+    expect(host.get(info.id)!.agentSessionId).toBe("ses_next");
+    expect(host.ownSession(info.id)).toBe("ses_root");   // a later one is followed, never owned
   });
 
   it("a terminal whose companion sets the model takes the request through it: while it rests, and the screens are told", async () => {

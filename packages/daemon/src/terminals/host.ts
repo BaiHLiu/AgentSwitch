@@ -218,6 +218,13 @@ export type CompanionLink = {
   /** A permission request for the screens: the answer, or null when none came or `signal` withdrew it (it was
    *  answered in the terminal). */
   ask(tool: string, input: unknown, signal: AbortSignal): Promise<PermissionDecision | null>;
+  /** The session the program is on, where the companion can tell (OpenCode's server; 2026-10-11): the terminal holds
+   *  it from then on as one a hook reported is held, so the list shows it once and going on with it comes to this
+   *  terminal. Said when first known and when it changes. */
+  session?(id: string): void;
+  /** Its sub-agents at work now, all of them each time (OpenCode's sub-agent sessions that run), by their sessions'
+   *  ids: `type` is the agent's kind, `name` what it was sent to do. */
+  subagents?(list: readonly { readonly id: string; readonly type: string; readonly name: string }[]): void;
 };
 
 /** pi's built-in tools under the names and fields the protected-path floor reads (Claude Code's); anything else, an
@@ -902,6 +909,8 @@ export class TerminalHost {
     s.companion?.attach({
       status: (status) => { if (status === "idle") this.turnEnded(s, true, null); this.setStatus(s, status); },
       ask: async (tool, input, signal) => (await this.ask(s, tool, input, signal))?.decision ?? null,
+      session: (id) => { if (id && id !== s.agentSessionId) this.reported(s, id); },
+      subagents: (list) => this.subagentsAre(s, list),
     });
     const daybreak = s.companion?.daybreak?.bind(s.companion);
     if (daybreak) {
@@ -1778,6 +1787,22 @@ export class TerminalHost {
     const name = typeof input.description === "string" ? input.description.replace(/\s+/g, " ").trim().slice(0, MAX_NAME) : "";
     const type = typeof input.subagent_type === "string" && input.subagent_type ? input.subagent_type : "general-purpose";
     s.launches = [...s.launches, { type, name, at: this.o.now() }].slice(-MAX_LAUNCHES);
+  }
+
+  /** The sub-agents at work as a companion lists them (OpenCode has no hooks to say one started or stopped): those no
+   *  longer listed go, new ones are added in the order given. What each is doing is not known. */
+  private subagentsAre(s: Session, list: readonly { readonly id: string; readonly type: string; readonly name: string }[]): void {
+    const now = this.o.now();
+    const listed = new Set(list.map((a) => a.id));
+    let changed = false;
+    for (const id of [...s.subagents.keys()]) if (!listed.has(id)) { s.subagents.delete(id); changed = true; }
+    for (const a of list) {
+      if (!a.id || s.subagents.has(a.id)) continue;
+      const name = a.name.replace(/\s+/g, " ").trim().slice(0, MAX_NAME);
+      s.subagents.set(a.id, { id: a.id, type: a.type || "agent", name: name || a.type || "agent", activity: null, since: now });
+      changed = true;
+    }
+    if (changed) this.doing(s);
   }
 
   /** The turn ended (or a new session began): its sub-agents with it. One still at work in the background comes back
