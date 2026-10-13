@@ -5,7 +5,8 @@ import AppKit
 /// `-nodesProbe <dir>` (debug builds, with `-localPort` and AGENTSWITCH_HOME of a running service that is paired with
 /// another node — two throw-away `AGENTSWITCH_ROUTER=echo` daemons, as packages/daemon/scripts/mesh_smoke.sh starts
 /// them): the main window behind every other window (the app is not made active), first on this node's own pages
-/// (`own.png`), then on the other node's by the call the bar's node menu makes (`node-dispatch.png`,
+/// (`own.png`; `page-change.png` a tenth of a second into a change of page, with a line in `calls.txt` saying whether
+/// it was being drawn in — the pixel look — or there at once — the classic one), then on the other node's by the call the bar's node menu makes (`node-dispatch.png`,
 /// `node-terminals.png`), then back (`back.png`); Settings › Nodes from the service's own answers
 /// (`settings-nodes.png`); and what the calls through the other node returned (`calls.txt`), so the client's decoding
 /// is checked against a real service on the far side of a real connection. Nothing else of the app starts.
@@ -37,6 +38,15 @@ enum NodesProbe {
         main.show(.dispatch)
         try? await Task.sleep(for: .seconds(4))
         shot(main.window?.contentView, dir.appendingPathComponent("own.png"))
+        // A page change as a click on the rail makes it, a tenth of a second in: the page being drawn in from the top
+        // in the pixel look, simply there in the classic one (`ScanRefresh.plays`).
+        main.switchPage(to: .terminals)
+        try? await Task.sleep(for: .milliseconds(100))
+        lines.append("ok   page change, 0.1 s in (\(InterfaceLook.current.rawValue)): \(main.probeRefreshing ? "being drawn in" : "there at once")")
+        shot(main.window?.contentView, dir.appendingPathComponent("page-change.png"))
+        try? await Task.sleep(for: .seconds(1))
+        main.switchPage(to: .dispatch)
+        try? await Task.sleep(for: .seconds(1))
         guard let node = model.nodes.nodes.first(where: { $0.state == .online }) else {
             lines.append("FAIL no node of this service answers")
             write()

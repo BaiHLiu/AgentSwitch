@@ -297,8 +297,9 @@ private struct RailButton: View {
 private extension RailButton {
     var pixel: some View {
         // The page's shaded picture (docs/ui-v0.md §9): whole for the page on screen or under the pointer, fainter
-        // for the others.
-        PixelSprite(rows: rows, pixel: 1, color: current || hovering ? Look.ink : Look.ink2, strength: current || hovering ? 1 : 0.7)
+        // for the others. A cell is 1 pt, as the bar's buttons are (2026-10-12, user, of the 1.5 pt cells it had: 像素模式图标
+        // 太大了，显得很笨重).
+        PixelSprite(rows: rows, pixel: 1, color: current || hovering ? Look.ink : Look.ink2, strength: current || hovering ? 1 : 0.7, cell: 1)
             .overlay(alignment: .topTrailing) { RailMark(mark: mark).offset(x: 6, y: -4) }
             .frame(maxWidth: .infinity)
             .frame(height: MainRail.row)

@@ -24,6 +24,7 @@ import SwiftUI
 /// - `main-refresh-2`, `-6`, `-10` (dark): steps of a change from Dispatch to Terminals held still (as the demo's
 ///   `?freeze=`): the bar already on Terminals, the page drawn in down to the scan line, black below it;
 /// - `main-refresh-dispatch-2`, `-6`, `-10` (light): the same back to Dispatch, the scan line in ink on the paper;
+///   (the refresh's pictures in the pixel look alone: the classic look changes pages at once);
 /// - `main-browser`: the Browser page (always dark) from a made-up browser (BrowserDemo.swift, the tabs of
 ///   `docs/design/implemented/browser.html`): Codex's pull request on screen, its last click boxed, `[ Take Over ]`;
 /// - `main-browser-held`: the same tab taken over by this Mac (`You · Taken Over from Codex`, `[ Hand Back ]`; no Fill
@@ -274,9 +275,11 @@ enum MainWindowPreview {
     }
 
     /// A few steps of the refresh that draws `page` in, from the other page: the page and the bar changed at once, as
-    /// the window does, each step held still.
+    /// the window does, each step held still. No pictures in the classic look, where a page is not drawn in
+    /// (`ScanRefresh.plays`).
     private static func refresh(model: AppModel, to page: MainPage, from: MainPage? = nil, system: NSAppearance?, steps: [Int] = [2, 6, 10],
                                 name: String, into directory: URL) async throws {
+        guard ScanRefresh.plays(in: .current, reduceMotion: false) else { return }
         let from = from ?? (page == .dispatch ? .terminals : .dispatch)
         let state = state(on: from)
         let demo = BrowserDemoService()

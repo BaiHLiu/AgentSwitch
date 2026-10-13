@@ -92,7 +92,7 @@ td.cell { background: var(--bg); color: var(--ink); }
   <h2>// 画法</h2>
   <div class="doc">
     <ul>
-      <li><b>画板与格子</b>：图标栏、顶栏、标签栏的图标都在 16 × 16 以内的画板上，1.5 点一格（Retina 上是 3 个像素，边缘是整的；iPhone 3 倍屏上取整像素一格）。看得出格子，才是像素画，不是细线。</li>
+      <li><b>画板与格子</b>：图标栏、顶栏、标签栏的图标都在 16 × 16 以内的画板上，1.5 点一格（Retina 上是 3 个像素，边缘是整的；iPhone 3 倍屏上取整像素一格）。看得出格子，才是像素画，不是细线。Mac 主窗口的顶栏按钮和图标栏是 1 点一格（Retina 上 2 个像素，整张 16 点）：图标栏原来也是 1.5 点，2026-10-12 改小（用户：像素模式图标太大了，显得很笨重）。</li>
       <li><b>只用墨色的六档</b>：高光、墨、中、暗、深、底。不上颜色；浅色背景下六档反过来（最深的墨到纸的暗部）。</li>
       <li><b>层次靠明暗</b>：近的、凸起的亮，远的、凹下去的暗。凸起的块（方块、滑杆的钮、加号、锁身）上边和左边一格高光，下边和右边一格暗色；窗口类的图标用墨色描边，里面是深色的屏幕或面板；应用标记的三条线一条比一条暗。</li>
       <li><b>硬阴影</b>：右下偏一格的暗色影子（和文字标、应用标记现有的做法一致），可关。</li>
@@ -340,7 +340,9 @@ function iconRows() {
 }
 function strips() {
   const win = (refined) => {
-    const ic = (k) => (refined ? toned(R[k], CELL) : now(k));
+    // The bar's buttons and the rail's icons are 1 pt a cell in the Mac window (the rail since 2026-10-12, user: 像素模式
+    // 图标太大了，显得很笨重); the lock in the page keeps 1.5.
+    const ic = (k) => (refined ? toned(R[k], k === "lock" ? CELL : 1) : now(k));
     const ri = (k, cls) => `<div class="ri ${cls}">${ic(k)}</div>`;
     const agent = refined ? toned(SMALL.cc, CELL, { depth: false }) : P.sprite(P.AGENT_PX.cc, { px: 2 });
     const st = (k) => (refined ? toned(STATUS[k], CELL, { depth: false }) : `<svg class="px" width="8" height="8"><rect width="8" height="8" fill="var(--${k === "idle" ? "green" : "amber"})"/></svg>`);

@@ -119,6 +119,13 @@ private final class FillView: NSView {
     }
 }
 
+extension ScanRefresh {
+    /// Whether a refresh plays now (`plays(in:reduceMotion:)`): the look in force, the system's Reduce Motion.
+    @MainActor static var playsNow: Bool {
+        plays(in: .current, reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+    }
+}
+
 extension NSColor {
     /// The refresh's scan line: bright on a dark ground (the phone's white at 90 %), ink on the light Dispatch page.
     static let scanLine = NSColor(name: "AgentSwitchScanLine") { appearance in

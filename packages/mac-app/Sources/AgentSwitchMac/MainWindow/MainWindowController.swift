@@ -44,6 +44,8 @@ final class MainWindowController: NSObject {
     /// TerminalProbe: the window opens behind the others and the app is not made active.
     static var probing = false
     var probeScreen: TerminalScreenController? { terminals?.probeScreen }
+    /// A page is being drawn in from the top right now (the probe's page change).
+    var probeRefreshing: Bool { container?.refresh.playing ?? false }
     var probeScreens: [Int: TerminalScreenController] { terminals?.probeScreens ?? [:] }
     var probeWeb: TerminalWebView? { terminals?.probeWeb ?? nil }
     /// The native Terminals page's model (nil while the web page is in use).
@@ -167,7 +169,7 @@ final class MainWindowController: NSObject {
         let page = state.pages.contains(state.page) ? state.page : .terminals
         swap(to: page)
         windowChanged()
-        if watched, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        if watched, ScanRefresh.playsNow {
             container?.drawIn(page)
             if page == .terminals { terminals?.pageDrawsIn() }
         }
@@ -426,13 +428,14 @@ final class MainWindowController: NSObject {
     }
 
     /// The page goes in at once, then is drawn in from the top; a refresh under way gives way to it (nothing of it
-    /// left). The page already on screen: nothing (a refresh drawing it in plays on).
+    /// left). The page already on screen: nothing (a refresh drawing it in plays on). In the classic look and under
+    /// Reduce Motion the page goes in and that is all (`ScanRefresh.plays`).
     private func go(to page: MainPage, animated: Bool) {
         // A page the node on screen does not have (Clash on another node): not gone to.
         guard page != state.page, state.pages.contains(page) else { return }
         container?.refresh.cancel()
         swap(to: page)
-        guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        guard animated, ScanRefresh.playsNow else { return }
         container?.drawIn(page)
         if page == .terminals { terminals?.pageDrawsIn() }
     }

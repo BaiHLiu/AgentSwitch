@@ -88,6 +88,13 @@ final class MainWindowTests: XCTestCase {
         XCTAssertEqual(ScanRefresh.terminal.duration, 180, "0.18 s")
     }
 
+    func testTheRefreshPlaysInThePixelLookAloneAndNotUnderReduceMotion() {
+        XCTAssertTrue(ScanRefresh.plays(in: .pixel, reduceMotion: false))
+        XCTAssertFalse(ScanRefresh.plays(in: .classic, reduceMotion: false), "the classic look changes pages at once")
+        XCTAssertFalse(ScanRefresh.plays(in: .pixel, reduceMotion: true))
+        XCTAssertFalse(ScanRefresh.plays(in: .classic, reduceMotion: true))
+    }
+
     func testStepsFollowTheClockWithoutEasing() {
         let refresh = ScanRefresh.page
         XCTAssertEqual(refresh.step(at: 0), 0)

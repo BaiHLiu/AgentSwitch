@@ -182,6 +182,11 @@ public struct ScanRefresh: Equatable, Sendable {
     /// The terminal page's screen showing another terminal.
     public static let terminal = ScanRefresh(steps: 9, interval: 20)
 
+    /// Whether a refresh plays at all: in the pixel look, and not under Reduce Motion. In the classic look what is on
+    /// screen changes at once (ui-v0 §8: no scan-line refresh; 2026-10-12, user, of the page switch that still had one:
+    /// classic模式也是刷新线，这样不好，应该直接切换).
+    public static func plays(in look: InterfaceLook, reduceMotion: Bool) -> Bool { !look.isClassic && !reduceMotion }
+
     /// The whole refresh, in milliseconds: then nothing of it is left.
     public var duration: Int { steps * interval }
 

@@ -192,7 +192,9 @@ Two Macs that both run AgentSwitch pair once and each can use the other's Dispat
 - `-designPreview <dir> -designPreviewOnly nodes` draws the pane, the link sheet and the window on another node from
   sample data. `-nodesProbe <dir>` (debug builds, with `-localPort` and `AGENTSWITCH_HOME` of a service paired with
   another) drives the real window to the other node and back and writes its pictures and `calls.txt`; start the two
-  services with `packages/daemon/scripts/mesh_smoke.sh` and its `MESH_SMOKE_THEN`.
+  services with `packages/daemon/scripts/mesh_smoke.sh` and its `MESH_SMOKE_THEN`. It also changes page once on this
+  node's own pages: `page-change.png` is the window a tenth of a second in, and `calls.txt` says whether the page was
+  being drawn in (the pixel look) or there at once (`-appearance classic`: no scan-line refresh, `ScanRefresh.plays`).
 
 ## Credential gate as a system service
 

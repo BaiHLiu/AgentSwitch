@@ -661,9 +661,9 @@ final class TerminalScreenController: NSObject {
     }
 
     /// Another terminal's first picture comes in from the top, a scan line ahead — while it is seen, not under the
-    /// page's own refresh, not under Reduce Motion.
+    /// page's own refresh, not in the classic look, not under Reduce Motion.
     private func drawIn() {
-        guard visible, !pageRefreshing(), !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        guard visible, !pageRefreshing(), ScanRefresh.playsNow else { return }
         refresh.play(.terminal, ground: view.nativeBackgroundColor, line: view.nativeForegroundColor.withAlphaComponent(0.9))
     }
 
