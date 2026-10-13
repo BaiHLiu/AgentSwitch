@@ -155,9 +155,15 @@ export class OpenCodeCompanion implements Companion {
     const running = Object.keys(active);
     await this.learn(running);
     if (this.stopped) return;
-    const own = running.filter((id) => !this.known.get(id)?.parent);
-    // A sub-agent's session running alone (its sender waits on it) still says whose turn this is.
-    const top = own[own.length - 1] ?? (running.length ? this.top(running[running.length - 1]!) : null);
+    // Only a session known to be nobody's sub-agent is the TUI's. One not asked about yet, or whose own line the
+    // server did not give, is neither: taken for the TUI's, a sub-agent's session became the terminal's for a while —
+    // its screens showed that session's record, or none, and came back (2026-10-13, user: opencode的简略主题有的时候
+    // 对话框会抽搐，有的时候对话完成会白屏).
+    const own = running.filter((id) => this.known.get(id)?.parent === null);
+    // A sub-agent's session running alone (its sender waits on it) still says whose turn this is — once every
+    // session up to its sender is known.
+    const sender = running.map((id) => this.top(id)).find((id) => this.known.get(id)?.parent === null);
+    const top = own[own.length - 1] ?? sender ?? null;
     if (top) this.lastActive = top;
     this.tell(running);
     const listed = new Set(requests.map((r) => r.id));
@@ -175,10 +181,9 @@ export class OpenCodeCompanion implements Companion {
     await Promise.all(fresh.map(async (id) => {
       try {
         const s = ((await this.call("GET", `/api/session/${encodeURIComponent(id)}?${this.loc}`))?.data ?? {}) as Json;
+        if (!s.id && !s.time) return;   // an empty answer says nothing of it: asked again at the next look
         this.known.set(id, { parent: typeof s.parentID === "string" && s.parentID ? s.parentID : null, title: typeof s.title === "string" ? s.title : "", agent: typeof s.agent === "string" ? s.agent : "" });
-      } catch {
-        this.known.set(id, { parent: null, title: "", agent: "" });
-      }
+      } catch { /* not known yet: asked again at the next look */ }
     }));
   }
 

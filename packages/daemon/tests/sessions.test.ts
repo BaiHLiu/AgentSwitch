@@ -86,6 +86,8 @@ describe("the Mac's coding sessions", () => {
     expect(m.read("codex", "x1")!.messages.map((x) => [x.role, x.text])).toEqual([["user", "跑一下测试"], ["tool", "npm test"], ["assistant", "测试全部通过。"]]);
     expect(m.read("opencode", "o1")!.messages.map((x) => [x.role, x.text])).toEqual([["user", "把笔记按月分好"], ["assistant", "分好了，一共 12 个月。"]]);
     expect(m.read("opencode", "o3")).toBeNull();
+    // Each message says where it stands in its session (its row, its part): the same at every read.
+    expect(m.read("opencode", "o1")!.messages.map((x) => x.at)).toEqual([1000, 2000]);
   });
 
   it("the routes serve the list and a session", async () => {

@@ -784,7 +784,11 @@ function coarseKind(tool: string): StepKind {
 
 export function recordFromMessages(messages: readonly SessionMessage[], rev: string): SessionRecord {
   const b = new Builder();
-  messages.forEach((m, i) => {
+  // Named by where each stands in its session when that is known (`at`), so an item is the same item at the next
+  // read: named by its place in what was read, every item of a long session changed its name with each new message,
+  // and a screen drew the whole record afresh (2026-10-13, user: opencode的简略主题有的时候对话框会抽搐).
+  messages.forEach((m, n) => {
+    const i = m.at ?? n;
     if (m.role === "user") b.user(i, m.ts, m.text);
     else if (m.role === "assistant") b.answer(i, m.ts, m.text);
     else { const kind = coarseKind(m.tool ?? ""); b.step(i, m.ts, { kind, text: firstLine(m.text), ...(kind === "tool" && m.tool ? { tool: m.tool } : {}) }); }

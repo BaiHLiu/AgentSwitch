@@ -14,16 +14,22 @@ import { clipText, type SessionMessage } from "./types.js";
 
 export type OpenCodeFacts = { readonly id: string; readonly cwd: string; readonly title: string; readonly lastText: string; readonly updatedAt: number; readonly startedAt?: number; readonly model?: string };
 
+/** How long a read waits for OpenCode to let go of the file before it is given up. */
+const BUSY_MS = 1_500;
+/** A part's place in its row: a row never has this many. */
+const PARTS = 1_000;
+
 function withDb<T>(path: string, fallback: T, read: (db: DatabaseSync) => T): T {
   if (!existsSync(path)) return fallback;
   let db: DatabaseSync | null = null;
   try {
     db = new DatabaseSync(path, { readOnly: true });
+    db.exec(`PRAGMA busy_timeout=${BUSY_MS}`);
     return read(db);
   } catch {
     return fallback;
   } finally {
-    db?.close();
+    try { db?.close(); } catch { /* it never opened whole */ }
   }
 }
 
@@ -55,24 +61,28 @@ export function openCodeSessions(path: string, limit: number): OpenCodeFacts[] {
   });
 }
 
-export function openCodeMessages(path: string, id: string, limit: number): SessionMessage[] {
-  return withDb(path, [] as SessionMessage[], (db) => {
-    const rows = db.prepare("SELECT type, data, time_created FROM session_message WHERE session_id = ? AND type IN ('user', 'assistant') ORDER BY seq DESC LIMIT ?").all(id, limit * 3) as { type: string; data: string; time_created: number }[];
+/** A session's last messages. Null: the database could not be read just now (OpenCode is writing it) — which is not
+ *  a session with nothing said: a screen keeps what it shows (2026-10-13, user: 有的时候对话完成会白屏). Each message
+ *  says where it stands (`at`: its row and its part), so the same one is the same one at the next read. */
+export function openCodeMessages(path: string, id: string, limit: number): SessionMessage[] | null {
+  return withDb(path, null as SessionMessage[] | null, (db) => {
+    const rows = db.prepare("SELECT seq, type, data, time_created FROM session_message WHERE session_id = ? AND type IN ('user', 'assistant') ORDER BY seq DESC LIMIT ?").all(id, limit * 3) as { seq: number; type: string; data: string; time_created: number }[];
     const out: SessionMessage[] = [];
     for (const row of rows.reverse()) {
-      const data = obj(parse(row.data));
+      const data = obj(parse(row.data)), base = Number(row.seq) * PARTS;
       if (row.type === "user") {
         const text = str(data.text).split("\n\nUser environment context")[0]!.trim();
-        if (text) out.push({ role: "user", text: clipText(text), ts: row.time_created });
+        if (text) out.push({ role: "user", text: clipText(text), ts: row.time_created, at: base });
         continue;
       }
-      for (const part of (Array.isArray(data.content) ? data.content : []).map(obj)) {
-        if (part.type === "text" && str(part.text).trim()) out.push({ role: "assistant", text: clipText(str(part.text)), ts: row.time_created });
+      (Array.isArray(data.content) ? data.content : []).map(obj).forEach((part, n) => {
+        const at = base + Math.min(n, PARTS - 1);
+        if (part.type === "text" && str(part.text).trim()) out.push({ role: "assistant", text: clipText(str(part.text)), ts: row.time_created, at });
         if (part.type === "tool" || part.type === "tool-call") {
           const input = obj(part.input ?? obj(part.state).input);
-          out.push({ role: "tool", tool: str(part.tool) || str(part.name), text: clipText(str(input.command) || str(input.filePath) || str(input.path) || JSON.stringify(input)), ts: row.time_created });
+          out.push({ role: "tool", tool: str(part.tool) || str(part.name), text: clipText(str(input.command) || str(input.filePath) || str(input.path) || JSON.stringify(input)), ts: row.time_created, at });
         }
-      }
+      });
     }
     return out.slice(-limit);
   });

@@ -268,6 +268,30 @@ describe("OpenCode terminal companion", () => {
     expect(screens.sessions[1]).toBe("ses_next");
   });
 
+  // 2026-10-13, user: opencode的简略主题有的时候对话框会抽搐，有的时候对话完成会白屏.
+  it("a session it knows nothing of yet is not taken for the TUI's: the terminal stays on its own", async () => {
+    const { state, url } = await fakeServer("pw9");
+    state.sessions = [{ id: "ses_root", time: { created: 1 } }];
+    const c = new OpenCodeCompanion({ binary: "/bin/opencode", cwd: tmpdir(), env: {}, args: [], asks: true, pollMs: 10, serve: fakeServe(url, "pw9") });
+    closers.push(() => c.stop());
+    await c.start();
+    const screens = fakeLink();
+    c.attach(screens.link);
+    state.active = { ses_root: { type: "busy" } };
+    await until(() => screens.sessions.length === 1);
+    // A sub-agent's session runs alone, and its server has no line for it yet.
+    state.active = { ses_kid: { type: "busy" } };
+    await new Promise((r) => setTimeout(r, 80));
+    expect(screens.sessions).toEqual(["ses_root"]);
+    expect(screens.last()).toBe("working");
+    // Its line comes: a sub-agent of the session the terminal is on. Still that session.
+    state.sessions.push({ id: "ses_kid", parentID: "ses_root", title: "查一下", agent: "explore", time: { created: 2 } });
+    await until(() => screens.agents.some((list) => list.length === 1));
+    state.active = {};
+    await until(() => screens.last() === "idle");
+    expect(screens.sessions).toEqual(["ses_root"]);
+  });
+
   it("a session gone on with is the terminal's from the start, before anything runs", async () => {
     const { url } = await fakeServer("pw8");
     const c = new OpenCodeCompanion({ binary: "/bin/opencode", cwd: tmpdir(), env: {}, args: ["--session", "ses_old"], asks: true, pollMs: 10, serve: fakeServe(url, "pw8") });

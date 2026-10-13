@@ -305,6 +305,18 @@ describe("a Codex session's record", () => {
     expect(coarse.items[1]).toMatchObject({ steps: [{ kind: "run", text: "npm test" }, { kind: "tool", tool: "cua", text: "click" }] });
     expect(coarse).toMatchObject({ rev: "r1", more: false, plan: [], usage: null });
   });
+
+  // 2026-10-13, user: opencode的简略主题有的时候对话框会抽搐.
+  it("names a coarse record's items by where they stand in the session, so more said does not rename what was there", () => {
+    const said = [{ role: "user" as const, text: "一", ts: 1, at: 7000 }, { role: "assistant" as const, text: "好。", ts: 2, at: 8000 },
+      { role: "user" as const, text: "二", ts: 3, at: 9000 }, { role: "tool" as const, tool: "shell", text: "ls", ts: 4, at: 10_000 }, { role: "assistant" as const, text: "完了。", ts: 5, at: 10_001 }];
+    const whole = recordFromMessages(said, "r1"), later = recordFromMessages(said.slice(2), "r2");
+    // The last three, read again once the first two have slid out of what is read: the same names.
+    expect(later.items.map((it) => it.id)).toEqual(whole.items.slice(2).map((it) => it.id));
+    expect(new Set(whole.items.map((it) => it.id)).size).toBe(whole.items.length);
+    // Without a place of their own they are named by their place in what was read, as before.
+    expect(recordFromMessages([{ role: "user", text: "一", ts: 1 }, { role: "assistant", text: "好。", ts: 2 }], "r").items.map((it) => it.id)).toEqual(["m0", "m1"]);
+  });
 });
 
 // ---------------------------------------------------------------------------------------------------------------------

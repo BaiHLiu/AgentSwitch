@@ -35,6 +35,9 @@ export type SessionMessage = {
   readonly text: string;
   readonly ts: number;
   readonly tool?: string;
+  /** Where it stands in its session, the same however much is read before or after it (OpenCode: its row and its
+   *  part); absent: its place in what was read. */
+  readonly at?: number;
 };
 
 export const ACTIVE_MS = 90_000;

@@ -66,7 +66,9 @@ export class SessionSearch {
     try {
       if (s.harness === "opencode") {
         if (had && had.updatedAt === s.updatedAt) return had;
-        const text = keep(openCodeMessages(source, s.id, 5000).filter((m) => m.role !== "tool").map((m) => m.text).join("\n"));
+        const read = openCodeMessages(source, s.id, 5000);
+        if (!read) throw new Error("the database could not be read just now");   // not kept as a session with no words
+        const text = keep(read.filter((m) => m.role !== "tool").map((m) => m.text).join("\n"));
         return this.store(key, { offset: 0, updatedAt: s.updatedAt, text, lower: text.toLowerCase() });
       }
       const size = statSync(source).size;

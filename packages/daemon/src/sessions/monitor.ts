@@ -92,7 +92,7 @@ export class SessionMonitor {
   read(harness: SessionHarness, id: string, limit = 80): { session: SessionSummary; messages: SessionMessage[] } | null {
     const session = this.find(harness, id);
     if (!session) return null;
-    if (harness === "opencode") return { session, messages: openCodeMessages(this.sources.opencodeDb, id, limit) };
+    if (harness === "opencode") { const messages = openCodeMessages(this.sources.opencodeDb, id, limit); return messages && { session, messages }; }
     const path = this.files.get(`${harness}:${id}`);
     if (!path) return null;
     return { session, messages: harness === "claude-code" ? claudeMessages(path, limit) : harness === "pi" ? piMessages(path, limit) : codexMessages(path, limit) };
