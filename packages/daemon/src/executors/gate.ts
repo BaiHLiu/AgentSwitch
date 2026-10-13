@@ -1,6 +1,7 @@
 /** secret-gate wiring shared by the real executors: proxy env, MCP entries, per-harness config text.
  *  Mirrors packages/secret-gate/scripts/*_browser_demo.sh, which are the verified reference. */
 
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { connect, type Socket } from "node:net";
 import { join, resolve } from "node:path";
@@ -177,11 +178,25 @@ export function mcpServerEnv(gate: GateOptions | null | undefined, env: NodeJS.P
   return { ...inheritedEnv(env), ...gateEnv(gate) };
 }
 
+const playwrightPackage = (gate: GateOptions): string => `@playwright/mcp@${gate.playwrightVersion}`;
+
 function playwrightArgs(gate: GateOptions, profile: string): string[] {
-  return ["browser", "--", "npx", "-y", "--prefer-offline", `@playwright/mcp@${gate.playwrightVersion}`,
+  return ["browser", "--", "npx", "-y", "--prefer-offline", playwrightPackage(gate),
     `--proxy-server=${gate.proxy}`, "--ignore-https-errors", `--user-data-dir=${profile}`,
     ...(gate.browserExecutable ? [`--executable-path=${gate.browserExecutable}`] : []),
     ...(gate.allowedOrigins.length ? [`--allowed-origins=${gate.allowedOrigins.join(";")}`] : [])];
+}
+
+/** At start-up, in the background: the browser MCP fetched once without `--prefer-offline`. The executors run it with
+ *  that flag (a browser step starts without asking the registry), which also trusts npm's cached list of a package's
+ *  versions; a list cached before the pinned version's Playwright was published fails every browser step with
+ *  ETARGET until something refreshes it (seen on a Linux node whose npm cache was older, mesh-v0 §12). */
+export function warmBrowserMcp(gate: GateOptions | null, run: (cmd: string, args: string[], done: (err: Error | null) => void) => void =
+  (cmd, args, done) => { execFile(cmd, args, { timeout: 180_000 }, (err) => done(err)); }): void {
+  if (!gate) return;
+  run("npx", ["-y", playwrightPackage(gate), "--version"], (err) => {
+    if (err) console.error(`browser MCP: ${playwrightPackage(gate)} could not be fetched (${err.message.split("\n")[0]}); browser steps may fail`);
+  });
 }
 
 /** MCP servers in Claude Code / Agent SDK shape. */

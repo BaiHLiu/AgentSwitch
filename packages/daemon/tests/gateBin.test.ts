@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { realExecutors } from "../src/daemon.js";
-import { chromeExecutable, claudeMcpServers, defaultGate, gateBin, gateNotFound, VENV_GATE_BIN } from "../src/executors/gate.js";
+import { chromeExecutable, claudeMcpServers, defaultGate, gateBin, gateNotFound, VENV_GATE_BIN, warmBrowserMcp } from "../src/executors/gate.js";
 import { which } from "../src/util/which.js";
 import { realTargets } from "./helpers.js";
 
@@ -121,6 +121,15 @@ describe("claudeBinary (the user's own Claude Code CLI)", () => {
 });
 
 describe("the browser Dispatch's Playwright MCP starts (mesh-v0 §4.4)", () => {
+  it("is fetched once at start-up without --prefer-offline, so a stale cached version list is refreshed", () => {
+    const calls: string[][] = [];
+    const gate = defaultGate({ SECRET_GATE_BIN: file("sg"), HOME: dir, PW_MCP_VERSION: "0.0.82" })!;
+    warmBrowserMcp(gate, (cmd, args, done) => { calls.push([cmd, ...args]); done(null); });
+    warmBrowserMcp(null, (cmd, args) => { calls.push([cmd, ...args]); });
+    expect(calls).toEqual([["npx", "-y", "@playwright/mcp@0.0.82", "--version"]]);
+    expect(claudeMcpServers(gate, "/p", true).playwright!.args).toContain("@playwright/mcp@0.0.82");
+  });
+
   it("off macOS without Google Chrome where Playwright looks: a Chromium on the PATH, passed as --executable-path", () => {
     const chromium = file("bin/chromium");
     const none = () => false;

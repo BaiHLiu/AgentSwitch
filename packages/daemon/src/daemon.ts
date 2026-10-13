@@ -36,7 +36,7 @@ import { Store } from "./engine/store.js";
 import { canonical, claudeExecutor, decideTool, probeRateLimits } from "./executors/claude.js";
 import { codexExecutor } from "./executors/codex.js";
 import { echoExecutor } from "./executors/echo.js";
-import { defaultGate, gateHealth, gateNotFound, proxyEndpoint, type GateOptions } from "./executors/gate.js";
+import { defaultGate, gateHealth, gateNotFound, proxyEndpoint, warmBrowserMcp, type GateOptions } from "./executors/gate.js";
 import { gateRefsExecutor } from "./executors/gateRefs.js";
 import { gateRefs } from "./secrets/refs.js";
 import { gateMinter } from "./secrets/minter.js";
@@ -609,6 +609,7 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | undefined> {
  *  real executors in serve mode), then listen. */
 export async function serve(cfg: DaemonConfig): Promise<{ daemon: Daemon; close: () => void; stop: () => Promise<void> }> {
   if (cfg.executors === "real") await checkGateProxy(defaultGate());
+  if (cfg.executors === "real") warmBrowserMcp(defaultGate());
   const yaml = loadTargets(cfg.targetsPath);
   const modelOffers = cfg.executors === "real" ? new ModelOffers({ codexBinary: codexBinary(yaml), ...withClaude(claudeBinary()) }) : undefined;
   const targets = modelOffers ? mergeLogged(yaml, await modelOffers.refresh()) : yaml;
