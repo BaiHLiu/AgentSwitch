@@ -9,6 +9,9 @@ import SwiftUI
 /// - `terminals-list`: one pane, the list with terminals at work, waiting and ended, sub-agents, earlier sessions, git;
 /// - `terminals-panes`: three panes — the second in focus with a request's card, the third empty;
 /// - `terminals-create`, `terminals-create-pane`: the new-terminal panel alone, and in a pane among several;
+/// - `terminals-sheet-light`, `terminals-create-light`, `terminals-rename-light`: the question box, the new-terminal
+///   panel and a name being changed on the light page; `terminals-pane-was`: an empty pane and the long-titled session
+///   it would go on with;
 /// - `terminals-search`: a search with titles and words that matched;
 /// - `terminals-filter`, `terminals-filter-active`, `terminals-filter-none`: the list with one agent's rows alone, with
 ///   what is active alone, and with a filter that leaves nothing;
@@ -27,6 +30,8 @@ import SwiftUI
 enum TerminalsPagePreview {
     static let size = NSSize(width: 1235, height: 764)
     private static let home = NSHomeDirectory()
+    private static let longSession = "s-long"
+    private static let longTitle = "把设置页拆成几个小页面，每页只放一类选项；先列出现在所有的选项和它们各自依赖的状态，再给出拆分方案，方案里要写清每一页的入口、返回方式和键盘操作，图标沿用现有的那一套，不要新画"
     private static let project = "\(home)/Desktop/WorkSpace/Projects/AgentSwitch"
 
     static func render(into directory: URL) async throws {
@@ -66,6 +71,33 @@ enum TerminalsPagePreview {
         try await shot(to: file("terminals-filter-none")) { $0.filter = TerminalListFilter(agent: "pi", active: true) }
         try await shot(to: file("terminals-sheet")) { model in
             Task { _ = await model.ask(TerminalSheet(title: "关闭「修登录页的跳转」？", body: "将结束 Claude Code 进程。会话记录保留，可稍后继续。", confirm: "Close", destructive: true, check: "同时删除会话记录（无法恢复）")) }
+        }
+        // A page that is light (a record in the pane in focus): the question box, the new-terminal panel with a folder
+        // typed and a name being changed are on the light page's own ground, in its own ink (2026-10-13: they were
+        // drawn for a page that was always dark).
+        try await shot(to: file("terminals-sheet-light"), light: true) { model in
+            stageRecord(model, working: false)
+            Task { _ = await model.ask(TerminalSheet(title: "关闭「修登录页的跳转」？", body: "将结束 Claude Code 进程。会话记录保留，可稍后继续。", confirm: "Close", destructive: true, check: "同时删除会话记录（无法恢复）")) }
+        }
+        try await shot(to: file("terminals-create-light"), light: true) { model in
+            stageRecord(model, working: false)
+            model.showCreate(folder: project)
+        }
+        try await shot(to: file("terminals-rename-light"), light: true) { model in
+            stageRecord(model, working: false)
+            model.startRename("t1")
+        }
+        // An empty pane that remembers a session whose title is long: its button names it in a few words.
+        try await shot(to: file("terminals-pane-was"), long: true) { model in
+            let was = PaneSession(harness: "claude-code", session: longSession, title: longTitle)
+            model.setLayout(.split(id: 3, dir: .row, ratio: 0.5, a: .pane(TerminalPane(id: 1, term: "t1")), b: .pane(TerminalPane(id: 2, term: nil, was: was))))
+            model.syncPanes()
+        }
+        // The same in a pane as narrow as a pane gets: named in fewer words still.
+        try await shot(to: file("terminals-pane-was-narrow"), long: true) { model in
+            let was = PaneSession(harness: "claude-code", session: longSession, title: longTitle)
+            model.setLayout(.split(id: 3, dir: .row, ratio: 0.68, a: .pane(TerminalPane(id: 1, term: "t1")), b: .pane(TerminalPane(id: 2, term: nil, was: was))))
+            model.syncPanes()
         }
         try await shot(to: file("terminals-rename")) { model in
             model.collapsed = ["\(home)/Desktop/WorkSpace/Projects/MailLab"]
@@ -267,7 +299,8 @@ enum TerminalsPagePreview {
         }
     }
 
-    private static func shot(to file: URL, light: Bool = false, stage: (TerminalsModel) -> Void) async throws {
+    /// `long`: among the sessions, one whose title is as long as the service gives them (120 characters).
+    private static func shot(to file: URL, light: Bool = false, long: Bool = false, stage: (TerminalsModel) -> Void) async throws {
         let model = TerminalsModel(client: { DaemonClient(port: 1) }, defaults: nil)
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         func session(_ id: String, _ cwd: String, _ title: String, _ harness: String = "claude-code", ago hours: Int64, active: Bool = false) -> SessionSummary {
@@ -296,7 +329,7 @@ enum TerminalsPagePreview {
             session("c1", "\(home)/Desktop/WorkSpace/Worktop", "企业申请需要先获得什么", "codex", ago: 500),
             session("c1", "\(home)/Desktop/WorkSpace/Worktop", "监控核心温度的软件叫什么", "codex", ago: 570),
             session("c1", "\(home)/Desktop/WorkSpace/Worktop", "威胁情报报告里的要点", "codex", ago: 580),
-        ]
+        ] + (long ? [session(longSession, project, longTitle, ago: 2)] : [])
         let gits = [project: FolderGit(branch: "main", changed: 42, ahead: 2), "\(project)/packages/secret-gate": FolderGit(branch: "main", changed: 5),
                     "\(home)/Desktop/WorkSpace/Projects/MailLab": FolderGit(branch: "main")]
         let five = ["low", "medium", "high", "xhigh", "max"]

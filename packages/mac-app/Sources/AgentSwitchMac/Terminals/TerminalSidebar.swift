@@ -408,7 +408,7 @@ private struct TerminalRow: View {
                           onSubmit: { model.finishRename(save: true) }, onCancel: { model.finishRename(save: false) },
                           onFocus: { if !$0 { model.finishRename(save: true) } })
             .padding(.horizontal, 4)
-            .background(RoundedRectangle(cornerRadius: look.isClassic ? 5 : 0).fill(look.isClassic ? Look.ink.opacity(0.07) : Color.black))
+            .background(RoundedRectangle(cornerRadius: look.isClassic ? 5 : 0).fill(look.isClassic ? Look.ink.opacity(0.07) : Look.ground))
             .overlay(RoundedRectangle(cornerRadius: look.isClassic ? 5 : 0).strokeBorder(Color.signal.opacity(look.isClassic ? 0.45 : 1), lineWidth: look.isClassic ? 2.5 : 1))
     }
 

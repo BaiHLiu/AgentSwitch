@@ -180,6 +180,34 @@ public enum TerminalListText {
     public static func mayBeOpen(_ harness: String) -> String {
         harness == "opencode" ? "此会话可能正在其他终端中运行。OpenCode 不支持分叉，继续将写入同一会话。" : "此会话可能正在其他终端中运行，继续将写入同一会话。"
     }
+    /// A session's title in a few words, for a button or a line that names it: one line, `columns` columns at the most
+    /// (a wide character — Chinese, Japanese, Korean, a full-width form, an emoji — is two), an ellipsis where it was
+    /// cut; `会话` for one with no title. The service gives up to 120 characters of a session's first message, which
+    /// is wider than a pane (2026-10-13, user, of an empty pane's `[ Resume 「…」 ]` drawn across the whole window:
+    /// 又是什么bug).
+    public static func brief(_ title: String, columns: Int = 36) -> String {
+        let one = title.split(whereSeparator: \.isNewline).joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        guard !one.isEmpty else { return "会话" }
+        var width = 0, kept = one.startIndex, fits = true
+        for index in one.indices {
+            width += wide(one[index]) ? 2 : 1
+            if width > columns { fits = false; break }
+            // What may stay when it has to be cut: a column is left for the ellipsis.
+            if width <= columns - 1 { kept = one.index(after: index) }
+        }
+        return fits ? one : one[..<kept].trimmingCharacters(in: .whitespaces) + "…"
+    }
+
+    /// A character two columns wide in a terminal's font.
+    private static func wide(_ character: Character) -> Bool {
+        guard let scalar = character.unicodeScalars.first?.value else { return false }
+        switch scalar {
+        case 0x1100...0x115F, 0x2E80...0xA4CF, 0xAC00...0xD7A3, 0xF900...0xFAFF, 0xFE30...0xFE4F, 0xFF00...0xFF60, 0xFFE0...0xFFE6,
+             0x1F300...0x1FAFF, 0x20000...0x3FFFD: return true
+        default: return false
+        }
+    }
+
     /// How the agent asks before acting: the id the service takes and its name on the panel.
     public static let modes: [(id: String, name: String)] = [("manual", "Ask Each"), ("auto", "Auto"), ("bypass", "Bypass")]
 

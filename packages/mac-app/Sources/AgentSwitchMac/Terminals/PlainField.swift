@@ -8,8 +8,11 @@ struct PlainField: NSViewRepresentable {
     @Binding var text: String
     var placeholder = ""
     var font = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
-    var color = NSColor(white: 0.91, alpha: 1)
-    var placeholderColor = NSColor(white: 0.3, alpha: 1)
+    /// The page's own ink and its faint one, as the page is drawn now — dark, or light where a record has the page
+    /// (docs/simple-view-v0.md §5.2). They were a fixed near-white and a dark grey, for a page that was always dark:
+    /// on the light page what was typed could not be read (2026-10-13, user, of the new-terminal panel's folder: 字体bug).
+    var color = NSColor(Look.ink)
+    var placeholderColor = NSColor(Look.faint)
     /// Each change puts the keyboard here, the text selected.
     var focusRequests = 0
     /// The field takes the keyboard as it first shows (a name being changed).
@@ -45,6 +48,9 @@ struct PlainField: NSViewRepresentable {
         coordinator.parent = self
         if field.stringValue != text, (field.currentEditor() as? NSTextView)?.hasMarkedText() != true { field.stringValue = text }
         field.font = font
+        // The colours are read as the page around the field is drawn, not as the window is.
+        let appearance = NSAppearance(named: context.environment.colorScheme == .dark ? .darkAqua : .aqua)
+        if field.appearance?.name != appearance?.name { field.appearance = appearance }
         field.textColor = color
         field.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [.font: font, .foregroundColor: placeholderColor])
         if focusRequests != coordinator.focused {

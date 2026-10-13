@@ -308,10 +308,13 @@ private struct EmptyPane: View {
             Text("将左侧的终端或会话拖到这里，或先点这一块、再在左侧点选。")
                 .font(.system(size: 13)).foregroundStyle(Look.ink2).lineSpacing(5).multilineTextAlignment(.center).frame(maxWidth: 360)
             if let was {
-                Button { model.focus(pane: pane, force: true); model.resume(was) } label: {
-                    BracketLabel(word: "Resume 「\(was.title.isEmpty ? "会话" : was.title)」")
+                // The session named in a few words, in fewer where the pane is narrow: the button is one line and never
+                // wider than its pane (a title is up to 120 characters; whole, the button lay across the window).
+                ViewThatFits(in: .horizontal) {
+                    resume(was, columns: 36)
+                    resume(was, columns: 24)
+                    resume(was, columns: 12)
                 }
-                .buttonStyle(BracketButtonStyle(role: .primary, size: 12.5))
             }
             Button { model.focus(pane: pane, force: true); model.showCreate() } label: { BracketLabel(word: "+ New Terminal") }
                 .buttonStyle(BracketButtonStyle(size: 12.5))
@@ -320,6 +323,15 @@ private struct EmptyPane: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(model.isLight(pane: pane) ? Look.ground : Color(nsColor: model.ground))
         .contentShape(Rectangle())
+    }
+}
+
+private extension EmptyPane {
+    func resume(_ was: SessionSummary, columns: Int) -> some View {
+        Button { model.focus(pane: pane, force: true); model.resume(was) } label: {
+            BracketLabel(word: "Resume 「\(TerminalListText.brief(was.title, columns: columns))」")
+        }
+        .buttonStyle(BracketButtonStyle(role: .primary, size: 12.5))
     }
 }
 

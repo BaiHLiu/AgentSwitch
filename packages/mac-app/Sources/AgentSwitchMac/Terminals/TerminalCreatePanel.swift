@@ -445,7 +445,10 @@ struct TerminalSheetView: View {
             }
             .padding(EdgeInsets(top: 16, leading: 18, bottom: 14, trailing: 18))
             .frame(width: 420)
-            .background(look.isClassic ? Look.panel : Color.black)
+            // The page's own ground: black on the dark page, paper on the light one. It was black whatever the page,
+            // under the page's own ink — dark words on black where a record had the page light (2026-10-13, user, of
+            // `关闭「π - Pi」？`: 新的bug).
+            .background(look.isClassic ? Look.panel : Look.ground)
             .framed(look.isClassic ? Look.line : Look.ink, radius: 12)
             .background(Group { if !look.isClassic { Checker().offset(x: 6, y: 6) } })
             .shadow(color: .black.opacity(look.isClassic ? 0.4 : 0), radius: 16, y: 6)

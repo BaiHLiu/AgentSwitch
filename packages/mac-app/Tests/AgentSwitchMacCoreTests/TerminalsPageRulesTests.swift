@@ -248,4 +248,22 @@ final class TerminalsPageRulesTests: XCTestCase {
         XCTAssertTrue(TerminalListText.mayBeOpen("opencode").contains("OpenCode 不支持分叉"))
         XCTAssertEqual(TerminalListText.mayBeOpen("pi"), "此会话可能正在其他终端中运行，继续将写入同一会话。")
     }
+
+    // 2026-10-13, user, of an empty pane's `[ Resume 「…」 ]` drawn across the whole window: 又是什么bug.
+    func testASessionsTitleInAFewWordsIsOneLineOfSoManyColumns() {
+        XCTAssertEqual(TerminalListText.brief(""), "会话")
+        XCTAssertEqual(TerminalListText.brief("  \n "), "会话")
+        XCTAssertEqual(TerminalListText.brief("Fix the login redirect"), "Fix the login redirect")
+        XCTAssertEqual(TerminalListText.brief("修登录页的跳转"), "修登录页的跳转")
+        // A wide character is two columns: 36 columns hold 18 of them, or 17 and the ellipsis.
+        XCTAssertEqual(TerminalListText.brief(String(repeating: "字", count: 18)), String(repeating: "字", count: 18))
+        XCTAssertEqual(TerminalListText.brief(String(repeating: "字", count: 19)), String(repeating: "字", count: 17) + "…")
+        XCTAssertEqual(TerminalListText.brief(String(repeating: "a", count: 36)), String(repeating: "a", count: 36))
+        XCTAssertEqual(TerminalListText.brief(String(repeating: "a", count: 37)), String(repeating: "a", count: 35) + "…")
+        XCTAssertEqual(TerminalListText.brief("first line\nsecond line", columns: 60), "first line second line")
+        XCTAssertEqual(TerminalListText.brief("ab cdefgh", columns: 4), "ab…", "no space left before the ellipsis")
+        let long = TerminalListText.brief(String(repeating: "账号管理、", count: 24))
+        XCTAssertTrue(long.hasSuffix("…"))
+        XCTAssertLessThanOrEqual(long.count, 18)
+    }
 }

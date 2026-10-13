@@ -251,7 +251,7 @@ extension TerminalsModel {
     func resume(_ session: SessionSummary, as profile: String? = nil) {
         guard TerminalListText.resumable.contains(session.harness), opening == nil else { return }
         if let open = openedAs(session) { return select(open.id) }
-        let name = session.title.isEmpty ? "会话" : session.title
+        let name = TerminalListText.brief(session.title)
         let c = client()
         Task {
             if !TerminalListText.checked.contains(session.harness), session.active {
@@ -373,7 +373,7 @@ extension TerminalsModel {
     func delete(_ session: SessionSummary) {
         let c = client()
         Task {
-            let answer = await ask(TerminalSheet(title: "删除会话「\(session.title.isEmpty ? "无标题" : session.title)」？",
+            let answer = await ask(TerminalSheet(title: "删除会话「\(session.title.isEmpty ? "无标题" : TerminalListText.brief(session.title, columns: 60))」？",
                                                  body: "将删除 \(TerminalListText.agentName(session.harness)) 保存的会话记录，此操作无法撤销。", confirm: "Delete", destructive: true))
             guard answer.ok else { return }
             do {
