@@ -45,7 +45,10 @@ const ALLOWED: Readonly<Record<string, readonly string[]>> = {
   /** mesh-v0: the other nodes this one uses — their book, the pinned connections to them, pairing with them. Above the
    *  remote listener, whose pairing desk and addresses it uses and which knows it only as an interface; below the API. */
   nodes: [...UPPER, "executors", "engine", "remote"],
-  [ROOT]: [...UPPER, "threads", "router", "executors", "engine", "assistant", "terminals", "browser", "profiles", "clash", "api", "remote", "nodes"],
+  /** mesh-v0 §4.2: the keeper of a node without the Mac app (`agentswitch node run`, the systemd service, `doctor`);
+   *  it starts the daemon as a process, so it imports none of it but the checks it reuses. Only the CLI imports it. */
+  keeper: [...UPPER, "terminals"],
+  [ROOT]: [...UPPER, "threads", "router", "executors", "engine", "assistant", "terminals", "browser", "profiles", "clash", "api", "remote", "nodes", "keeper"],
 };
 
 const SPECIFIER = /(?:\bfrom\s*|\bimport\s*\(\s*|^\s*import\s+)(["'])(\.{1,2}\/[^"']+)\1/gm;

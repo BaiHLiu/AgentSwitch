@@ -43,6 +43,10 @@ export class Client {
   addNode(link: string, back: boolean) { return this.call<{ ok: true; node: NodeRow; back: string }>("POST", "/nodes", { link, back }); }
   removeNode(node: string, both: boolean) { return this.call<{ ok: true; told: boolean; inboundRevoked: boolean; node: NodeRow }>("DELETE", `/nodes/${encodeURIComponent(node)}${both ? "?both=1" : ""}`); }
   pairing(back: boolean) { return this.call<{ code: string; expiresAt: number; link: string }>("POST", "/pairing", { back }); }
+  /** This node's remote listener: name, port, fingerprint and the addresses a pairing offers (local only). */
+  remoteInfo() { return this.call<{ enabled: boolean; port: number | null; fingerprint: string | null; name: string | null; lan: string[]; tailnet: string[]; onlineDevices: number }>("GET", "/remote/info"); }
+  /** A one-time path that signs a browser on this machine into the web console (api/localAuth.ts; 60 s). */
+  consoleLink() { return this.call<{ path: string }>("POST", "/local/console-link", {}); }
   devices() { return this.call<{ id: string; name: string; platform: string; lastSeenAt: number | null; revokedAt: number | null; online: boolean }[]>("GET", "/devices"); }
   revokeDevice(id: string) { return this.call<{ ok: true }>("DELETE", `/devices/${encodeURIComponent(id)}`); }
   /** docs/browser-v0.md §7: the browser engine as installed; `check` asks what could be. */
