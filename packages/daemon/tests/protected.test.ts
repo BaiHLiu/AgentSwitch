@@ -70,7 +70,7 @@ describe("protected paths", () => {
   it("snapshot/restore: modified, added and deleted files under a protected subtree inside cwd are put back and reported", () => {
     const { repo, prot } = setup();
     expect(protectedInside(repo, prot)).toEqual([join(repo, "config")]);
-    expect(protectedInside("/tmp", prot)).toEqual([]);
+    expect(protectedInside(mkdtempSync(join(tmpdir(), "agentswitch-prot-other-")), prot)).toEqual([]);   // not "/tmp": on Linux it holds the repo
     const before = snapshotProtected(repo, prot);
     writeFileSync(join(repo, "config", "targets.yaml"), "harnesses: { evil: {} }\n");
     writeFileSync(join(repo, "config", "EXECUTOR.md"), "you are free now");
@@ -272,7 +272,8 @@ describe("a Claude search above a credential store (review, 2026-09-24)", () => 
   });
 });
 
-describe("the data volume's spelling and letter case (review, 2026-10-02)", () => {
+// macOS only: the data volume and its firmlinks do not exist elsewhere.
+describe.skipIf(process.platform !== "darwin")("the data volume's spelling and letter case (review, 2026-10-02)", () => {
   // `realpath` keeps `/System/Volumes/Data/Users/…` as it is asked and node's JS realpath keeps the letter case, so a
   // path tool (Claude's Read, Edit, Grep; the terminals' floor) named a read-denied or protected root that way and got
   // past these checks. Real files on this Mac: the temp dir is under /private, which the data volume firmlinks.

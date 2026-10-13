@@ -8,7 +8,9 @@ import { echoRouter } from "../src/router/routers/echo.js";
 import { fakeMinter, parseMintOutput, type MintEntry } from "../src/secrets/minter.js";
 import { applyTokens, hostOf, isWholeRecord, LEGEND_HEADER, parseSealReply, planSeal, recordDelimiter, routerSealer, splitRecord, type Sealer } from "../src/secrets/sealer.js";
 import { composePrompt } from "../src/executors/instructions.js";
-import { decisionJson, TARGETS_PATH } from "./helpers.js";
+import { decisionJson, TARGETS_PATH, workDir } from "./helpers.js";
+
+const CWD = workDir();
 
 const reply = (secrets: unknown[], layout: string | null = null) => JSON.stringify({ secrets, layout });
 
@@ -120,7 +122,7 @@ describe("POST /tasks with plaintext credentials", () => {
   it("the stored task, its events and the routing log only ever hold tokens; the sealed event names labels and hosts", async () => {
     const seal = routerSealer(echoRouter([reply([{ value: "Hunter2!", label: "finance/pass", hosts: ["core.internal:8600"] }])]), fakeMinter(), () => "");
     const { d, post } = daemon(seal);
-    const res = await post({ task: "登录 http://core.internal:8600/ 密码 Hunter2!", cwd: "/tmp" });
+    const res = await post({ task: "登录 http://core.internal:8600/ 密码 Hunter2!", cwd: CWD });
     expect(res.status).toBe(201);
     const task = await res.json() as { id: string; task: string };
     expect(task.task).not.toContain("Hunter2!");
@@ -138,17 +140,17 @@ describe("POST /tasks with plaintext credentials", () => {
     const calls: { text: string; parent?: string; thread?: string }[] = [];
     const seal: Sealer = async (text, ctx = {}) => { calls.push({ text, ...(ctx.parentTask ? { parent: ctx.parentTask } : {}), ...(ctx.threadTitle ? { thread: ctx.threadTitle } : {}) }); return { ok: true, text, sealed: [], ms: 1 }; };
     const { d, post } = daemon(seal);
-    const first = await post({ task: "改一下 README", cwd: "/tmp" });
+    const first = await post({ task: "改一下 README", cwd: CWD });
     expect(first.status).toBe(201);
     expect(calls).toEqual([{ text: "改一下 README" }]);
     await d.engine.idle();
     const parentId = ((await first.json()) as { id: string }).id;
-    expect((await post({ task: "再改标题", cwd: "/tmp", parent_id: parentId })).status).toBe(201);
+    expect((await post({ task: "再改标题", cwd: CWD, parent_id: parentId })).status).toBe(201);
     expect(calls[1]).toMatchObject({ text: "再改标题", parent: "改一下 README" });
     const bare = daemon();
-    expect((await bare.post({ task: "密码 Hunter2!", cwd: "/tmp" })).status).toBe(201);
+    expect((await bare.post({ task: "密码 Hunter2!", cwd: CWD })).status).toBe(201);
     const unroutable = routerSealer(echoRouter([reply([{ value: "Hunter2!", label: "x/pass", hosts: [] }])]), fakeMinter(), () => "");
-    const r = await daemon(unroutable).post({ task: "密码 Hunter2!", cwd: "/tmp" });
+    const r = await daemon(unroutable).post({ task: "密码 Hunter2!", cwd: CWD });
     expect(r.status).toBe(400);
     expect(((await r.json()) as { error: string }).error).toContain("无法确定这些凭据所属的站点");
   });

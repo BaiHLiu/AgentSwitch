@@ -135,7 +135,7 @@ describe("files a person may open", () => {
   });
 
   // 2026-10-02 review: `realpath` keeps the data volume's spelling, so `/System/Volumes/Data<home>/…` was opened.
-  it("the data volume's spelling and any letter case lead to the same refusals (real files on this Mac)", () => {
+  it.skipIf(process.platform !== "darwin")("the data volume's spelling and any letter case lead to the same refusals (real files on this Mac)", () => {
     const data = (p: string) => `/System/Volumes/Data${p}`;
     expect(existsSync(data(join(asHome, "local-token")))).toBe(true);
     for (const p of [data(join(asHome, "local-token")), data(join(asHome, "browser-profiles", "main", "Cookies")), data(join(gateHome, "keys.json")),
