@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync, exis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { commandTouchesProtected, defaultProtected, terminalProtected, isProtected, isReadDenied, protectedInside, restoreProtected, rootSpellings, snapshotProtected, type ProtectedPaths } from "../src/executors/protected.js";
+import { commandTouchesProtected, defaultProtected, GATE_PUBLIC_DIR, terminalProtected, isProtected, isReadDenied, protectedInside, restoreProtected, rootSpellings, snapshotProtected, type ProtectedPaths } from "../src/executors/protected.js";
 import { decideTool } from "../src/executors/claude.js";
 
 function setup() {
@@ -33,7 +33,7 @@ describe("protected paths", () => {
     expect(isProtected("/pub/gate.sock", "/", p)).toBe(true);
     expect(isReadDenied("/pub/ca.pem", "/", p)).toBe(false);
     expect(isReadDenied("/pub/keys.json", "/", p)).toBe(false);
-    expect(isReadDenied("/Library/Application Support/AgentSwitch/gate-public/gate.sock", "/", defaultProtected({ HOME: "/h" }))).toBe(true);
+    expect(isReadDenied(join(GATE_PUBLIC_DIR, "gate.sock"), "/", defaultProtected({ HOME: "/h" }))).toBe(true);
   });
 
   it("isProtected: inside a root yes, inside an exempt subtree no, relative paths resolve against cwd", () => {
@@ -89,7 +89,7 @@ describe("read-denied paths (2026-09-24)", () => {
   // read them. Before this, Claude's Read/Glob/Grep/LS were allowed everywhere.
   it("defaultProtected read-denies the gate home, the browser profiles, the shared browser's agent files and the remote listener's key", () => {
     const p = defaultProtected({ HOME: "/h", AGENTSWITCH_HOME: "/h/.as", SECRET_GATE_HOME: "/h/.sg" });
-    expect(p.readDenied).toEqual(["/h/.sg", "/Library/Application Support/AgentSwitch/gate-public/gate.sock", "/h/.as/browser-profiles", "/h/.as/browser", "/h/.as/remote", "/h/.as/local-token", "/h/.as/nodes"]);
+    expect(p.readDenied).toEqual(["/h/.sg", join(GATE_PUBLIC_DIR, "gate.sock"), "/h/.as/browser-profiles", "/h/.as/browser", "/h/.as/remote", "/h/.as/local-token", "/h/.as/nodes"]);
     // The agents' session tokens and Playwright MCP's unredacted snapshots (docs/browser-v0.md §5 step 3).
     expect(decideTool("Read", { file_path: "/h/.as/browser/sessions/ab12.token" }, "/w", new Set(), p).kind).toBe("deny");
     expect(decideTool("Bash", { command: "cat /h/.as/browser/agents/ab12-cd34/page.yml" }, "/w", new Set(), p).kind).toBe("deny");
@@ -97,7 +97,7 @@ describe("read-denied paths (2026-09-24)", () => {
 
   it("AgentSwitch's own terminals keep only the credentials at rest closed: the gate's keys and socket (2026-09-30), the other nodes' tokens (2026-10-10)", () => {
     const env = { HOME: "/h", AGENTSWITCH_HOME: "/h/.as", SECRET_GATE_HOME: "/h/.sg" };
-    const closed = ["/h/.sg", "/Library/Application Support/AgentSwitch/gate-public/gate.sock", "/h/.as/nodes"];
+    const closed = ["/h/.sg", join(GATE_PUBLIC_DIR, "gate.sock"), "/h/.as/nodes"];
     expect(terminalProtected(env)).toEqual({ roots: closed, exempt: [], readDenied: closed });
     const term = terminalProtected(env);
     const full = defaultProtected(env);

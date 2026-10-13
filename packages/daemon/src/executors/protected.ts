@@ -68,8 +68,9 @@ export const NODES_DIR = "nodes";
 /** Under `$AGENTSWITCH_HOME`: the local API token (api/localAuth.ts keeps the same name; executors never read it). */
 export const LOCAL_TOKEN_NAME = "local-token";
 
-/** Where the gate service publishes its CA, public keys and socket when it runs as its own account (gate-service-v0 §2). */
-export const GATE_PUBLIC_DIR = "/Library/Application Support/AgentSwitch/gate-public";
+/** Where the gate service publishes its CA, public keys and socket when it runs as its own account (gate-service-v0 §2;
+ *  on Linux, mesh-v0 §4.5). */
+export const GATE_PUBLIC_DIR = process.platform === "darwin" ? "/Library/Application Support/AgentSwitch/gate-public" : "/var/lib/agentswitch/gate-public";
 
 /** Under `$AGENTSWITCH_HOME`: the browser session slots (browserSlots.ts). */
 export const BROWSER_PROFILES_DIR = "browser-profiles";

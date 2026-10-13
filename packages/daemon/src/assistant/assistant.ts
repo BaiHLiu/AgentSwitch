@@ -4,6 +4,7 @@
  *  answer usefully the message becomes a task as before, so nothing the user says is lost. A resend with the same
  *  client id gets the first answer. */
 
+import { withHostNote } from "../util/hostNote.js";
 import { tmpdir } from "node:os";
 import { z } from "zod";
 import type { Router } from "../core/modelCall.js";
@@ -201,7 +202,7 @@ export class Assistant {
     const staged = this.deps.stagedUpdate?.() ?? null;
     const update = staged ? `\n\nA new AgentSwitch version (built ${staged}) is waiting to be installed.` : "";
     const body = (previousError?: string) => `Task register:\n${register.text}\n\nFolders earlier tasks worked in (newest first):\n${folders}\n\nThe user's own coding sessions on this Mac, by folder (newest first; how many sessions per executor and the latest one's title):\n${sessions}${update}\n\nConversation so far:\n${conversation}\n\nThe user's new message:\n${withoutLegend(message)}${previousError ? `\n\n(Your previous reply was rejected: ${previousError})` : ""}`;
-    const r = await askJson(this.deps.router!, { system: ASSISTANT_SYSTEM, cwd: tmpdir(), body }, parseDecision, this.deps.timeoutMs);
+    const r = await askJson(this.deps.router!, { system: withHostNote(ASSISTANT_SYSTEM), cwd: tmpdir(), body }, parseDecision, this.deps.timeoutMs);
     return r.value;
   }
 }

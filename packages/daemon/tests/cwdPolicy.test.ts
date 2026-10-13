@@ -33,6 +33,11 @@ describe("cwd rules", () => {
     expect(checkCwd("/", w.rules)).toMatch(/too broad/);
   });
 
+  it("refuse Linux's credential folders too (mesh-v0 §4.4)", () => {
+    const rules = defaultCwdRules({ HOME: "/home/u" });
+    for (const d of [".local/share/keyrings", ".local/share/opencode", ".pki", ".mozilla"]) expect(rules.denied, d).toContain(join("/home/u", d));
+  });
+
   it("refuse a denied root and anything under it, however it is spelled", () => {
     const w = world();
     expect(checkCwd(join(w.home, ".secret-gate"), w.rules)).toMatch(/under .*\.secret-gate/);
