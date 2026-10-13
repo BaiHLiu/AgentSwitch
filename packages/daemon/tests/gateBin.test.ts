@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { realExecutors } from "../src/daemon.js";
-import { defaultGate, gateBin, gateNotFound, VENV_GATE_BIN } from "../src/executors/gate.js";
+import { chromeExecutable, claudeMcpServers, defaultGate, gateBin, gateNotFound, VENV_GATE_BIN } from "../src/executors/gate.js";
 import { which } from "../src/util/which.js";
 import { realTargets } from "./helpers.js";
 
@@ -117,5 +117,22 @@ describe("claudeBinary (the user's own Claude Code CLI)", () => {
     expect(claudePlannerOptions("claude-opus-5-5", { CLAUDE_BIN: "/opt/me/claude", PATH: "/nonexistent" }))
       .toEqual({ model: "claude-opus-5-5", cwd: tmpdir(), executable: "/opt/me/claude" });
     expect(claudePlannerOptions("claude-opus-5-5", {})).toEqual({ model: "claude-opus-5-5", cwd: tmpdir() });
+  });
+});
+
+describe("the browser Dispatch's Playwright MCP starts (mesh-v0 §4.4)", () => {
+  it("off macOS without Google Chrome where Playwright looks: a Chromium on the PATH, passed as --executable-path", () => {
+    const chromium = file("bin/chromium");
+    const none = () => false;
+    expect(chromeExecutable({ PATH: join(dir, "bin") }, "linux", none)).toBe(chromium);
+    expect(chromeExecutable({ PATH: join(dir, "bin") }, "linux", (p) => p === "/opt/google/chrome/chrome")).toBeNull();
+    expect(chromeExecutable({ PATH: join(dir, "bin") }, "darwin", none)).toBeNull();
+    expect(chromeExecutable({ PATH: "/nonexistent" }, "linux", none)).toBeNull();
+    expect(chromeExecutable({ PATH: "/nonexistent", AGENTSWITCH_CHROME: "/opt/x/chrome" }, "darwin", none)).toBe("/opt/x/chrome");
+    const gate = { ...defaultGate({ SECRET_GATE_BIN: file("sg"), HOME: dir, AGENTSWITCH_CHROME: chromium })!, allowedOrigins: [] };
+    expect(gate.browserExecutable).toBe(chromium);
+    expect(claudeMcpServers(gate, "/p", true).playwright!.args).toContain(`--executable-path=${chromium}`);
+    const { browserExecutable: _, ...chrome } = gate;
+    expect(claudeMcpServers(chrome, "/p", true).playwright!.args.some((a) => a.startsWith("--executable-path"))).toBe(false);
   });
 });

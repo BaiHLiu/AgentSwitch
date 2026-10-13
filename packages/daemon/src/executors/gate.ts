@@ -18,6 +18,9 @@ export type GateOptions = {
   readonly proxy: string;          // http://127.0.0.1:8080
   readonly playwrightVersion: string;
   readonly allowedOrigins: readonly string[];
+  /** The browser Playwright MCP starts when it is not Google Chrome where Playwright looks for it: off macOS without
+   *  /opt/google/chrome, a Chromium on the PATH (mesh-v0 §4.4). Absent: Playwright's own choice, Chrome. */
+  readonly browserExecutable?: string;
 };
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -52,7 +55,22 @@ export function defaultGate(env: NodeJS.ProcessEnv = process.env, venv: string =
     proxy: env.SECRET_GATE_PROXY ?? "http://127.0.0.1:8080",
     playwrightVersion: env.PW_MCP_VERSION ?? "0.0.82",
     allowedOrigins: (env.AGENTSWITCH_BROWSER_ORIGINS ?? "").split(";").filter(Boolean),
+    ...withBrowser(chromeExecutable(env)),
   };
+}
+
+const withBrowser = (path: string | null) => path ? { browserExecutable: path } : {};
+
+/** Google Chrome where Playwright's `chrome` channel looks on Linux, else a Chromium on the PATH; null on macOS, where
+ *  the channel finds Chrome itself, and when there is neither. `AGENTSWITCH_CHROME` names one outright. */
+export function chromeExecutable(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, exists: (p: string) => boolean = existsSync): string | null {
+  if (env.AGENTSWITCH_CHROME) return env.AGENTSWITCH_CHROME;
+  if (platform === "darwin" || exists("/opt/google/chrome/chrome")) return null;
+  for (const name of ["chromium", "chromium-browser", "google-chrome-stable", "google-chrome"]) {
+    const found = which(name, env.PATH);
+    if (found) return found;
+  }
+  return null;
 }
 
 export const NO_PROXY_HOSTS = "127.0.0.1,localhost,api.anthropic.com,.anthropic.com,claude.ai,.claude.ai,api.openai.com,chatgpt.com,.openai.com,api.deepseek.com,.deepseek.com,.statsig.com,.sentry.io";
@@ -162,6 +180,7 @@ export function mcpServerEnv(gate: GateOptions | null | undefined, env: NodeJS.P
 function playwrightArgs(gate: GateOptions, profile: string): string[] {
   return ["browser", "--", "npx", "-y", "--prefer-offline", `@playwright/mcp@${gate.playwrightVersion}`,
     `--proxy-server=${gate.proxy}`, "--ignore-https-errors", `--user-data-dir=${profile}`,
+    ...(gate.browserExecutable ? [`--executable-path=${gate.browserExecutable}`] : []),
     ...(gate.allowedOrigins.length ? [`--allowed-origins=${gate.allowedOrigins.join(";")}`] : [])];
 }
 
