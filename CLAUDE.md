@@ -7,6 +7,7 @@
 - `packages/secret-gate/` 凭据层（Python）：模型只拿密文或任务范围内的短引用 `enc:ref:`，网络层与浏览器 gate 解密。自带 venv、pytest、AGENTS.md；`BOUNDARY.md` 是各入口的安全边界清单，改浏览器或凭据入口时同步更新
 - `packages/secret-gate-ui/` macOS 原生界面（SwiftUI + SwiftPM）：管理命名密钥对、单条/批量生成密文，全部通过 secret-gate CLI，不自己做密码学
 - `packages/mac-app/` macOS 菜单栏应用（SwiftUI + SwiftPM + xcodegen）：内置 Node/Python 运行时，看护 gate 与 daemon，配对二维码、设备、模型、密钥、环境检测；`scripts/build-app.sh` 打出自包含的 `AgentSwitch.app`（`docs/app-v0.md` §4）
+- `packages/linux/` Linux 节点（无窗口，`docs/mesh-v0.md` §4）：`scripts/build-runtime.sh` 造与 Mac 应用同版本的自包含运行时，`scripts/install.sh` 装进 `~/.local/share/agentswitch` 并交给 systemd 用户服务；看护进程是 daemon 的 `agentswitch node run`（`src/keeper/`）
 - `packages/ios-app/` iPhone 应用（SwiftUI，iOS 17+，xcodegen）：`AgentSwitchKit` 纯逻辑包（配对、钉证书指纹、本地造密文、事件流）+ 界面；`scripts/e2e-live.sh` 用它连打包后的运行时做端到端（`docs/app-v0.md` §5）
 - `packages/daemon/` TypeScript 守护进程：任务引擎（SQLite + SSE + 审批）、路由器（`docs/router-v0.md`）、HTTP API、额度、CLI `bin/agentswitch`。执行器：echo（开发）+ claude-code（Agent SDK）/ codex（app-server）/ opencode（执行器专用的常驻 serve，不可用时退回 `run --standalone`；`AGENTSWITCH_OPENCODE_EXECUTOR=run` 强制旧路径），`AGENTSWITCH_EXECUTORS=real` 启用；手动入口的终端会话（`src/terminals/`，`docs/terminal-v0.md`）；服务持有的浏览器（`src/browser/`，`docs/browser-v0.md`）
 
