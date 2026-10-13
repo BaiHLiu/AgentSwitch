@@ -14,7 +14,11 @@
  *  and the service, seeing the call go, took the card off the screens (user: 有的时候cc的对话回复也是一会自己消失了，我回cli还在).
  *
  *    node hookClient.js                 Claude Code: event name from the payload's hook_event_name
- *    node hookClient.js codex '<json>'  Codex notify */
+ *    node hookClient.js codex '<json>'  Codex notify
+ *    node hookClient.js key             the key this terminal's profile pays by (docs/profiles-v0.md §3.6): Claude
+ *                                       Code's `apiKeyHelper`, Codex's provider `auth` command. Printed alone on one
+ *                                       line; without one it says why on stderr and fails, so the agent says it has
+ *                                       no key instead of sending an empty one. */
 
 import { request } from "node:http";
 
@@ -66,8 +70,24 @@ function post(to: string, headers: Record<string, string>, body: string): Promis
   });
 }
 
+/** The key, asked of the service with this terminal's hook token; it waits a short while only. */
+async function key(): Promise<string> {
+  if (!url || !id || !token) throw new Error("not in an AgentSwitch terminal");
+  const res = await Promise.race([
+    post(`${url}/terminals/key`, { "content-type": "application/json", authorization: `Bearer ${token}`, "x-agentswitch-terminal": id }, "{}"),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("the service did not answer")), 20_000).unref()),
+  ]);
+  const body = JSON.parse(res.text || "{}") as { key?: unknown; error?: unknown };
+  if (res.status !== 200 || typeof body.key !== "string" || !body.key) throw new Error(typeof body.error === "string" ? body.error : `the service answered ${res.status}`);
+  return body.key;
+}
+
+if (process.argv[2] === "key") {
+  key().then((value) => process.stdout.write(`${value}\n`, () => process.exit(0)),
+    (err: Error) => process.stderr.write(`AgentSwitch: no API key for this terminal (${err.message})\n`, () => process.exit(1)));
+}
 // A pipe write is asynchronous on macOS: exit only once the answer is out.
-main().catch(() => "").then((out) => {
+else main().catch(() => "").then((out) => {
   if (out) process.stdout.write(out, () => process.exit(0));
   else process.exit(0);
 });

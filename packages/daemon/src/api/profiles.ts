@@ -9,9 +9,12 @@ import { proxyPlace } from "../browser/identity.js";
 import { remoteCaller } from "../core/caller.js";
 import { PROFILE_AGENTS, PROFILE_COLORS, ProfileError, type ProfileAgent, type ProfileProxy } from "../profiles/store.js";
 import { SessionKeyError } from "../browser/sessionKey.js";
+import { ApiKeyError } from "../profiles/apiKeys.js";
 import { parseBody, type ApiDeps } from "./shared.js";
 
 const Agent = z.enum(PROFILE_AGENTS);
+/** How a profile that pays by a key reaches its model: the key (a ciphertext), another address, a model's name. */
+const Api = z.object({ key: z.string().max(4000).optional(), baseUrl: z.string().max(300).nullable().optional(), model: z.string().max(120).nullable().optional() });
 const failed = (err: unknown): { status: 400 | 404 | 409; error: string } =>
   err instanceof ProfileError ? { status: err.code === "not_found" ? 404 : err.code === "conflict" ? 409 : 400, error: err.message } : { status: 400, error: (err as Error).message };
 
@@ -30,12 +33,40 @@ export function mountProfiles(app: Hono<any>, deps: ApiDeps): void {
 
   app.post("/profiles", async (c) => {
     if (remoteCaller(c.env)) return c.json({ error: "profiles are made on the Mac" }, 403);
-    const body = await parseBody(c, z.object({ agent: Agent, name: z.string().min(1).max(80), kind: z.enum(["subscription", "api"]).default("subscription") }));
+    const body = await parseBody(c, z.object({ agent: Agent, name: z.string().min(1).max(80), kind: z.enum(["subscription", "api"]).default("subscription"), api: Api.optional() }));
     if (!body.ok) return c.json({ error: body.error }, 400);
     try {
+      // One that pays by a key (§3.6) is made with it: the gate opens the ciphertext once first, for where it is sent.
+      if (body.data.kind === "api") {
+        if (!body.data.api?.key) return c.json({ error: "a profile that pays by a key needs the key" }, 400);
+        if (!deps.apiKeys) return c.json({ error: "this service cannot keep an API key" }, 503);
+        const profile = await deps.apiKeys.create(body.data.agent, body.data.name, { key: body.data.api.key.trim(), baseUrl: body.data.api.baseUrl?.trim() || undefined, model: body.data.api.model?.trim() || undefined });
+        return c.json({ profile, agents: store.all() }, 201);
+      }
       const profile = store.create(body.data.agent, body.data.name, body.data.kind);
       return c.json({ profile, agents: store.all() }, 201);
-    } catch (err) { const f = failed(err); return c.json({ error: f.error }, f.status); }
+    } catch (err) {
+      if (err instanceof ApiKeyError) return c.json({ error: err.message }, 400);
+      const f = failed(err); return c.json({ error: f.error }, f.status);
+    }
+  });
+
+  // The key a profile pays by, where it is sent and the model it starts on (§3.6). `key` is a ciphertext sealed for
+  // the address; null keeps the one it has. Terminals already open keep what they started with, but for the key:
+  // they ask for it each time they need it.
+  app.put("/profiles/:agent/:id/api", async (c) => {
+    if (remoteCaller(c.env)) return c.json({ error: "a profile's key is set on the Mac" }, 403);
+    const agent = Agent.safeParse(c.req.param("agent"));
+    if (!agent.success) return c.json({ error: "no such agent" }, 404);
+    const body = await parseBody(c, Api.extend({ key: z.string().max(4000).nullable().default(null) }));
+    if (!body.ok) return c.json({ error: body.error }, 400);
+    if (!deps.apiKeys) return c.json({ error: "this service cannot keep an API key" }, 503);
+    try { await deps.apiKeys.set(agent.data, c.req.param("id"), { key: body.data.key?.trim() || null, baseUrl: body.data.baseUrl?.trim() || undefined, model: body.data.model?.trim() || undefined }); }
+    catch (err) {
+      if (err instanceof ApiKeyError) return c.json({ error: err.message }, 400);
+      const f = failed(err); return c.json({ error: f.error }, f.status);
+    }
+    return c.json({ agents: store.all() });
   });
 
   // A profile's own proxy (§4): set, changed or taken away. It is checked at once — where it lets traffic out is

@@ -219,6 +219,22 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
     } catch (err) { return failed(c, err); }
   });
 
+  // The key a terminal's profile pays by, for its agent to send (hookClient.ts `key`; docs/profiles-v0.md §3.6). Let
+  // through the local token check like the hook, and proven the same way; not on the remote allowlist. Why none was
+  // given is written down here — the agent shows little of what the program says.
+  app.post("/terminals/key", async (c) => {
+    const id = c.req.header("x-agentswitch-terminal") ?? "";
+    const token = /^Bearer\s+(\S+)\s*$/.exec(c.req.header("authorization") ?? "")?.[1];
+    const refuse = (status: 400 | 409 | 502, error: string) => { console.error(`terminals: terminal ${id.slice(0, 16) || "?"} asked for its profile's key and was given none (${status}: ${error})`); return c.json({ error }, status); };
+    if (!token) return refuse(400, "bad key call");
+    try {
+      const of = host.profileOf(id, token);
+      if (!of.profile || !deps.apiKeys) return refuse(409, "this terminal's profile pays by no key");
+      try { return c.json({ key: await deps.apiKeys.plain(of.harness, of.profile) }); }
+      catch (err) { return refuse(502, (err as Error).message); }
+    } catch (err) { return failed(c, err); }
+  });
+
   // A web address the agent in a terminal asked the system to open (launch.ts `openInProfileBrowser`): opened in its
   // profile's own browser. Let through the local token check like the hook, and proven the same way. Refused when the
   // terminal has no browser of its own, or that browser shows nothing on this Mac (nobody could sign in there).
@@ -353,22 +369,29 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
     const recorded = resumed ? deps.profiles?.sessionProfile(resumed.harness, resumed.agentSessionId) ?? DEFAULT_PROFILE : null;
     const wanted = body.data.profile ?? recorded ?? deps.profiles?.current(body.data.harness) ?? DEFAULT_PROFILE;
     const profileHome = wanted === DEFAULT_PROFILE ? null : deps.profiles?.homeOf(body.data.harness, wanted) ?? null;
-    if (wanted !== DEFAULT_PROFILE && !profileHome) return c.json({ error: "no such profile" }, 400);
-    const color = profileHome ? deps.profiles!.colorOf(body.data.harness, wanted) : null;
-    let profile: { id: string; name: string; home: string; proxy?: string; exit?: { ip: string; place: string | null }; browserKey?: string; color?: string } | null =
-      profileHome ? { id: wanted, name: deps.profiles!.nameOf(body.data.harness, wanted) ?? wanted, home: profileHome, ...(color ? { color } : {}) } : null;
+    // One that pays by a key (§3.6): the agent is told where to send it and asks for the key itself. Codex's has no
+    // folder of its own.
+    const paid = wanted === DEFAULT_PROFILE ? null : deps.profiles?.apiOf(body.data.harness, wanted) ?? null;
+    if (wanted !== DEFAULT_PROFILE && !profileHome && !paid) return c.json({ error: "no such profile" }, 400);
+    const color = wanted !== DEFAULT_PROFILE ? deps.profiles!.colorOf(body.data.harness, wanted) : null;
+    let profile: { id: string; name: string; home?: string; proxy?: string; exit?: { ip: string; place: string | null }; browserKey?: string; color?: string; api?: { baseUrl?: string; model?: string } } | null =
+      wanted !== DEFAULT_PROFILE ? { id: wanted, name: deps.profiles!.nameOf(body.data.harness, wanted) ?? wanted, ...(profileHome ? { home: profileHome } : {}), ...(color ? { color } : {}),
+        ...(paid ? { api: { ...(paid.baseUrl ? { baseUrl: paid.baseUrl } : {}), ...(paid.model ? { model: paid.model } : {}) } } : {}) } : null;
     // A profile with a proxy of its own: before anything is started under it, the proxy is asked where it lets
     // traffic out. One that does not answer starts nothing — the agent is not let out another way (§4).
     if (profile) {
       const way = await exitFor(deps, body.data.harness, wanted, profile.name);
       if ("refused" in way) return c.json({ error: way.refused }, way.status);
       profile = { ...profile, ...way };
+      // A browser of its own goes with a folder of its own: without one the shared browser, and the system's for a
+      // page the agent asks to have opened.
+      if (!profile.home) delete profile.browserKey;
     }
     // A profile nobody is signed in to starts at its sign-in (docs/profiles-v0.md §3.1), not at a prompt that cannot
     // answer. Asked of the agent itself; when it does not say, nothing is assumed.
     // Only one that signs in with an account: one that pays by a key has nobody to sign in.
     const account = profile && deps.profiles!.kindOf(body.data.harness, wanted) === "subscription";
-    const firstInput = profile && account && (await t.signedIn?.(body.data.harness, profile.home).catch(() => null)) === false ? "/login" : null;
+    const firstInput = profile?.home && account && (await t.signedIn?.(body.data.harness, profile.home).catch(() => null)) === false ? "/login" : null;
     try {
       const info = await host.spawn({ harness: body.data.harness, cwd, ...(profile ? { profile } : {}), ...(firstInput ? { firstInput } : {}), ...(body.data.model ? { model: body.data.model } : {}), ...(body.data.effort ? { effort: body.data.effort } : {}), ...(agentSessionId ? { resume: agentSessionId, ...(forks ? { fork: forks } : {}) } : {}),
         ...(resumed?.title ? { name: resumed.title } : {}), ...(body.data.mode ? { mode: body.data.mode } : {}),

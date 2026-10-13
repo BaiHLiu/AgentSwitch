@@ -156,7 +156,7 @@ Codex
 - **删除**：`Remove` 只是让服务忘掉它，浏览器里已有的登录不动（要退出就在那个浏览器里退出）。删除配置时一并删掉。
 - 接口 `PUT /profiles/:agent/:id/session-key`（`{ key: 密文 | null }`，只在 Mac 上）；`GET /profiles` 里每个配置多一项 `sessionKey: true`（有的时候）。
 - 界面：设置 › Agents 里配置那一行多一个 `Session Key…`，打开一张小表：一个密码框，`Save` / `Remove`。
-- 没做：手机上设；Codex 等其它 agent；`sk-ant-oat…`（`claude setup-token` 的令牌）与 API key 是另外两种东西，不在这里。
+- 没做：手机上设；Codex 等其它 agent；`sk-ant-oat…`（`claude setup-token` 的令牌）与 API key 是另外两种东西，不在这里。 API key 见 §3.6。
 
 ### 3.5 底栏标出 Claude Code 的设备标识（2026-10-11）
 
@@ -166,6 +166,31 @@ Codex
 - **显示**：Claude Code 终端的底栏多一项 `ID 56967b93`（前 8 位）；悬停显示完整的，点一下复制。设置 › Agents 里配置那一行悬停也能看到。
 - 服务在开终端时读一次；一个从没运行过的配置那时还没有，等 Claude Code 报出会话后再读一次。只读，不写、不改。
 - 没做：手机上显示；其它 agent（它们各有各的标识，没有查过）。
+
+### 3.6 用 API key 的配置：Claude Code 与 Codex（2026-10-13）
+
+用户：Claude和codex都加上使用apikey添加profile的方式。
+
+- **是什么**：新建配置时多一种登录方式 `API Key`。填三样：key、`Base URL`（留空是厂商自己的地址——`https://api.anthropic.com`、`https://api.openai.com/v1`；填了就发到那里，中转与网关用这个）、`Model`（留空用 agent 自己的默认；新建终端时选了模型的以那里选的为准）。没有人要登录，所以在它名下开终端直接到提示符，不走 §3.1 的 `/login`，Claude Code 的也没有 `Session Key…`。
+- **key 怎么存**：同代理密码与 session key。在 Mac 上由凭据网关封成密文再交给服务，**限定的站点就是它要发往的那个地址的站点**；库里（`profiles/profiles.json`）只有密文，任何接口都不回显，屏幕只知道地址和模型。新建、修改时服务先向网关要一次值，要不出来（不是密文、不是为这个地址封的）就不建、不存。`Base URL` 换到另一个站点时原来的密文对不上，必须一并填新的 key；同一站点内改路径、改模型不用重填。
+- **key 怎么到 agent 手里**：两家都有“运行一条命令取 key”的口子，用的就是它，**key 不进 agent 的启动参数、环境变量和任何文件**：
+  - Claude Code：启动那层设置里写 `apiKeyHelper`（终端自己的 hook 程序加 `key`），地址不是 Anthropic 自己的时再加 `env.ANTHROPIC_BASE_URL`。它把取到的值同时作为 `x-api-key` 与 `Authorization: Bearer` 发出。
+  - Codex：启动时用 `-c` 给一个只属于这个终端的供应商（`model_provider="agentswitch"`，`model_providers.agentswitch = { name, base_url, wire_api = "responses", auth = { command, args } }`），命令同上。它作为 `Authorization: Bearer` 发出。
+  - 那条命令拿终端自己的 hook 令牌向本机服务要（`POST /terminals/key`，不在配对设备的名单上）；服务按终端所在的配置取出密文、向网关要值、交给它。要不到（网关没开、配置删了）命令就失败并在 stderr 说明，agent 报没有 key，不会发一个空的出去。key 换了之后，已经开着的终端下一次取就是新的；地址与模型是启动时定的，开着的终端不变。
+- **各自的家目录**：
+  - Claude Code：和订阅登录的配置一样有自己的目录（自己的设备标识，不沾 `Default` 的登录）。
+  - Codex：**没有自己的目录，就在这台 Mac 原有的 `CODEX_HOME` 里运行**——会话、设置、对 AgentSwitch hook 的信任都是现成的、共用的，只是这个终端按 key 付费。实测那个目录自己登录着别的账号 / key 时，发出去的仍只是这个配置的 key。因此 Codex 目前**只有** API key 这一种配置；订阅登录的要另一个 `CODEX_HOME`，仍是 §12 第 4 步。没有自己目录的配置也没有自己的浏览器（用共用的那个），代理照样可以设。
+- **这是不是把 key 交给了 agent**：是，和你把 key 写进它自己的设置里一样——终端不在网关后面（§8），agent 自己要发这个 key，也就能运行那条命令看到它。网关在这里管的是两件事：key 落盘时是密文；它只为那一个地址解开。
+- **接口**：`POST /profiles` 多 `kind: "api"` 与 `api: { key: 密文, baseUrl?, model? }`；`PUT /profiles/:agent/:id/api`（`key` 为 null 时沿用原来的）；两者都只在 Mac 上。`GET /profiles` 里这种配置带 `api: { baseUrl?, model? }`，每个 agent 多一项 `kinds`（能建哪几种：Claude Code 两种，Codex 只有 `api`，OpenCode 与 pi 为空）。
+- **界面**（Mac，设置 › Agents）：`New Profile…` 从一个只问名字的对话框改成一张小表——名字、`Sign In With`（`Account` / `API Key`，只有一种时不出现）、选了 `API Key` 时的三栏。这种配置那一行写 `API Key · <地址的主机>`，按钮是 `API Key…`（改 key、地址、模型；key 栏留空即沿用）。iPhone 上这种配置写作 `API Key`，新建与修改仍只在 Mac。
+- **查实的**（2026-10-13，Claude Code 2.1.294、Codex 0.163.0-alpha.5，`packages/daemon/scripts/api_key_probe.ts`：真的两个程序、各自一个一次性的家目录、地址是本机一个只回 401 并记下请求的替身，没有碰任何模型和账号）：Claude Code 照启动器写的设置去取 key，发到替身的是 `x-api-key` 与 `Authorization` 两个头；Codex 照启动器给的参数去取，发的是 `Authorization`，目录里另放的一个 key 没有发出去；两边的参数、环境、文件里都找不到那个 key。
+- **没查实、没做的**：
+  - 真的 key 对着真的接口跑一轮（没有用任何账号）；在装好的应用里点一遍新建。
+  - 你的 `settings.json` 里若已经写着别家的 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY`（cc switch 的写法），它和这里的 `apiKeyHelper` 谁先谁后没有测（§2 说的“要逐个盖掉”仍未做）。
+  - Codex 需要认供应商的 `auth` 命令的版本（0.163 认）；更早的版本没有试，ChatGPT.app 自带的那一份也没有试。
+  - 续接一段在别的供应商下开始的 Codex 会话认不认，没有试。
+  - 中转的地址须支持各家自己的接口（Anthropic Messages；OpenAI Responses），界面只说明、不探测。
+  - 按配置分开的用量；调度任务用配置（第 6 步）。
 
 ## 4. 出口（代理）
 
@@ -475,7 +500,7 @@ Codex
 1. 网关从终端里拿掉（§8）。**已做（2026-10-08）**：服务（启动环境、Claude Code 的网关工具、Codex 给命令的那份环境、回复的加密、浏览器工具直连 agent 桥并用真 Chrome 验证过）；Mac 与 iPhone 去掉了 `Encrypt & Send`、锁和“像密码时先问”的入口（里面的旧代码还在，不再打得开）。
 2. Claude Code 的配置。**已做一部分（2026-10-08）**：服务（`src/profiles/store.ts`：每个配置一个家目录——你的设置与会话链接到这台 Mac 的那份，`.claude.json` 里只带不认人的部分；当前配置；`GET/POST/DELETE /profiles`；新终端按当前配置带 `CLAUDE_CONFIG_DIR` 启动）、Mac（设置 › Agents 里每个 agent 一段 Profiles：切换、新建、删除；状态栏写配置名）。真的 Claude Code 2.1.293 在这样一个目录下启动：显示未登录、不走引导、自己生成新的标识，链接仍是链接。**还没做**：真的登录一次并续接会话、新建终端面板里选配置、`Continue As`、手机上显示、API 供应商类的地址与密钥。原定：家目录、启动、登录、列表与当前配置、新建终端里选、终端上标名字、`Continue As`。只在终端里，身份都用这台 Mac 的——这一步不需要 Camoufox。
 3. 配置自己的身份：每个一个转发口与一个浏览器；agent 进程的出口；状态栏的浏览器图标；`Browser` 页分组。**已做一部分（2026-10-08，§4.1；2026-10-09，§5.1）**：配置的代理、转发口、开终端前查出口、底栏标出口；配置自己的浏览器（agent 的浏览器工具与 `/login` 的页面都在里面，走同一个出口）。Mac 与 iPhone 的 Browser 页都能切到这些浏览器（§5.2、§5.4），启动前查代理、登录页窗口到前面、底栏标是谁的浏览器（§5.3）。没登录的配置开终端就从登录开始（§3.1）；配置有颜色，它名下运行的终端带同色的亮点（§3.2）。没有代理的配置也有自己的浏览器，登录页开在里面（§5.5）。配置在新建终端、恢复对话的地方选，恢复默认回到对话原来的配置（§3.3）。配置的代理手机上也能设（§4.2）。
-4. Codex 的配置。
+4. Codex 的配置。**API key 这一种已做（2026-10-13，§3.6；Claude Code 的同做）**，不另开家目录；订阅登录的（另一个 `CODEX_HOME`）还没做。
 5. OpenCode、pi。
 6. 调度任务用配置。
 7. （可选）`Apply to This Mac`、从 cc switch 导入、文件夹钉配置。

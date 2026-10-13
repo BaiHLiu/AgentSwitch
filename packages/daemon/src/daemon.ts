@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { createApp } from "./api/app.js";
 import { DEFAULT_PROFILE, PROFILE_AGENTS, ProfileStore } from "./profiles/store.js";
 import { SessionKeys } from "./browser/sessionKey.js";
+import { ApiKeys } from "./profiles/apiKeys.js";
 import { proxyPlace } from "./browser/identity.js";
 import { ClashIntegration } from "./clash/integration.js";
 import { ClashSource } from "./clash/source.js";
@@ -388,6 +389,7 @@ export function buildDaemon(cfg: DaemonConfig, overrides: BuildOverrides = {}): 
           launched: async () => { const p = profileOfKey(key); if (p) await sessionKeys.launched(p.agent, p.id); } } }), exits,
         (key) => { const p = profileOfKey(key); return p && p.id !== DEFAULT_PROFILE && profiles.homeOf(p.agent, p.id) ? { proxy: profiles.proxyOf(p.agent, p.id) } : null; })
     : undefined;
+  const apiKeys = new ApiKeys({ store: profiles, ...(gate ? { resolve: gateFill(gate) } : {}) });
   const sessionKeys: SessionKeys = new SessionKeys({ store: profiles, ...(gate ? { resolve: gateFill(gate) } : {}),
     browser: (agent, id) => profileBrowsers?.get(`${agent}.${id}`)?.host ?? null });
   // A new engine is switched to with the browser stopped, which then comes back with its tabs (docs/browser-v0.md §7.2 第 6 条).
@@ -461,7 +463,7 @@ export function buildDaemon(cfg: DaemonConfig, overrides: BuildOverrides = {}): 
     proxyPorts: () => new Map(Object.values(profiles.all()).flatMap((a) => a.profiles).flatMap((p) => { const place = p.proxy ? proxyPlace(p.proxy.server) : null; return place ? [[place.host.toLowerCase(), place.port] as const] : []; })) });
   // The nodes are made after the API (they need the remote listener): what they heard is asked through this.
   let nodesMade: Nodes | null = null;
-  const apiDeps: ApiDeps = { liveElsewhere: () => nodesMade?.lives() ?? [], remoteKeyboard: () => loadMesh(cfg.home).keyboard, exits, profiles, sessionKeys, ...(profileBrowsers ? { profileBrowsers } : {}), clash, ...(browser ? { browser } : {}), ...(engineKit ? { engineKit } : {}), ...(taskFolderRoot ? { taskFolderRoot } : {}), ...(sessions ? { sessions } : {}), ...(terminals ? { terminals } : {}), ...(sealer ? { sealer } : {}), store, bus, engine, targets, quota, routingLog, routeDeps, contextPath, memoryPath, platformMemoryPath, policyPath, workRoot, cwdRules: defaultCwdRules(process.env, cfg.home), home: cfg.home, ...(cfg.appBundle ? { appBundle: cfg.appBundle } : {}), uploads, artifactsDir, extensions, version: VERSION, models: { path: modelsPath, base: baseTargets }, ...(overrides.sseHeartbeatMs ? { sseHeartbeatMs: overrides.sseHeartbeatMs } : {}) };
+  const apiDeps: ApiDeps = { liveElsewhere: () => nodesMade?.lives() ?? [], remoteKeyboard: () => loadMesh(cfg.home).keyboard, exits, profiles, sessionKeys, apiKeys, ...(profileBrowsers ? { profileBrowsers } : {}), clash, ...(browser ? { browser } : {}), ...(engineKit ? { engineKit } : {}), ...(taskFolderRoot ? { taskFolderRoot } : {}), ...(sessions ? { sessions } : {}), ...(terminals ? { terminals } : {}), ...(sealer ? { sealer } : {}), store, bus, engine, targets, quota, routingLog, routeDeps, contextPath, memoryPath, platformMemoryPath, policyPath, workRoot, cwdRules: defaultCwdRules(process.env, cfg.home), home: cfg.home, ...(cfg.appBundle ? { appBundle: cfg.appBundle } : {}), uploads, artifactsDir, extensions, version: VERSION, models: { path: modelsPath, base: baseTargets }, ...(overrides.sseHeartbeatMs ? { sseHeartbeatMs: overrides.sseHeartbeatMs } : {}) };
   // assistant-v0 §1.1: the router as the user's assistant, on the router model (a text-only agent); echo mode has none
   // and every message becomes a task. Task creation is POST /tasks's second half (admitSealed).
   const assistantRouter = overrides.assistant ?? (summarizer ? oracle("assistant") : undefined);

@@ -65,11 +65,18 @@ enum DesignPreview {
                         AgentProfile(id: "abc123def0", name: "cwork1", account: "work@example.com", proxy: checked.proxy, exit: checked.exit, color: "violet"),
                         AgentProfile(id: "abc123def1", name: "side", color: "sand"),
                         AgentProfile(id: "abc123def2", name: "lab", account: "lab@example.com", color: "mint"),
-                    ], creatable: true)
+                        AgentProfile(id: "abc123def3", name: "relay", kind: "api", color: "orchid", api: ProfileApiInfo(baseUrl: "https://relay.example/api", model: "claude-made-up")),
+                    ], creatable: true, kinds: ["subscription", "api"])
                     for (name, appearance) in [("profiles-rows", dark), ("profiles-rows-light", NSAppearance(named: .aqua))] {
-                        try await renderSheet(Form { ProfilesSection(agent: .claude, profiles: list, error: nil, add: {}, remove: { _ in }, proxy: { _ in }, color: { _, _ in }) }
+                        try await renderSheet(Form { ProfilesSection(agent: .claude, profiles: list, error: nil, add: {}, remove: { _ in }, proxy: { _ in }, sessionKey: { _ in }, apiKey: { _ in }, color: { _, _ in }) }
                             .formStyle(.grouped).frame(width: 640), model: model, appearance: appearance, to: directory.appendingPathComponent("\(name).png"))
                     }
+                    // A new profile (§3.6): one that pays by a key, where both ways are offered and where the key is the only one;
+                    // and the sheet that changes a kept one.
+                    try await renderSheet(ProfileNewSheet(agent: .claude, kinds: ["api", "subscription"]) { _ in }, model: model, appearance: dark, to: directory.appendingPathComponent("profile-new-key.png"))
+                    try await renderSheet(ProfileNewSheet(agent: .claude, kinds: ["subscription", "api"]) { _ in }, model: model, appearance: dark, to: directory.appendingPathComponent("profile-new-account.png"))
+                    try await renderSheet(ProfileNewSheet(agent: .codex, kinds: ["api"]) { _ in }, model: model, appearance: dark, to: directory.appendingPathComponent("profile-new-codex.png"))
+                    try await renderSheet(ProfileKeySheet(agent: .claude, profile: list.profiles[4]) { _ in }, model: model, appearance: dark, to: directory.appendingPathComponent("profile-key.png"))
                     FileHandle.standardError.write(Data("design preview (a profile's proxy) written to \(directory.path)\n".utf8))
                     exit(0)
                 }

@@ -1,7 +1,8 @@
 /** Profiles (docs/profiles-v0.md): several sign-ins per agent, each a home folder of its own that the agent is started
  *  with (`CLAUDE_CONFIG_DIR` …), so the Mac's own `~/.claude` is never rewritten and the agents' own apps and other
  *  terminals are untouched. Every agent has `Default` — the Mac's own, with no folder here — and a current profile that
- *  new terminals start under. Claude Code first (step 2); the others have `Default` alone for now.
+ *  new terminals start under. Claude Code first (step 2); Codex has the ones that pay by a key (§3.6); OpenCode and
+ *  pi have `Default` alone for now.
  *
  *  A profile's folder holds what is the account's and the device's (its `.claude.json` with identifiers Claude Code
  *  makes itself on first run, its credentials); what is the user's — instructions, skills, commands, settings — and the
@@ -19,6 +20,29 @@ export type ProfileKind = "subscription" | "api";
 export const DEFAULT_PROFILE = "default";
 /** A profile's own proxy (§4): where what runs under it leaves this Mac. The password is a ciphertext of the gate's. */
 export type ProfileProxy = { readonly server: string; readonly username?: string | undefined; readonly password?: string | undefined };
+/** How a profile that pays by a key reaches its model (§3.6): the key, a ciphertext of the gate's sealed for the
+ *  address it is sent to; that address when it is not the vendor's own; the model it starts on when none is chosen. */
+export type ProfileApi = { readonly key: string; readonly baseUrl?: string | undefined; readonly model?: string | undefined };
+/** The vendor's own address for each agent that can pay by a key: where a key goes when the profile names no other. */
+export const API_HOME: Partial<Record<ProfileAgent, string>> = { "claude-code": "https://api.anthropic.com", codex: "https://api.openai.com/v1" };
+/** The ways a profile of each agent can sign in (absent: `Default` alone). Codex's account profiles wait for a home
+ *  folder of their own (step 4); one that pays by a key needs none. */
+export const PROFILE_KINDS: Partial<Record<ProfileAgent, readonly ProfileKind[]>> = { "claude-code": ["subscription", "api"], codex: ["api"] };
+const API_MODEL = /^[\w.:/@[\]-]{1,120}$/;
+
+/** An address a key is sent to, as kept: http(s), no account in it, no query, no trailing slash. Null: not one. */
+export function apiAddress(said: string): string | null {
+  let url: URL;
+  try { url = new URL(said.trim()); } catch { return null; }
+  if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password || url.search || url.hash || said.length > 300) return null;
+  return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+}
+
+/** The site a profile's key is sealed for: the origin of where it is sent. */
+export function apiSite(agent: ProfileAgent, baseUrl: string | undefined): string {
+  return `${new URL(baseUrl ?? API_HOME[agent] ?? "https://invalid.invalid").origin}/`;
+}
+
 /** Where a profile's proxy let traffic out when it was last checked. */
 export type ProfileExit = { readonly ip: string; readonly place: string | null; readonly timezone: string | null; readonly checkedAt: number };
 /** The colours a profile can have (§3.2), by name; the screens know what each looks like. None of them is a colour
@@ -33,13 +57,17 @@ export type Profile = { readonly id: string; readonly name: string; readonly kin
   /** Its proxy as the screens are told of it (`sealed`: it has a password, never shown); absent: this Mac's own way out. */
   readonly proxy?: { readonly server: string; readonly username?: string; readonly sealed: boolean };
   readonly exit?: ProfileExit;
+  /** One that pays by a key (§3.6): where the key is sent when not the vendor's own, the model it starts on. The key
+   *  itself is never told. */
+  readonly api?: { readonly baseUrl?: string; readonly model?: string };
   /** It has a claude.ai session key kept for its own browser (§3.4); the key itself is never told. */
   readonly sessionKey?: true;
   /** The device Claude Code says it is under this profile (§3.5): the `userID` of its own file; absent till it has run. */
   readonly device?: string };
-export type AgentProfiles = { readonly current: string; readonly profiles: readonly Profile[]; /** More than `Default` can be made for this agent. */ readonly creatable: boolean };
+export type AgentProfiles = { readonly current: string; readonly profiles: readonly Profile[]; /** More than `Default` can be made for this agent. */ readonly creatable: boolean;
+  /** The ways a new profile of this agent can sign in; empty where none can be made. */ readonly kinds: readonly ProfileKind[] };
 
-type Stored = { current?: string; profiles?: { id: string; name: string; kind: ProfileKind; createdAt: number; color?: ProfileColor; proxy?: ProfileProxy; exit?: ProfileExit;
+type Stored = { current?: string; profiles?: { id: string; name: string; kind: ProfileKind; createdAt: number; color?: ProfileColor; proxy?: ProfileProxy; exit?: ProfileExit; api?: ProfileApi;
   /** A claude.ai session key, a ciphertext of the gate's (§3.4), and whether the browser has yet to be given it. */
   sessionKey?: string; sessionKeyDue?: boolean }[] };
 type File = { agents?: Partial<Record<ProfileAgent, Stored>> };
@@ -126,7 +154,24 @@ export class ProfileStore {
   /** The profile last chosen for a new terminal of `agent`: what the next new terminal is offered first (§3.3). */
   current(agent: ProfileAgent): string { return this.of(agent, this.read()).current; }
 
-  /** The folder the agent is started with for `id`; null for `Default` (the Mac's own) and for one that is not there. */
+  /** `id` is a profile of `agent` other than `Default`. */
+  has(agent: ProfileAgent, id: string): boolean {
+    return id !== DEFAULT_PROFILE && (this.read().agents?.[agent]?.profiles?.some((p) => p.id === id) ?? false);
+  }
+
+  /** How `id` reaches its model, whole (the key a ciphertext); null: it signs in with an account, or is not there. */
+  apiOf(agent: ProfileAgent, id: string): ProfileApi | null {
+    return this.read().agents?.[agent]?.profiles?.find((p) => p.id === id)?.api ?? null;
+  }
+
+  /** `id`'s key, address and model from now on. Only a profile that pays by a key has them. */
+  setApi(agent: ProfileAgent, id: string, api: ProfileApi): void {
+    const checked = checkedApi(agent, api);
+    this.change(agent, id, (p) => { if (p.kind !== "api") throw new ProfileError("invalid", "this profile signs in with an account"); return { ...p, api: checked }; });
+  }
+
+  /** The folder the agent is started with for `id`; null for `Default` (the Mac's own), for one that has none (Codex's,
+   *  which pay by a key and run in the Mac's own) and for one that is not there. */
   homeOf(agent: ProfileAgent, id: string): string | null {
     if (id === DEFAULT_PROFILE || !/^[a-z0-9]{6,16}$/.test(id)) return null;
     const home = join(this.dir, agent, id, "home");
@@ -203,8 +248,11 @@ export class ProfileStore {
     this.write({ ...file, agents: { ...file.agents, [agent]: { ...file.agents?.[agent], current: id } } });
   }
 
-  create(agent: ProfileAgent, name: string, kind: ProfileKind): Profile {
-    if (agent !== "claude-code") throw new ProfileError("invalid", "profiles are for Claude Code only so far");
+  /** A new profile. One that pays by a key is made with the key (a ciphertext the caller has had the gate open once). */
+  create(agent: ProfileAgent, name: string, kind: ProfileKind, api?: ProfileApi): Profile {
+    if (!PROFILE_KINDS[agent]?.includes(kind)) throw new ProfileError("invalid", PROFILE_KINDS[agent] ? `a ${agent} profile cannot sign in that way yet` : "this agent has `Default` alone so far");
+    if ((kind === "api") !== Boolean(api)) throw new ProfileError("invalid", kind === "api" ? "a profile that pays by a key needs the key" : "only a profile that pays by a key has one");
+    const checked = api ? checkedApi(agent, api) : null;
     const said = name.trim().replace(/\s+/g, " ");
     if (!said || said.length > 40) throw new ProfileError("invalid", "a profile needs a name of 1 to 40 characters");
     const file = this.read();
@@ -215,10 +263,12 @@ export class ProfileStore {
     const taken = new Set((file.agents?.[agent]?.profiles ?? []).map((p) => p.color));
     const color = PROFILE_COLORS.find((c) => !taken.has(c)) ?? PROFILE_COLORS[known.length % PROFILE_COLORS.length]!;
     const profile = { id: randomBytes(5).toString("hex"), name: said, kind, createdAt: this.now(), color };
-    this.claudeHome(join(this.dir, agent, profile.id, "home"));
+    // Claude Code's sign-in and identifiers are a folder's; Codex paying by a key runs in the Mac's own folder, the
+    // key and the address given when it starts (§3.6).
+    if (agent === "claude-code") this.claudeHome(join(this.dir, agent, profile.id, "home"));
     const stored = file.agents?.[agent] ?? {};
-    this.write({ ...file, agents: { ...file.agents, [agent]: { ...stored, profiles: [...(stored.profiles ?? []), profile] } } });
-    return profile;
+    this.write({ ...file, agents: { ...file.agents, [agent]: { ...stored, profiles: [...(stored.profiles ?? []), { ...profile, ...(checked ? { api: checked } : {}) }] } } });
+    return { ...profile, ...(checked ? { api: told(checked) } : {}) };
   }
 
   /** Removes a profile and its folder (the sessions, linked, stay where they are). `Default` cannot go; the current one
@@ -241,13 +291,14 @@ export class ProfileStore {
   private of(agent: ProfileAgent, file: File): AgentProfiles {
     const stored = file.agents?.[agent] ?? {};
     // A proxy's password, a ciphertext, is not for the screens: they are told only that it has one.
-    // Nor is a session key: only that there is one.
-    const own: Profile[] = (stored.profiles ?? []).map(({ proxy, sessionKey, sessionKeyDue: _due, ...p }) => ({ ...p,
+    // Nor is a session key: only that there is one. Nor the key a profile pays by: only where it is sent.
+    const own: Profile[] = (stored.profiles ?? []).map(({ proxy, sessionKey, sessionKeyDue: _due, api, ...p }) => ({ ...p,
+      ...(api ? { api: told(api) } : {}),
       ...(sessionKey ? { sessionKey: true as const } : {}),
       ...(proxy ? { proxy: { server: proxy.server, ...(proxy.username ? { username: proxy.username } : {}), sealed: Boolean(proxy.password) } } : {}),
       ...this.account(agent, join(this.dir, agent, p.id, "home", ".claude.json")) }));
     const profiles: Profile[] = [{ id: DEFAULT_PROFILE, name: "Default", kind: "subscription", createdAt: 0, ...this.account(agent, join(this.userHome, ".claude.json")) }, ...own];
-    return { current: profiles.some((p) => p.id === stored.current) ? stored.current! : DEFAULT_PROFILE, profiles, creatable: agent === "claude-code" };
+    return { current: profiles.some((p) => p.id === stored.current) ? stored.current! : DEFAULT_PROFILE, profiles, creatable: Boolean(PROFILE_KINDS[agent]), kinds: PROFILE_KINDS[agent] ?? [] };
   }
 
   /** Who Claude Code's own file says is signed in: the plan's organisation and the address, as it shows them itself. */
@@ -306,6 +357,20 @@ export class ProfileStore {
     writeFileSync(tmp, JSON.stringify(file, null, 2), { mode: 0o600 });
     renameSync(tmp, this.file);
   }
+}
+
+/** What the screens are told of how a profile reaches its model: never the key. */
+const told = (api: ProfileApi): { baseUrl?: string; model?: string } => ({ ...(api.baseUrl ? { baseUrl: api.baseUrl } : {}), ...(api.model ? { model: api.model } : {}) });
+
+/** A key, address and model as kept; refused when one of them is not what it should be. */
+function checkedApi(agent: ProfileAgent, api: ProfileApi): ProfileApi {
+  if (!API_HOME[agent]) throw new ProfileError("invalid", "this agent cannot pay by a key here");
+  if (!api.key || api.key.length > 4000 || /\s/.test(api.key)) throw new ProfileError("invalid", "a profile that pays by a key needs the key");
+  const baseUrl = api.baseUrl?.trim() ? apiAddress(api.baseUrl) : undefined;
+  if (baseUrl === null) throw new ProfileError("invalid", "the address is not an http(s) address");
+  const model = api.model?.trim() || undefined;
+  if (model && !API_MODEL.test(model)) throw new ProfileError("invalid", "the model's name is not one");
+  return { key: api.key, ...(baseUrl ? { baseUrl } : {}), ...(model ? { model } : {}) };
 }
 
 const present = (path: string): boolean => { try { lstatSync(path); return true; } catch { return false; } };

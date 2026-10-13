@@ -15,6 +15,7 @@ import { ExitError, ExitPool } from "../src/browser/exits.js";
 import type { ApiDeps } from "../src/api/shared.js";
 import { markRemote } from "../src/core/caller.js";
 import { DEFAULT_PROFILE, ProfileError, ProfileStore } from "../src/profiles/store.js";
+import { ApiKeyError, ApiKeys } from "../src/profiles/apiKeys.js";
 import { mountSessions } from "../src/api/sessions.js";
 import { mountTerminals } from "../src/api/terminals.js";
 import { TerminalHost, type LaunchRequest } from "../src/terminals/host.js";
@@ -64,8 +65,10 @@ function world() {
 describe("the profile store", () => {
   it("has Default for every agent, the Mac's own; a new Claude Code profile is a folder with links and no account", () => {
     const { userHome, home, store } = world();
-    expect(store.all()["claude-code"]).toEqual({ current: DEFAULT_PROFILE, creatable: true, profiles: [{ id: "default", name: "Default", kind: "subscription", createdAt: 0, account: "me@example.com" }] });
-    expect(store.all().codex).toMatchObject({ current: "default", creatable: false, profiles: [{ id: "default" }] });
+    expect(store.all()["claude-code"]).toEqual({ current: DEFAULT_PROFILE, creatable: true, kinds: ["subscription", "api"], profiles: [{ id: "default", name: "Default", kind: "subscription", createdAt: 0, account: "me@example.com" }] });
+    // Codex has the ones that pay by a key; OpenCode and pi `Default` alone.
+    expect(store.all().codex).toMatchObject({ current: "default", creatable: true, kinds: ["api"], profiles: [{ id: "default" }] });
+    expect(store.all().pi).toMatchObject({ creatable: false, kinds: [] });
     expect(store.homeOf("claude-code", "default")).toBeNull();
 
     const work = store.create("claude-code", "  Work ", "subscription");
@@ -101,11 +104,11 @@ describe("the profile store", () => {
     expect(store.nameOf("claude-code", work.id)).toBe("Work");
     const dir = store.homeOf("claude-code", work.id)!;
     expect(() => store.setCurrent("claude-code", "nope12")).toThrow(ProfileError);
-    expect(() => store.create("claude-code", "work", "api")).toThrow(/already/);
-    expect(() => store.create("claude-code", "  ", "api")).toThrow(/name/);
-    expect(() => store.create("codex", "Team", "subscription")).toThrow(/Claude Code only/);
+    expect(() => store.create("claude-code", "work", "subscription")).toThrow(/already/);
+    expect(() => store.create("claude-code", "  ", "subscription")).toThrow(/name/);
+    expect(() => store.create("codex", "Team", "subscription")).toThrow(/cannot sign in that way/);
     expect(() => store.remove("claude-code", "default")).toThrow(ProfileError);
-    const relay = store.create("claude-code", "Relay", "api");
+    const relay = store.create("claude-code", "Relay", "api", { key: "enc:v1:" + "A".repeat(40) });
     expect(store.othersOf("claude-code", work.id)).toEqual([join(dir, "..", "..", relay.id)].map((p) => join(p)));
     store.remove("claude-code", work.id);
     expect(existsSync(dir)).toBe(false);
@@ -399,7 +402,7 @@ esac
     const said = new Map<string, boolean | null>();
     const { store, asked, questions, call, root } = served(async (_h, home) => said.get(home) ?? null);
     const fresh = store.create("claude-code", "Fresh", "subscription"), work = store.create("claude-code", "Work", "subscription");
-    const unsure = store.create("claude-code", "Unsure", "subscription"), key = store.create("claude-code", "Key", "api");
+    const unsure = store.create("claude-code", "Unsure", "subscription"), key = store.create("claude-code", "Key", "api", { key: "enc:v1:" + "A".repeat(40) });
     said.set(store.homeOf("claude-code", fresh.id)!, false).set(store.homeOf("claude-code", work.id)!, true).set(store.homeOf("claude-code", key.id)!, false);
     const start = async (profile?: string) => (await call("POST", "/terminals", { harness: "claude-code", cwd: root, ...(profile ? { profile } : {}) })).status;
     expect(await start(fresh.id)).toBe(201);
@@ -510,5 +513,102 @@ esac
     writeFileSync(file, JSON.stringify(kept));
     expect([store.colorOf("claude-code", a.id), store.colorOf("claude-code", b.id)]).toEqual(["sand", "violet"]);
     expect((JSON.parse(readFileSync(file, "utf8")) as typeof kept).agents["claude-code"]!.profiles.map((p) => p.color)).toEqual(["sand", "violet"]);
+  });
+});
+
+describe("a profile that pays by a key (§3.6)", () => {
+  const SEALED = "enc:v1:" + "A".repeat(40), OTHER = "enc:v1:" + "B".repeat(40);
+  /** The gate, made up: it opens a ciphertext for the one site it was sealed for. */
+  const gate = (sealedFor: Record<string, { site: string; value: string }>) => async (token: string, sites: readonly string[]) => {
+    const kept = sealedFor[token];
+    if (!kept || !sites.includes(kept.site)) throw new Error("refused");
+    return { value: kept.value, label: "key" };
+  };
+
+  it("is made with its key, a ciphertext the gate opens for where it is sent; the screens are never told the key", async () => {
+    const { store, home } = world();
+    const keys = new ApiKeys({ store, resolve: gate({ [SEALED]: { site: "https://api.anthropic.com/", value: "sk-ant-api03-made-up" }, [OTHER]: { site: "https://relay.example/", value: "sk-relay-made-up" } }) });
+    const own = await keys.create("claude-code", "Key", { key: SEALED });
+    expect(own).toMatchObject({ name: "Key", kind: "api", api: {} });
+    expect(JSON.stringify(store.all())).not.toContain(SEALED);
+    expect(existsSync(join(home, "profiles", "claude-code", own.id, "home", ".claude.json"))).toBe(true);
+    expect(await keys.plain("claude-code", own.id)).toBe("sk-ant-api03-made-up");
+    // Sealed for another site than the one it would be sent to: nothing is made.
+    await expect(keys.create("claude-code", "Wrong", { key: OTHER })).rejects.toBeInstanceOf(ApiKeyError);
+    await expect(keys.create("claude-code", "Plain", { key: "sk-ant-api03-in-the-clear" })).rejects.toBeInstanceOf(ApiKeyError);
+    expect(store.all()["claude-code"].profiles.map((p) => p.name)).toEqual(["Default", "Key"]);
+    // Another address: the key sealed for it, and the address told as kept (no trailing slash).
+    const relay = await keys.create("claude-code", "Relay", { key: OTHER, baseUrl: "https://relay.example/api/", model: "claude-made-up" });
+    expect(relay.api).toEqual({ baseUrl: "https://relay.example/api", model: "claude-made-up" });
+    // The address moved to another site: the old key does not go with it.
+    await expect(keys.set("claude-code", relay.id, { key: null, baseUrl: "https://elsewhere.example" })).rejects.toThrow(/另一个站点/);
+    await keys.set("claude-code", relay.id, { key: null, baseUrl: "https://relay.example/v2" });
+    expect(store.apiOf("claude-code", relay.id)).toEqual({ key: OTHER, baseUrl: "https://relay.example/v2" });
+    // One that signs in with an account has no key; an account profile cannot be given one.
+    const account = store.create("claude-code", "Work", "subscription");
+    await expect(keys.set("claude-code", account.id, { key: SEALED })).rejects.toBeInstanceOf(ProfileError);
+    expect(() => store.create("claude-code", "NoKey", "api")).toThrow(ProfileError);
+  });
+
+  it("is Codex's too, with no folder of its own; an account profile of Codex's cannot be made yet", async () => {
+    const { store, home } = world();
+    const keys = new ApiKeys({ store, resolve: gate({ [SEALED]: { site: "https://api.openai.com/", value: "sk-proj-made-up" } }) });
+    const own = await keys.create("codex", "Key", { key: SEALED });
+    expect(store.homeOf("codex", own.id)).toBeNull();
+    expect(store.has("codex", own.id)).toBe(true);
+    expect(existsSync(join(home, "profiles", "codex"))).toBe(false);
+    expect(() => store.create("codex", "Team", "subscription")).toThrow(ProfileError);
+    expect(() => store.create("pi", "Key", "api", { key: SEALED })).toThrow(ProfileError);
+    // Without the gate no key is handed over.
+    await expect(new ApiKeys({ store }).plain("codex", own.id)).rejects.toThrow(/网关/);
+  });
+
+  it("starts the agent with a command for the key and the address: nothing of the key in its arguments, environment or files", () => {
+    const stateDir = mkdtempSync(join(tmpdir(), "agentswitch-profile-key-"));
+    const launch = agentLauncher({ binaries: { "claude-code": "/bin/claude", codex: "/bin/codex" }, hookUrl: () => "http://127.0.0.1:4711", stateDir, node: "/n/node", hookScript: "/n/hook.js", env: { PATH: "/usr/bin", HOME: "/Users/u" } });
+    const claude = launch({ id: "k1", harness: "claude-code", cwd: "/tmp", mode: "manual", hookToken: "tok", configHome: "/as/p/home", api: { name: "Relay", baseUrl: "https://relay.example/api", model: "claude-made-up" } });
+    const settings = JSON.parse(readFileSync(join(stateDir, "k1", "settings.json"), "utf8")) as { apiKeyHelper?: string; env?: Record<string, string> };
+    expect(settings.apiKeyHelper).toBe('"/n/node" "/n/hook.js" key');
+    expect(settings.env).toEqual({ ANTHROPIC_BASE_URL: "https://relay.example/api" });
+    expect(claude.args.slice(claude.args.indexOf("--model"), claude.args.indexOf("--model") + 2)).toEqual(["--model", "claude-made-up"]);
+    // Anthropic's own address is not named; the model chosen for the terminal goes before the profile's.
+    const plain = launch({ id: "k2", harness: "claude-code", cwd: "/tmp", mode: "manual", hookToken: "tok", configHome: "/as/p/home", model: "opus", api: { name: "Key", model: "claude-made-up" } });
+    expect(JSON.parse(readFileSync(join(stateDir, "k2", "settings.json"), "utf8")).env).toBeUndefined();
+    expect(plain.args).toContain("opus");
+    expect(plain.args).not.toContain("claude-made-up");
+    const codex = launch({ id: "k3", harness: "codex", cwd: "/tmp", mode: "manual", hookToken: "tok", api: { name: "Key" } });
+    expect(codex.args).toContain('model_provider="agentswitch"');
+    expect(codex.args).toContain('model_providers.agentswitch={ name = "Key", base_url = "https://api.openai.com/v1", wire_api = "responses", auth = { command = "/n/node", args = ["/n/hook.js","key"] } }');
+    expect(codex.env.CODEX_HOME).toBeUndefined();
+    // One that signs in with an account is started as before.
+    launch({ id: "k4", harness: "claude-code", cwd: "/tmp", mode: "manual", hookToken: "tok", configHome: "/as/p/home" });
+    expect(JSON.parse(readFileSync(join(stateDir, "k4", "settings.json"), "utf8")).apiKeyHelper).toBeUndefined();
+    expect(launch({ id: "k5", harness: "codex", cwd: "/tmp", mode: "manual", hookToken: "tok" }).args.join(" ")).not.toContain("model_provider");
+  });
+
+  it("hands the key to the agent of a terminal under it, proven by the terminal's hook token, and to nobody else", async () => {
+    const { store } = world();
+    const keys = new ApiKeys({ store, resolve: gate({ [SEALED]: { site: "https://api.openai.com/", value: "sk-proj-made-up" } }) });
+    const own = await keys.create("codex", "Key", { key: SEALED });
+    const asked: LaunchRequest[] = [];
+    const host = new TerminalHost({ launcher: (req) => { asked.push(req); return { file: "/bin/sh", args: ["-c", "/bin/sleep 30"], env: { PATH: "/usr/bin:/bin" }, hooks: false }; } });
+    closers.push(() => host.closeAll());
+    const app = new Hono();
+    mountTerminals(app, { profiles: store, apiKeys: keys, terminals: { host, audit: { record() { /* not looked at */ } }, agents: ["codex"], style: () => ({}), elsewhere: async () => null } } as unknown as ApiDeps);
+    const post = async (path: string, body: unknown, headers: Record<string, string> = {}) => {
+      const res = await app.request(path, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+      return { status: res.status, json: (await res.json()) as Record<string, any> };
+    };
+    const made = await post("/terminals", { harness: "codex", cwd: tmpdir(), profile: own.id });
+    expect(made.status).toBe(201);
+    expect(made.json.terminal.profile).toMatchObject({ id: own.id, name: "Key" });
+    expect(asked[0]).toMatchObject({ api: { name: "Key" } });
+    expect(asked[0]!.configHome).toBeUndefined();
+    const id = made.json.terminal.id as string, token = asked[0]!.hookToken;
+    expect((await post("/terminals/key", {}, { "x-agentswitch-terminal": id, authorization: `Bearer ${token}` })).json).toEqual({ key: "sk-proj-made-up" });
+    expect((await post("/terminals/key", {}, { "x-agentswitch-terminal": id, authorization: "Bearer not-it" })).status).toBe(403);
+    // A terminal on the Mac's own has no key to ask for.
+    const plain = await post("/terminals", { harness: "codex", cwd: tmpdir(), profile: "default" });
+    expect((await post("/terminals/key", {}, { "x-agentswitch-terminal": plain.json.terminal.id, authorization: `Bearer ${asked[1]!.hookToken}` })).status).toBe(409);
   });
 });

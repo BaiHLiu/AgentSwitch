@@ -118,6 +118,19 @@ export function codexBrowserArgs(server: BrowserServer): string[] {
 export const hookCommandOf = (opts: Pick<LauncherOptions, "node" | "hookScript">): string =>
   `${shq(opts.node ?? process.execPath)} ${shq(opts.hookScript ?? HOOK_SCRIPT)}`;
 
+/** OpenAI's own address, where a key goes when the profile names no other (profiles/store.ts `API_HOME`). */
+const OPENAI_API = "https://api.openai.com/v1";
+/** Codex's own name for the provider a profile that pays by a key is: in its configuration for this terminal alone. */
+export const CODEX_KEY_PROVIDER = "agentswitch";
+
+/** Codex started on a profile that pays by a key (docs/profiles-v0.md §3.6): a provider of this terminal's own — the
+ *  address, and a command Codex runs for the key (the hook program's `key`, which asks this service) — chosen over
+ *  whatever the folder it runs in is signed in to. Seen on Codex 0.163 (scripts/api_key_probe.ts). */
+export function codexKeyProviderArgs(node: string, script: string, api: { readonly name: string; readonly baseUrl?: string }): string[] {
+  const provider = `{ name = ${JSON.stringify(api.name)}, base_url = ${JSON.stringify(api.baseUrl ?? OPENAI_API)}, wire_api = "responses", auth = { command = ${JSON.stringify(node)}, args = ${JSON.stringify([script, "key"])} } }`;
+  return ["-c", `model_provider=${JSON.stringify(CODEX_KEY_PROVIDER)}`, "-c", `model_providers.${CODEX_KEY_PROVIDER}=${provider}`];
+}
+
 /** Markers of the Claude Code session the service itself was started from (a developer running it from Claude Code):
  *  inherited, they make the new agent think it is a child session (no transcript) and hand it that session's messaging
  *  token. The user's own settings (ANTHROPIC_*, CLAUDE_CONFIG_DIR, …) stay. */
@@ -238,7 +251,11 @@ export function agentLauncher(opts: LauncherOptions): Launcher {
         if (req.configHome) env.CLAUDE_CONFIG_DIR = req.configHome;
         const settings = join(dir, "settings.json");
         // In the settings laid over the user's too: an `env` of the user's own settings would win over the process's.
-        writeFileSync(settings, JSON.stringify({ ...claudeHookSettings(hookCommand, opts.protected), ...(proxied ? { env: proxied } : {}) }, null, 2), { mode: 0o600 });
+        // A profile that pays by a key (§3.6): Claude Code runs the hook program for it (`apiKeyHelper`, sent as both
+        // `x-api-key` and `Authorization`), and is told where to send it when that is not Anthropic's own address.
+        const keyed = req.api ? { apiKeyHelper: `${hookCommand} key` } : {};
+        const own = { ...proxied, ...(req.api?.baseUrl ? { ANTHROPIC_BASE_URL: req.api.baseUrl } : {}) };
+        writeFileSync(settings, JSON.stringify({ ...claudeHookSettings(hookCommand, opts.protected), ...keyed, ...(Object.keys(own).length ? { env: own } : {}) }, null, 2), { mode: 0o600 });
         const args = ["--settings", settings];
         if (browser) {
           const mcp = join(dir, "mcp.json");
@@ -246,7 +263,7 @@ export function agentLauncher(opts: LauncherOptions): Launcher {
           args.push("--mcp-config", mcp);
         }
         if (browser) args.push("--append-system-prompt", BROWSER_GUIDANCE);
-        if (req.model) args.push("--model", req.model);
+        if (req.model ?? req.api?.model) args.push("--model", (req.model ?? req.api?.model)!);
         args.push(...effortArgs("claude-code", req.effort, req.model).args);
         args.push(...(req.mode === "bypass" ? ["--dangerously-skip-permissions"] : ["--permission-mode", req.mode]));
         // As in iTerm: ⇧Tab can reach bypass later. Only for terminals started on the Mac (not from a paired phone).
@@ -271,7 +288,8 @@ export function agentLauncher(opts: LauncherOptions): Launcher {
         // without it `/daybreak` is no command and the user's own default does nothing. For this terminal alone.
         const daybreak = opts.codexDaybreak?.() ?? false;
         if (daybreak) args.push("-c", `features.${CODEX_DAYBREAK_FEATURE}=true`);
-        if (req.model) args.push("-m", req.model);
+        if (req.api) args.push(...codexKeyProviderArgs(node, script, req.api));
+        if (req.model ?? req.api?.model) args.push("-m", (req.model ?? req.api?.model)!);
         args.push(...effortArgs("codex", req.effort, req.model).args);
         if (req.mode === "bypass") args.push("--dangerously-bypass-approvals-and-sandbox");
         // Asking is stated, not left to config.toml (which may never ask): it asks before anything outside the sandbox.

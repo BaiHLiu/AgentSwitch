@@ -204,8 +204,9 @@ function agents() {
   const sh = S.sheet;
   const sheet = !sh ? "" : `<div class="sheet"><h4>New Profile · ${sh.agent}</h4>
     <div class="field"><label>Name</label><div class="in">${esc(sh.name)}</div></div>
-    <div class="field"><label>Sign-In</label><div class="pick"><button class="${sh.kind === "sub" ? "on" : ""}" data-a="kind" data-v="sub">Subscription</button><button class="${sh.kind === "api" ? "on" : ""}" data-a="kind" data-v="api">API Provider</button></div></div>
-    ${sh.kind === "api" ? `<div class="field"><label>Base URL</label><div class="in faint">https://…</div></div><div class="field"><label>API Key</label><div class="in faint">存成密文</div></div>` : ""}
+    <div class="field"><label>Sign-In</label><div class="pick"><button class="${sh.kind === "sub" ? "on" : ""}" data-a="kind" data-v="sub">Subscription</button><button class="${sh.kind === "api" ? "on" : ""}" data-a="kind" data-v="api">API Key</button></div></div>
+    ${sh.kind === "api" ? `<div class="field"><label>API Key</label><div class="in faint">为它要发往的地址加密后保存，之后不再显示</div></div><div class="field"><label>Base URL</label><div class="in faint">留空是厂商自己的地址 · 填了就发到那里（中转）</div></div><div class="field"><label>Model</label><div class="in faint">Optional</div></div>
+    <p>已做（2026-10-13，profiles-v0 §3.6）：Claude Code 与 Codex。终端里的 agent 用时向本机服务取 key，不写进它的设置和环境变量。Codex 只有这一种配置，且就在这台 Mac 原有的 Codex 目录里运行。已做的界面里这一步没有下面的 Identity：代理在配置那一行的 Proxy… 里设。</p>` : ""}
     <div class="field"><label>Identity</label><div class="pick"><button class="${!sh.own ? "on" : ""}" data-a="own" data-v="0">This Mac</button><button class="${sh.own ? "on" : ""}" data-a="own" data-v="1">Own</button></div></div>
     ${sh.own ? `<div class="field"><label>Exit</label><div class="in">http://proxy.example:8080 <span class="faint">· user · ••••</span></div></div>
     <div class="field"><label>Fingerprint</label><div class="in">macOS · Firefox 156 · 2560×1440 <span class="faint">generated</span></div></div>

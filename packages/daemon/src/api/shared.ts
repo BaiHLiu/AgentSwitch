@@ -42,6 +42,8 @@ export type ApiDeps = {
   readonly profiles?: import("../profiles/store.js").ProfileStore;
   /** Profiles' claude.ai session keys (docs/profiles-v0.md §3.4). */
   readonly sessionKeys?: import("../browser/sessionKey.js").SessionKeys;
+  /** The keys profiles pay by (docs/profiles-v0.md §3.6). */
+  readonly apiKeys?: import("../profiles/apiKeys.js").ApiKeys;
   readonly store: Store;
   readonly bus: Bus;
   readonly engine: Engine;

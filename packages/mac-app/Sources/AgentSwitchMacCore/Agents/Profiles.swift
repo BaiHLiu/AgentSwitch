@@ -51,6 +51,69 @@ public enum ProfileColor: String, CaseIterable, Sendable, Identifiable {
     }
 }
 
+/// How a profile that pays by a key reaches its model (docs/profiles-v0.md §3.6), as the screens are told: where the
+/// key is sent when that is not the vendor's own address, the model it starts on. Never the key.
+public struct ProfileApiInfo: Decodable, Equatable, Sendable {
+    public let baseUrl: String?
+    public let model: String?
+
+    public init(baseUrl: String? = nil, model: String? = nil) {
+        self.baseUrl = baseUrl
+        self.model = model
+    }
+}
+
+/// A profile that pays by a key, as it is typed (docs/profiles-v0.md §3.6): its name when it is a new one, the key,
+/// another address than the vendor's own, a model. The key is sealed by this Mac's gate for the address's site before
+/// anything is sent.
+public struct ApiKeyDraft: Equatable, Sendable {
+    public var name = ""
+    public var key = ""
+    public var baseUrl = ""
+    public var model = ""
+
+    public init(_ info: ProfileApiInfo? = nil) {
+        baseUrl = info?.baseUrl ?? ""
+        model = info?.model ?? ""
+    }
+
+    /// The vendor's own address for each agent that can pay by a key.
+    public static func home(_ agent: String) -> String? {
+        switch agent {
+        case "claude-code": "https://api.anthropic.com"
+        case "codex": "https://api.openai.com/v1"
+        default: nil
+        }
+    }
+
+    private static func trimmed(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+    public var cleanKey: String { Self.trimmed(key) }
+    public var cleanBaseUrl: String? { Self.trimmed(baseUrl).isEmpty ? nil : Self.trimmed(baseUrl) }
+    public var cleanModel: String? { Self.trimmed(model).isEmpty ? nil : Self.trimmed(model) }
+
+    /// The site the key is sealed for: the address it is sent to (`https://relay.example/api` → `https://relay.example/`).
+    public func site(agent: String) -> String? {
+        guard let said = cleanBaseUrl ?? Self.home(agent), let url = URLComponents(string: said), let scheme = url.scheme?.lowercased(),
+              scheme == "https" || scheme == "http", let host = url.host, !host.isEmpty, url.user == nil, url.query == nil else { return nil }
+        return "\(scheme)://\(host.lowercased())\(url.port.map { ":\($0)" } ?? "")/"
+    }
+
+    /// Why it cannot be saved yet, in the sheet's words; nil when it can, or nothing has been typed that is wrong.
+    /// `kept`: the profile has a key already, on `keptSite` — none need be typed while the address stays there.
+    public func problem(agent: String, keptSite: String? = nil) -> String? {
+        if cleanBaseUrl != nil, site(agent: agent) == nil { return "地址须是 http(s) 地址，不带用户名和参数。" }
+        if !cleanKey.isEmpty, cleanKey.count < 8 || cleanKey.contains(where: \.isWhitespace) { return "这不像一个 API key。" }
+        if cleanKey.isEmpty, let keptSite, site(agent: agent) != keptSite { return "地址换到了另一个站点：原来的 API key 是为原站点加密的，请一并填入新的。" }
+        return nil
+    }
+
+    public func canSave(agent: String, new: Bool, keptSite: String? = nil) -> Bool {
+        guard problem(agent: agent, keptSite: keptSite) == nil, site(agent: agent) != nil else { return false }
+        if new { return !Self.trimmed(name).isEmpty && !cleanKey.isEmpty }
+        return !cleanKey.isEmpty || keptSite != nil
+    }
+}
+
 public struct AgentProfile: Decodable, Equatable, Sendable, Identifiable {
     public let id: String
     public let name: String
@@ -67,13 +130,17 @@ public struct AgentProfile: Decodable, Equatable, Sendable, Identifiable {
     public let sessionKey: Bool?
     /// The device Claude Code says it is under this profile (§3.5); nil till it has run there.
     public let device: String?
+    /// One that pays by a key (§3.6): where the key is sent, the model it starts on; nil: it signs in with an account.
+    public let api: ProfileApiInfo?
     public var hasSessionKey: Bool { sessionKey == true }
+    public var paysByKey: Bool { kind == "api" }
 
     public var isDefault: Bool { id == "default" }
     /// Its colour as the screens draw it; nil for none, or one this app does not know yet.
     public var tint: ProfileColor? { color.flatMap(ProfileColor.init(rawValue:)) }
 
-    public init(id: String, name: String, kind: String = "subscription", account: String? = nil, proxy: BrowserProxy? = nil, exit: ProfileExit? = nil, color: String? = nil, sessionKey: Bool? = nil, device: String? = nil) {
+    public init(id: String, name: String, kind: String = "subscription", account: String? = nil, proxy: BrowserProxy? = nil, exit: ProfileExit? = nil, color: String? = nil, sessionKey: Bool? = nil, device: String? = nil, api: ProfileApiInfo? = nil) {
+        self.api = api
         self.sessionKey = sessionKey
         self.device = device
         self.id = id
@@ -95,9 +162,14 @@ public struct AgentProfile: Decodable, Equatable, Sendable, Identifiable {
 
 /// A profile in a line of a menu, and who is signed in to it.
 public enum ProfileWords {
-    /// `This Mac’s own` for `Default`, the account once somebody is signed in, `Not Signed In` till then.
+    /// `This Mac’s own` for `Default`, the account once somebody is signed in, `Not Signed In` till then; one that
+    /// pays by a key: `API Key`, with where the key is sent when that is not the vendor's own (`API Key · relay.example`).
     public static func who(_ profile: AgentProfile) -> String {
-        profile.account ?? (profile.isDefault ? "This Mac’s own" : "Not Signed In")
+        if profile.paysByKey {
+            let host = profile.api?.baseUrl.flatMap { URLComponents(string: $0)?.host }
+            return host.map { "API Key · \($0)" } ?? "API Key"
+        }
+        return profile.account ?? (profile.isDefault ? "This Mac’s own" : "Not Signed In")
     }
 
     /// `cwork1 — work@example.com`.
@@ -143,11 +215,16 @@ public struct AgentProfiles: Decodable, Equatable, Sendable {
     public var offered: AgentProfile? { profiles.first { $0.id == current } ?? profiles.first }
     /// More than `Default` can be made for this agent.
     public let creatable: Bool
+    /// The ways a new profile of this agent can sign in (`subscription`, `api`); nil from a service that does not say
+    /// (an older one: an account only).
+    public let kinds: [String]?
+    public var newKinds: [String] { kinds ?? (creatable ? ["subscription"] : []) }
 
-    public init(current: String, profiles: [AgentProfile], creatable: Bool) {
+    public init(current: String, profiles: [AgentProfile], creatable: Bool, kinds: [String]? = nil) {
         self.current = current
         self.profiles = profiles
         self.creatable = creatable
+        self.kinds = kinds
     }
 }
 
@@ -165,6 +242,19 @@ extension DaemonClient {
 
     public func createProfile(agent: String, name: String, kind: String = "subscription") async throws -> [String: AgentProfiles] {
         try decode(ProfilesReply.self, try await call("POST", "/profiles", body: try JSONEncoder().encode(["agent": agent, "name": name, "kind": kind]))).agents
+    }
+
+    private struct ApiBody: Encodable { let key: String?; let baseUrl: String?; let model: String? }
+
+    /// A new profile that pays by a key (§3.6): `ciphertext` is the key sealed for the site it is sent to.
+    public func createKeyProfile(agent: String, name: String, ciphertext: String, baseUrl: String?, model: String?) async throws -> [String: AgentProfiles] {
+        struct Body: Encodable { let agent: String; let name: String; let kind = "api"; let api: ApiBody }
+        return try decode(ProfilesReply.self, try await call("POST", "/profiles", body: try JSONEncoder().encode(Body(agent: agent, name: name, api: ApiBody(key: ciphertext, baseUrl: baseUrl, model: model))))).agents
+    }
+
+    /// A profile's address and model from now on, and its key when one is given (nil: the one it has).
+    public func setProfileApi(agent: String, id: String, ciphertext: String?, baseUrl: String?, model: String?) async throws -> [String: AgentProfiles] {
+        try decode(ProfilesReply.self, try await call("PUT", "/profiles/\(agent)/\(id)/api", body: try JSONEncoder().encode(ApiBody(key: ciphertext, baseUrl: baseUrl, model: model)))).agents
     }
 
     /// A profile's colour from now on; the terminals open under it change their dot with it.

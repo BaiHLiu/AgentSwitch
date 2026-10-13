@@ -349,7 +349,16 @@ exit lookup and gate), `scripts/browser_engine_check.ts <folder>` (the engine's 
 here; any other profile is a home folder under `$AGENTSWITCH_HOME/profiles/` that the agent is started with
 (`CLAUDE_CONFIG_DIR`), so `~/.claude` is never rewritten. The folder holds what is the account's (credentials, the
 identifiers Claude Code makes on first run); instructions, skills, commands, settings and the sessions are the Mac's
-own, linked in, so any profile continues any session. Claude Code first; the other agents have `Default` alone.
+own, linked in, so any profile continues any session. Claude Code first; Codex has the ones that pay by a key;
+OpenCode and pi have `Default` alone.
+
+- **Paying by a key** (§3.6, `src/profiles/apiKeys.ts`): `POST /profiles {kind: "api", api: {key, baseUrl?, model?}}`
+  and `PUT /profiles/:agent/:id/api`, the key a gate ciphertext sealed for the site it is sent to, opened once before
+  anything is kept. The agent is started with a command for the key — Claude Code's `apiKeyHelper`, Codex's provider
+  `auth` — which is the terminal's hook program (`hookClient.js key` → `POST /terminals/key`, proven by the hook
+  token): the key is in no argument, environment or file. A Codex profile of this kind has no folder: it runs in
+  the Mac's own `CODEX_HOME` with a provider of that terminal's own. `scripts/api_key_probe.ts` runs the real Claude
+  Code and Codex on throw-away folders against a stand-in address (no model, no account).
 
 - **Chosen where a terminal is made** (§3.3): `POST /terminals {profile}`; `POST /terminals/resume` goes back under
   the profile the conversation last ran under (kept by session id in `profiles/sessions.json`, only for what is not

@@ -14,11 +14,11 @@ struct AgentsView: View {
     @State private var profileError: [String: String] = [:]
     /// The agent a new profile is being named for; the name; the profile asked to be removed.
     @State private var naming: AgentCLI?
-    @State private var newName = ""
     @State private var removing: (agent: AgentCLI, profile: AgentProfile)?
     /// The profile whose own proxy is being set (docs/profiles-v0.md §4).
     @State private var proxying: ProfileProxyTarget?
     @State private var keying: ProfileProxyTarget?
+    @State private var paying: ProfileProxyTarget?
     /// The install asked to be deleted, until answered.
     @State private var deleting: AgentInstall?
     /// The agent whose old versions were asked to be cleared, until answered.
@@ -94,7 +94,13 @@ struct AgentsView: View {
             model.refreshAgents()
             model.checkAgentUpdates()
         }
-        .modifier(ProfileDialogs(naming: namingShown, name: $newName, create: create, removing: removingShown, removingName: removing?.profile.name ?? "",
+        .sheet(item: $naming) { agent in
+            ProfileNewSheet(agent: agent, kinds: profiles[agent.rawValue]?.newKinds ?? ["subscription"]) { profiles = $0 }
+        }
+        .sheet(item: $paying) { target in
+            ProfileKeySheet(agent: target.agent, profile: target.profile) { profiles = $0 }
+        }
+        .modifier(ProfileDialogs(removing: removingShown, removingName: removing?.profile.name ?? "",
                                  remove: { if let target = removing { delete(target.agent, target.profile) } }))
         .task { profiles = (try? await model.client.profiles()) ?? profiles }
         .sheet(item: $keying) { target in
@@ -163,17 +169,16 @@ struct AgentsView: View {
     @ViewBuilder private func profilesSection(_ agent: AgentCLI) -> some View {
         if let list = profiles[agent.rawValue] {
             ProfilesSection(agent: agent, profiles: list, error: profileError[agent.rawValue],
-                            add: { naming = agent; newName = "" },
+                            add: { naming = agent },
                             remove: { profile in removing = (agent, profile) },
                             proxy: { profile in proxying = ProfileProxyTarget(agent: agent, profile: profile) },
                             sessionKey: { profile in keying = ProfileProxyTarget(agent: agent, profile: profile) },
+                            apiKey: { profile in paying = ProfileProxyTarget(agent: agent, profile: profile) },
                             color: { profile, color in change(agent) { try await $0.setProfileColor(agent: agent.rawValue, id: profile.id, color: color) } })
         }
     }
 
-    private func create() { if let agent = naming { let name = newName; change(agent) { try await $0.createProfile(agent: agent.rawValue, name: name) } } }
     private func delete(_ agent: AgentCLI, _ profile: AgentProfile) { change(agent) { try await $0.deleteProfile(agent: agent.rawValue, id: profile.id) } }
-    private var namingShown: Binding<Bool> { Binding(get: { naming != nil }, set: { if !$0 { naming = nil } }) }
     private var removingShown: Binding<Bool> { Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }) }
 
     /// One change to an agent's profiles, and what the service has afterwards (or why it did not take it).
@@ -187,28 +192,18 @@ struct AgentsView: View {
 }
 
 /// One agent's group: a line per install, the radio on the left saying which one AgentSwitch runs.
-/// The two questions of the profiles sections: a new one's name, and whether to remove one.
+/// The profiles sections' question: whether to remove one.
 private struct ProfileDialogs: ViewModifier {
-    let naming: Binding<Bool>
-    let name: Binding<String>
-    let create: () -> Void
     let removing: Binding<Bool>
     let removingName: String
     let remove: () -> Void
 
     func body(content: Content) -> some View {
         content
-            .alert("New Profile", isPresented: naming) {
-                TextField("Name", text: name)
-                Button("Create", action: create)
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("一份新的登录，放在它自己的目录里。建好后在它名下开一个终端，运行 /login。")
-            }
             .confirmationDialog("删除这个配置？", isPresented: removing) {
                 Button("Delete \(removingName)", role: .destructive, action: remove)
             } message: {
-                Text("它的登录和它自己的目录会被删除；会话记录是共用的，会留着。")
+                Text("它的登录（或保存的 API key）和它自己的目录会被删除；会话记录是共用的，会留着。")
             }
     }
 }
@@ -353,6 +348,163 @@ struct ProfileSessionKeySheet: View {
     }
 }
 
+/// A new profile (docs/profiles-v0.md §3, §3.6): its name, and how it signs in — with an account (it starts at the
+/// agent's own sign-in), or by a key, which is sealed by this Mac's gate for the address it is sent to before anything
+/// is sent. Only the ways the service offers for this agent are shown.
+struct ProfileNewSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let agent: AgentCLI
+    let kinds: [String]
+    let done: ([String: AgentProfiles]) -> Void
+    @State private var kind: String
+    @State private var draft = ApiKeyDraft()
+    @State private var problem: String?
+    @State private var busy = false
+
+    init(agent: AgentCLI, kinds: [String], done: @escaping ([String: AgentProfiles]) -> Void) {
+        self.agent = agent
+        self.kinds = kinds
+        self.done = done
+        _kind = State(initialValue: kinds.first ?? "subscription")
+    }
+
+    private var byKey: Bool { kind == "api" }
+    private var ready: Bool {
+        byKey ? draft.canSave(agent: agent.rawValue, new: true) : !draft.name.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("New \(agent.title) Profile").font(.headline)
+            Form {
+                TextField("Name", text: $draft.name)
+                if kinds.count > 1 {
+                    Picker("Sign In With", selection: $kind) {
+                        Text("Account").tag("subscription")
+                        Text("API Key").tag("api")
+                    }
+                    .pickerStyle(.segmented)
+                }
+                if byKey { ApiKeyFields(agent: agent, draft: $draft, kept: false) }
+            }
+            .formStyle(.columns)
+            Text(byKey ? ApiKeyWords.about(agent) : "一份新的登录，放在它自己的目录里。建好后在它名下开一个终端，会直接从登录开始。")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let said = (byKey ? draft.problem(agent: agent.rawValue) : nil) ?? problem { Text(said).font(.callout).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+            HStack {
+                if busy { ProgressView().controlSize(.small) }
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Create", action: create).keyboardShortcut(.defaultAction).disabled(busy || !ready)
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
+    }
+
+    private func create() {
+        let client = model.client, gate = model.gateCLI, agent = agent.rawValue, draft = draft, byKey = byKey
+        let name = draft.name.trimmingCharacters(in: .whitespaces)
+        busy = true
+        problem = nil
+        Task {
+            do {
+                if byKey, let site = draft.site(agent: agent) {
+                    let ciphertext = try await gate.seal(GateSealRequest(label: "profile/api-key", sites: site, value: draft.cleanKey))
+                    done(try await client.createKeyProfile(agent: agent, name: name, ciphertext: ciphertext, baseUrl: draft.cleanBaseUrl, model: draft.cleanModel))
+                } else {
+                    done(try await client.createProfile(agent: agent, name: name))
+                }
+                dismiss()
+            } catch { problem = (error as? DaemonError)?.reason ?? (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
+            busy = false
+        }
+    }
+}
+
+/// The key a profile pays by, where it is sent and the model it starts on (docs/profiles-v0.md §3.6), changed. The key
+/// is never shown: left empty, the one it has is kept.
+struct ProfileKeySheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let agent: AgentCLI
+    let profile: AgentProfile
+    let done: ([String: AgentProfiles]) -> Void
+    @State private var draft: ApiKeyDraft
+    @State private var problem: String?
+    @State private var busy = false
+
+    init(agent: AgentCLI, profile: AgentProfile, done: @escaping ([String: AgentProfiles]) -> Void) {
+        self.agent = agent
+        self.profile = profile
+        self.done = done
+        _draft = State(initialValue: ApiKeyDraft(profile.api))
+    }
+
+    /// The site the key it has was sealed for.
+    private var keptSite: String? { ApiKeyDraft(profile.api).site(agent: agent.rawValue) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("\(profile.name) · API Key").font(.headline)
+            Form { ApiKeyFields(agent: agent, draft: $draft, kept: true) }.formStyle(.columns)
+            Text(ApiKeyWords.about(agent) + "已经开着的终端继续用它们启动时的地址与模型；key 每次用时现取，换了就用新的。")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let said = draft.problem(agent: agent.rawValue, keptSite: keptSite) ?? problem { Text(said).font(.callout).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+            HStack {
+                if busy { ProgressView().controlSize(.small) }
+                Spacer()
+                Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Save", action: save).keyboardShortcut(.defaultAction).disabled(busy || !draft.canSave(agent: agent.rawValue, new: false, keptSite: keptSite))
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
+    }
+
+    private func save() {
+        let client = model.client, gate = model.gateCLI, agent = agent.rawValue, id = profile.id, draft = draft
+        busy = true
+        problem = nil
+        Task {
+            do {
+                var ciphertext: String?
+                if !draft.cleanKey.isEmpty, let site = draft.site(agent: agent) {
+                    ciphertext = try await gate.seal(GateSealRequest(label: "profile/api-key", sites: site, value: draft.cleanKey))
+                }
+                done(try await client.setProfileApi(agent: agent, id: id, ciphertext: ciphertext, baseUrl: draft.cleanBaseUrl, model: draft.cleanModel))
+                dismiss()
+            } catch { problem = (error as? DaemonError)?.reason ?? (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
+            busy = false
+        }
+    }
+}
+
+/// The three fields of a profile that pays by a key.
+private struct ApiKeyFields: View {
+    let agent: AgentCLI
+    @Binding var draft: ApiKeyDraft
+    /// It has a key already: the field may stay empty.
+    let kept: Bool
+
+    var body: some View {
+        SecureField("API Key", text: $draft.key, prompt: Text(kept ? "Kept" : ""))
+        TextField("Base URL", text: $draft.baseUrl, prompt: Text(ApiKeyDraft.home(agent.rawValue) ?? ""))
+        TextField("Model", text: $draft.model, prompt: Text("Optional"))
+    }
+}
+
+enum ApiKeyWords {
+    static func about(_ agent: AgentCLI) -> String {
+        let own = agent == .claude ? "Anthropic" : "OpenAI"
+        let note = agent == .claude
+            ? "这个配置有它自己的目录，不用登录。"
+            : "这个配置就在这台 Mac 原有的 Codex 目录里运行，会话与设置共用，只是换成按这个 key 付费；地址须支持 Responses 接口。"
+        return "Base URL 留空就是 \(own) 自己的地址，填了就发到那里（中转、网关）。Model 留空用 agent 自己的默认。key 在这台 Mac 上为这个地址加密后才保存，之后不再显示；终端里的 agent 用时向本机服务取，不写进它的设置和环境变量。\(note)"
+    }
+}
+
 /// A colour's swatch for a menu (a menu draws pictures, not views): a filled dot, in the colour as this appearance has it.
 enum ProfileSwatch {
     static func image(_ color: ProfileColor, side: CGFloat = 10) -> NSImage {
@@ -375,6 +527,7 @@ struct ProfilesSection: View {
     let remove: (AgentProfile) -> Void
     let proxy: (AgentProfile) -> Void
     var sessionKey: ((AgentProfile) -> Void)? = nil
+    var apiKey: ((AgentProfile) -> Void)? = nil
     let color: (AgentProfile, ProfileColor) -> Void
 
     var body: some View {
@@ -405,13 +558,17 @@ struct ProfilesSection: View {
                     }
                     // The device Claude Code says it is under it (docs/profiles-v0.md §3.5), once it has run there.
                     Text(profile.name).help(profile.device.map(DeviceID.help) ?? "")
-                    Text(profile.account ?? (profile.isDefault ? "This Mac’s own" : "Not Signed In")).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    Text(ProfileWords.who(profile)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                     Spacer()
                     // Where what runs under it leaves from: this Mac, or where its own proxy lets traffic out.
                     Text(profile.way).font(.callout).monospacedDigit().foregroundStyle(profile.proxy == nil ? .tertiary : .secondary).lineLimit(1)
                     if !profile.isDefault {
                         // Claude Code's profiles only: the key signs its own browser in to claude.ai (§3.4).
-                        if agent == .claude, let sessionKey {
+                        if profile.paysByKey, let apiKey {
+                            Button("API Key…") { apiKey(profile) }.controlSize(.small)
+                        }
+                        // One that pays by a key has nobody to sign in to claude.ai.
+                        if agent == .claude, !profile.paysByKey, let sessionKey {
                             Button("Session Key…") { sessionKey(profile) }.controlSize(.small)
                                 .help(profile.hasSessionKey ? "已保存一个 session key。" : "")
                         }
