@@ -22,7 +22,8 @@ with `docs/design-v0.md`.
 </p>
 <p align="center"><sub>
   The Mac's Terminals page; on the iPhone: Dispatch, Terminals, a session waiting for a permission, the browser, Clash.
-  Every picture here is the apps' own demo data.
+  Every picture here is the apps' own demo data, in the <code>Pixel</code> look; the same screens in
+  <code>Classic</code> are <a href="#two-looks">further down</a>.
 </sub></p>
 
 ## What is in it
@@ -38,7 +39,7 @@ with `docs/design-v0.md`.
 | **Agents** — the four CLIs installed, updated and switched between versions (`docs/agents-v0.md`) | Settings › Agents | — |
 
 Also: a Live Activity on the lock screen and in the Dynamic Island, the same card in the Mac's menu bar, usage of
-each agent's quota, a web console, and two looks for every screen (`Pixel`, `Classic`; `docs/ui-v0.md`).
+each agent's quota, a web console, and [two looks](#two-looks) for every screen (`Pixel`, `Classic`; `docs/ui-v0.md`).
 
 ## A closer look
 
@@ -70,6 +71,34 @@ core and says where it went — here, OpenAI is not going through its group yet.
 <p align="center">
   <img src="docs/readme/mac-clash.jpg" width="100%" alt="The Clash page on the Mac: the routing check, one row per kind of traffic">
 </p>
+
+## Two looks
+
+Every screen comes in two looks: `Appearance` in Settings, on the Mac and on the iPhone, each device keeping its own
+choice. `Pixel`, in the pictures above, is drawn in squares, box-drawing characters and a fixed-width face. `Classic`
+is the same screens in the system's own shapes — round dots, rounded cards, SF Symbols, blue for the one thing to
+press. What is on a screen and what each control does are the same in both; a few short words differ (`Waiting` is
+`Needs You`, `Busy` is `Working`).
+
+<p align="center">
+  <img src="docs/readme/mac-terminals-classic.jpg" width="100%" alt="The Terminals page on the Mac in the Classic look: the same folder tree and the same session as the picture at the top">
+</p>
+<p align="center">
+  <img src="docs/readme/mac-dispatch-classic.jpg" width="49%" alt="The Dispatch page on the Mac in the Classic look: the same two tasks, their question and approval cards rounded">
+  <img src="docs/readme/mac-browser-classic.jpg" width="49%" alt="The Browser page on the Mac in the Classic look: the same tab, Codex's last action outlined in blue">
+</p>
+<p align="center">
+  <img src="docs/readme/phone-dispatch-classic.jpg" width="19%" alt="iPhone, Classic look: the Dispatch tab">
+  <img src="docs/readme/phone-terminals-classic.jpg" width="19%" alt="iPhone, Classic look: the Terminals tab, sessions by folder">
+  <img src="docs/readme/phone-simple-classic.jpg" width="19%" alt="iPhone, Classic look: a session in the simple view, an approval card at its end">
+  <img src="docs/readme/phone-browser-classic.jpg" width="19%" alt="iPhone, Classic look: watching Codex in the browser">
+  <img src="docs/readme/phone-clash-classic.jpg" width="19%" alt="iPhone, Classic look: the nodes for Claude and for OpenAI on the Clash page">
+</p>
+<p align="center"><sub>
+  The same demo data in <code>Classic</code>: the Mac's Terminals, Dispatch and Browser pages, and the five iPhone
+  screens of the row at the top. The Mac's Clash page is a system form in both looks and differs only in its rail and
+  status bar, so it is shown once.
+</sub></p>
 
 ## How it fits together
 
