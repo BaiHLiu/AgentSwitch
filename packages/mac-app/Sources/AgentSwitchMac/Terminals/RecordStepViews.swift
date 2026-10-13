@@ -36,6 +36,8 @@ struct RecordStepLine: View {
     let index: Int
     /// The design preview opens one.
     var opened = false
+    /// The reader is opening or closing it (the record's length changes by their doing).
+    var own: () -> Void = {}
     @State private var whole = false
     @State private var detail: RecordStepDetail?
     @Environment(\.interfaceLook) private var look
@@ -51,7 +53,7 @@ struct RecordStepLine: View {
         let shown = whole || opened
         VStack(alignment: .leading, spacing: 4) {
             if opens {
-                Button { whole.toggle() } label: { head(open: shown).contentShape(Rectangle()) }.buttonStyle(.plain)
+                Button { own(); whole.toggle() } label: { head(open: shown).contentShape(Rectangle()) }.buttonStyle(.plain)
             } else {
                 head(open: false)
             }

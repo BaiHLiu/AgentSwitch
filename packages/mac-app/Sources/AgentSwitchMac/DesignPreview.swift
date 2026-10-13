@@ -90,6 +90,10 @@ enum DesignPreview {
                     FileHandle.standardError.write(Data("design preview (the rail put away) written to \(directory.path)\n".utf8))
                     exit(0)
                 }
+                if UserDefaults.standard.string(forKey: "designPreviewOnly") == "record-turn" {
+                    try await RecordTurnProbe.run(into: directory)
+                    exit(0)
+                }
                 if UserDefaults.standard.string(forKey: "designPreviewOnly") == "terminals" {
                     try await TerminalsPagePreview.render(into: directory)
                     FileHandle.standardError.write(Data("design preview (the Terminals page) written to \(directory.path)\n".utf8))

@@ -300,7 +300,8 @@ enum TerminalsPagePreview {
     }
 
     /// `long`: among the sessions, one whose title is as long as the service gives them (120 characters).
-    private static func shot(to file: URL, light: Bool = false, long: Bool = false, stage: (TerminalsModel) -> Void) async throws {
+    static func shot(to file: URL, light: Bool = false, long: Bool = false, onScreen: Bool = false, stage: (TerminalsModel) -> Void,
+                             then: (@MainActor (TerminalsModel, NSView) async throws -> Void)? = nil) async throws {
         let model = TerminalsModel(client: { DaemonClient(port: 1) }, defaults: nil)
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         func session(_ id: String, _ cwd: String, _ title: String, _ harness: String = "claude-code", ago hours: Int64, active: Bool = false) -> SessionSummary {
@@ -348,6 +349,7 @@ enum TerminalsPagePreview {
         window.backgroundColor = light ? .dispatchGround : .black
         window.isReleasedWhenClosed = false
         window.contentView = host
+        if onScreen { window.setFrameOrigin(NSPoint(x: 40, y: 40)); window.orderBack(nil) }
         try await DesignPreview.settle()
         model.select("t1")
         stage(model)
@@ -358,6 +360,7 @@ enum TerminalsPagePreview {
         }
         try await DesignPreview.settle()
         try DesignPreview.write(host, to: file)
+        try await then?(model, host)
         model.stop()
         window.close()
     }

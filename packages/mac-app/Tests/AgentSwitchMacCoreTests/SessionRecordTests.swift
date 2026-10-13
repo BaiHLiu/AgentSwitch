@@ -354,4 +354,84 @@ final class SessionRecordTests: XCTestCase {
         XCTAssertEqual(SessionRecord.withSent(items: [RecordItem(id: "50", kind: .user, at: 20_300, text: "看这张 [Image #1]", images: 1)], sent: [withFile], working: false).map(\.id), ["50"])
         XCTAssertEqual(SessionRecord.withSent(items: [said], sent: [], working: true), [said])
     }
+
+    func testAPaneShowsTheLatestItemsAndWhatEarlierIsAskedFor() {
+        let items: [RecordItem] = (0..<200).map { n in
+            let kind: RecordItem.Kind = n % 2 == 0 ? .user : .answer
+            return RecordItem(id: String(n * 10), kind: kind, at: Int64(n) * 1000, text: "第 \(n) 条")
+        }
+        // As it opens: the latest ones; a short record whole.
+        XCTAssertEqual(SessionRecord.shownFrom(items: items, start: nil), 140)
+        XCTAssertEqual(SessionRecord.shownFrom(items: Array(items.prefix(7)), start: nil), 0)
+        XCTAssertEqual(SessionRecord.shownFrom(items: [], start: nil), 0)
+        let latest: [RecordItem] = SessionRecord.shown(items: items, start: nil, notices: [], sent: [], working: false)
+        XCTAssertEqual(latest.map { $0.id }, items.suffix(60).map { $0.id })
+        // `Earlier`: what is held and not shown comes first, a page at a time; with nothing more held, the service is asked.
+        XCTAssertEqual(SessionRecord.shownEarlier(items: items, start: nil), "600")
+        XCTAssertEqual(SessionRecord.shownFrom(items: items, start: "600"), 60)
+        XCTAssertEqual(SessionRecord.shownEarlier(items: items, start: "600"), "0")
+        XCTAssertNil(SessionRecord.shownEarlier(items: items, start: "0"))
+        XCTAssertNil(SessionRecord.shownEarlier(items: Array(items.prefix(7)), start: nil))
+        // The record changes. At its end the reader has the latest again, whatever was opened; reading back, what is
+        // before them stays where it is — the start is kept, or pinned to the earliest shown.
+        XCTAssertNil(SessionRecord.shownStart(items: items, start: "600", atEnd: true))
+        XCTAssertEqual(SessionRecord.shownStart(items: items, start: "600", atEnd: false), "600")
+        XCTAssertEqual(SessionRecord.shownStart(items: items, start: nil, atEnd: false), "1400")
+        XCTAssertNil(SessionRecord.shownStart(items: [], start: nil, atEnd: false))
+        // A start the record no longer holds (it was read again whole): the latest ones.
+        XCTAssertEqual(SessionRecord.shownFrom(items: items, start: "gone"), 140)
+        XCTAssertEqual(SessionRecord.shownStart(items: items, start: "gone", atEnd: false), "1400")
+        // A reader long away while the record grows keeps no more than so many.
+        XCTAssertEqual(SessionRecord.shownStart(items: items, start: "0", atEnd: false, most: 400), "0")
+        XCTAssertNil(SessionRecord.shownStart(items: items, start: "0", atEnd: false, most: 150))
+        // What the screen said is placed by its time among all the items: one from before what is shown is not shown,
+        // one among them is, where it belongs; what was sent stands at the end.
+        let old = ScreenNotice(id: "n1", text: "Model set to Opus", at: 5_500), recent = ScreenNotice(id: "n2", text: "Compacted", at: 190_500)
+        let shown = SessionRecord.shown(items: items, start: nil, notices: [old, recent], sent: [SentReply(id: "r1", text: "继续", at: 999_000)], working: true)
+        XCTAssertEqual(shown.first?.id, "1400")
+        XCTAssertFalse(shown.contains { $0.id == "notice-n1" })
+        XCTAssertEqual(shown.firstIndex { $0.id == "notice-n2" }.map { shown[$0 - 1].id }, "1900")
+        XCTAssertEqual(shown.last?.id, "sent-r1")
+        XCTAssertEqual(shown.count, 62)
+    }
+
+    func testTheReaderIsAtTheRecordsEndUntilTheyLeaveIt() {
+        var place = RecordEnd()
+        // Not laid out yet: at the end. Laid out with its end at the foot: there.
+        XCTAssertTrue(place.atEnd)
+        XCTAssertFalse(place.laidOut(foot: 665))
+        XCTAssertFalse(place.laidOut(end: 651, length: 9000))
+        XCTAssertTrue(place.atEnd)
+        // The record grows under a reader at its end (an answer added): they are to be put there, and still count as there.
+        XCTAssertTrue(place.laidOut(end: 827, length: 9176))
+        XCTAssertTrue(place.atEnd)
+        XCTAssertFalse(place.laidOut(end: 665, length: 9176))
+        XCTAssertTrue(place.atEnd)
+        // A line more under the foot's top is still the end.
+        XCTAssertFalse(place.laidOut(end: 665 + RecordEnd.slack, length: 9176))
+        XCTAssertTrue(place.atEnd)
+        // The reply box grows (its foot's top moves up): followed too.
+        XCTAssertTrue(place.laidOut(foot: 565))
+        XCTAssertFalse(place.laidOut(end: 565, length: 9176))
+        // The reader scrolls up — the record no longer, its foot where it was: they are away, and what the record
+        // does then leaves them where they are.
+        XCTAssertFalse(place.laidOut(end: 1465, length: 9176))
+        XCTAssertFalse(place.atEnd)
+        XCTAssertFalse(place.laidOut(end: 1700, length: 9411))
+        XCTAssertFalse(place.atEnd)
+        // Back at the end (scrolled there, or `↓ Latest`).
+        XCTAssertFalse(place.laidOut(end: 560, length: 9411))
+        XCTAssertTrue(place.atEnd)
+        // A part the reader opens themselves (a run of work, `Show More`) is not followed: what they opened stays
+        // before them. Small enough to leave the end on screen, they are still there.
+        XCTAssertFalse(place.laidOut(end: 580, length: 9431, own: true))
+        XCTAssertTrue(place.atEnd)
+        XCTAssertFalse(place.laidOut(end: 2580, length: 11431, own: true))
+        XCTAssertFalse(place.atEnd)
+        // A record shorter than its pane has its end on screen wherever it is.
+        var short = RecordEnd()
+        XCTAssertFalse(short.laidOut(end: 300, length: 300, foot: 665))
+        XCTAssertFalse(short.laidOut(end: 420, length: 420))
+        XCTAssertTrue(short.atEnd)
+    }
 }

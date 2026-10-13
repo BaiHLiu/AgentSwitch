@@ -248,6 +248,49 @@ public struct SessionRecord: Decodable, Sendable, Hashable {
               let last = held.last(where: { $0.offset != nil })?.offset, last >= first else { return (page, true) }
         return (held.filter { ($0.offset ?? .max) < first } + page, false)
     }
+
+    // What a pane lays out of the record it holds. Every item shown is laid out whole: a stack that lays out only what
+    // is on screen has to guess how tall the rest is, the record's height moves with every guess, and its place with
+    // it (2026-10-13, user's picture: a pane left blank with its scroller at the end, `↓ Latest` showing). So the
+    // number shown is kept small — the latest ones, and what `Earlier` is asked for.
+
+    /// How many of the latest items a pane shows as it opens, how many more each `Earlier` brings, and the most it
+    /// keeps for a reader who stays away from the end while the record grows.
+    public static let shownItems = 60
+    public static let earlierItems = 80
+    public static let mostItems = 400
+
+    /// Where what a pane shows begins among `items`: at `start` (the earliest item it has opened), else at the latest
+    /// `shownItems`.
+    public static func shownFrom(items: [RecordItem], start: String?, latest: Int = shownItems) -> Int {
+        if let start, let index = items.firstIndex(where: { $0.id == start }) { return index }
+        return max(0, items.count - latest)
+    }
+
+    /// The start to keep as the record changes, said before it does: a reader at its end has the latest items again
+    /// (the earlier ones go, out of sight above them); one reading back keeps what is before them, so nothing they
+    /// read moves — up to `most` items, after which it is the latest ones again.
+    public static func shownStart(items: [RecordItem], start: String?, atEnd: Bool, latest: Int = shownItems, most: Int = mostItems) -> String? {
+        if atEnd || items.isEmpty { return nil }
+        let from = shownFrom(items: items, start: start, latest: latest)
+        return items.count - from > most ? nil : items[from].id
+    }
+
+    /// The start once `Earlier` is asked for, while the pane holds more than it shows; nil when it shows all it holds
+    /// (the service is asked for the page before).
+    public static func shownEarlier(items: [RecordItem], start: String?, more: Int = earlierItems, latest: Int = shownItems) -> String? {
+        let from = shownFrom(items: items, start: start, latest: latest)
+        return from > 0 ? items[max(0, from - more)].id : nil
+    }
+
+    /// What a pane shows: `items` from `start` on, with what its screen said among them and what was sent at their end.
+    public static func shown(items: [RecordItem], start: String?, notices: [ScreenNotice], sent: [SentReply], working: Bool, latest: Int = shownItems) -> [RecordItem] {
+        let from = shownFrom(items: items, start: start, latest: latest)
+        let all = withNotices(items: items, notices: notices)
+        // A notice is placed by its time among all the items; what is shown begins at the same item either way.
+        let first = from > 0 ? (all.firstIndex { $0.id == items[from].id } ?? 0) : 0
+        return withSent(items: first > 0 ? Array(all[first...]) : all, sent: sent, working: working)
+    }
 }
 
 /// What a run of work, or the last turn, changed in one file.
@@ -481,6 +524,44 @@ public enum TerminalRecordEvent: Equatable, Sendable {
 /// label, how full the context is, the mode. Short English words in title case (ui-v0 §7.2.7).
 /// How a pane's simple view is laid out by its width (docs/simple-view-v0.md §5.2): one reading column, and beside it —
 /// where there is room for both — a side for the task list and the changed files.
+/// Whether a record's reader is at its end, and when to put them there — from where the end and the pane's foot (what
+/// floats over the record's last lines: the reply box) are laid out. The reader leaves the end by scrolling, or by
+/// opening a part of the record themselves; what the record does (a new item, a line of work, a card, the reply box
+/// growing) under a reader at its end takes them along.
+public struct RecordEnd: Equatable, Sendable {
+    /// At the end: `↓ Latest` is away, and the record is followed.
+    public private(set) var atEnd = true
+    /// The end's place in the pane, how long the record is to its end, and the foot's top in the pane (`.infinity`:
+    /// not laid out).
+    private var end = Double.infinity
+    private var length = 0.0
+    private var foot = Double.infinity
+
+    /// The end counts as on screen this far under the foot's top (the record's own padding, a line being added).
+    public static let slack = 24.0
+
+    public init() {}
+
+    /// What is laid out now (nil: as it was). `own`: the reader has just opened or closed a part of the record. True:
+    /// the record is to be put at its end.
+    public mutating func laidOut(end: Double? = nil, length: Double? = nil, foot: Double? = nil, own: Bool = false) -> Bool {
+        // Anything but a scroll: the record is longer or shorter, or its foot moved.
+        let changed = (length ?? self.length) != self.length || (foot ?? self.foot) != self.foot
+        self.end = end ?? self.end
+        self.length = length ?? self.length
+        self.foot = foot ?? self.foot
+        if self.end == .infinity || self.foot == .infinity || self.end <= self.foot + Self.slack {
+            atEnd = true
+            return false
+        }
+        guard atEnd, changed, !own else {
+            atEnd = false
+            return false
+        }
+        return true
+    }
+}
+
 public enum RecordLayout {
     /// The reading column at its widest.
     public static let column: Double = 780

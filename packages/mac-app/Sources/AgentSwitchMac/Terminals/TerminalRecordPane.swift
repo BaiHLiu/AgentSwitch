@@ -14,7 +14,11 @@ struct TerminalRecordPane: View {
     let focused: Bool
     @Environment(\.interfaceLook) private var look
     @State private var changes: ChangesRequest?
+    /// The reader is at the record's end (`RecordEnd`): `↓ Latest` is away.
     @State private var atEnd = true
+    /// Where the record's end and its foot are as last laid out; out of the view's state, which a scroll would
+    /// otherwise change on every frame.
+    @State private var place = RecordPlace()
     @State private var dropping = false
     /// The side beside the record (its task list, the files it changed), where the pane is wide enough for one: out
     /// when the user asks for it (the reply box's menu, `Show Side Pane`).
@@ -23,6 +27,9 @@ struct TerminalRecordPane: View {
     /// The reading column at its widest (a pane with room to spare puts a side beside it, `RecordLayout`).
     static let column = CGFloat(RecordLayout.column)
     private static let end = "end"
+    /// The pane, and the record in it: the end's place is read in both.
+    private static let space = "pane"
+    private static let inside = "record"
 
     struct ChangesRequest: Identifiable {
         let id = UUID()
@@ -46,9 +53,13 @@ struct TerminalRecordPane: View {
                 VStack(spacing: 0) {
                     ScrollViewReader { scroller in
                         ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 14) {
+                            // Not a lazy stack: one lays out only the rows on screen and guesses the height of the
+                            // rest — for a record, whose rows run from a line to a screenful, by half or double —
+                            // so its height moved with every change and its place with it, to where nothing is drawn
+                            // (2026-10-13). The record shows few enough items to lay them all out (`PaneRecord.shown`).
+                            VStack(alignment: .leading, spacing: 14) {
                                 if let info { header(info, record) }
-                                if record.more {
+                                if record.earlierWaits {
                                     Button { record.earlier() } label: {
                                         HStack(spacing: 6) {
                                             if record.loadingEarlier { BrailleSpinner() }
@@ -87,7 +98,8 @@ struct TerminalRecordPane: View {
                                     }
                                 }
                                 ForEach(record.shown(working: working)) { item in
-                                    RecordRow(item: item, verbose: record.verbose, running: working && item.id == record.items.last?.id && item.kind == .work, source: source) {
+                                    RecordRow(item: item, verbose: record.verbose, running: working && item.id == record.items.last?.id && item.kind == .work, source: source,
+                                              own: { place.own = Date() }) {
                                         if let session = record.sessionId { changes = ChangesRequest(harness: record.agent, session: session, work: item.id) }
                                     }
                                 }
@@ -123,9 +135,11 @@ struct TerminalRecordPane: View {
                                     Text("Exited").mono(Look.size(11, look)).foregroundStyle(Look.faint).frame(maxWidth: .infinity)
                                 }
                                 Color.clear.frame(height: 1).id(Self.end)
-                                    .onAppear { atEnd = true }
-                                    .onDisappear { atEnd = false }
+                                    .background(GeometryReader { g in
+                                        Color.clear.preference(key: RecordEndEdge.self, value: [g.frame(in: .named(Self.space)).maxY, g.frame(in: .named(Self.inside)).maxY])
+                                    })
                             }
+                            .coordinateSpace(name: Self.inside)
                             .frame(maxWidth: Self.column, alignment: .leading)
                             .padding(.horizontal, 24).padding(.top, 18).padding(.bottom, 14)
                             .frame(maxWidth: .infinity)
@@ -140,19 +154,23 @@ struct TerminalRecordPane: View {
                             DispatchQueue.main.async { scroller.scrollTo(Self.end, anchor: .bottom) }
                         }
                         .onChange(of: record.loaded) { scroller.scrollTo(Self.end, anchor: .bottom) }
-                        .onChange(of: record.items.last) { if atEnd { scroller.scrollTo(Self.end, anchor: .bottom) } }
                         .onChange(of: requests.count) { scroller.scrollTo(Self.end, anchor: .bottom) }
                         // What floats over the record's end; the record scrolls under it, and ends above it.
                         .safeAreaInset(edge: .bottom, spacing: 0) {
                             VStack(spacing: 0) {
-                                if !atEnd {
-                                    Button { withAnimation(.snappy(duration: 0.2)) { scroller.scrollTo(Self.end, anchor: .bottom) } } label: {
-                                        Text("↓ Latest").mono(Look.size(11.5, look), weight: .medium).foregroundStyle(Look.ink)
-                                            .padding(.horizontal, 10).padding(.vertical, 5)
-                                            .grounded(Look.panel, radius: look.isClassic ? 13 : 0)
-                                            .framed(Look.line, radius: look.isClassic ? 13 : 0)
+                                // Over the record, just above the foot: it takes no room of its own, so the record's
+                                // end is where it was whether it shows or not.
+                                Color.clear.frame(height: 0).overlay(alignment: .bottom) {
+                                    if !atEnd {
+                                        Button { withAnimation(.snappy(duration: 0.2)) { scroller.scrollTo(Self.end, anchor: .bottom) } } label: {
+                                            Text("↓ Latest").mono(Look.size(11.5, look), weight: .medium).foregroundStyle(Look.ink)
+                                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                                .grounded(Look.panel, radius: look.isClassic ? 13 : 0)
+                                                .framed(Look.line, radius: look.isClassic ? 13 : 0)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .fixedSize()
                                     }
-                                    .buttonStyle(.plain)
                                 }
                                 // The sealed reply (⌘⇧V, the status bar's lock) and the page's word about it, as over a terminal's screen.
                                 if focused, let session = state.session, session.composing || session.notice != nil {
@@ -168,7 +186,15 @@ struct TerminalRecordPane: View {
                                     if let session = record.sessionId { changes = ChangesRequest(harness: record.agent, session: session, work: nil) }
                                 }
                             }
+                            .background(GeometryReader { g in Color.clear.preference(key: RecordFootEdge.self, value: g.frame(in: .named(Self.space)).minY) })
                         }
+                        .coordinateSpace(name: Self.space)
+                        // Where the end is: a reader there follows what the record does (`RecordEnd`).
+                        .onPreferenceChange(RecordEndEdge.self) { edge in
+                            guard edge.count == 2 else { return }
+                            if laidOut(end: edge[0], length: edge[1]) { scroller.scrollTo(Self.end, anchor: .bottom) }
+                        }
+                        .onPreferenceChange(RecordFootEdge.self) { if laidOut(foot: $0) { scroller.scrollTo(Self.end, anchor: .bottom) } }
                     }
                 }
                 if let side {
@@ -195,6 +221,19 @@ struct TerminalRecordPane: View {
         }
     }
 
+    /// The end or the foot laid out anew: whether the reader is at the end now — said to the record too, which lets go
+    /// of its earlier items only under a reader who is there — and (true) whether the record is to be put at its end.
+    private func laidOut(end: CGFloat? = nil, length: CGFloat? = nil, foot: CGFloat? = nil) -> Bool {
+        // A part the reader opened a moment ago is their own doing: once.
+        let own = place.own.map { Date().timeIntervalSince($0) < 0.5 } ?? false
+        if own, length != nil { place.own = nil }
+        let follow = place.end.laidOut(end: end.map(Double.init), length: length.map(Double.init), foot: foot.map(Double.init), own: own)
+        let now = place.end.atEnd
+        if state.record.atEnd != now { state.record.atEnd = now }
+        if atEnd != now { atEnd = now }
+        return follow
+    }
+
     private func header(_ info: TerminalInfo, _ record: PaneRecord) -> some View {
         let modelName = RecordDisplay.model(now: record.modelNow, record: record.usage?.model, started: info.model).map(ModelName.display)
         return VStack(alignment: .leading, spacing: 5) {
@@ -209,6 +248,25 @@ struct TerminalRecordPane: View {
     }
 }
 
+/// Where a pane's record is as last laid out.
+private final class RecordPlace {
+    var end = RecordEnd()
+    /// When the reader last opened or closed a part of the record.
+    var own: Date?
+}
+
+/// The record's end: its place in the pane, and in the record (how long the record is). Empty: not laid out.
+private struct RecordEndEdge: PreferenceKey {
+    static let defaultValue: [CGFloat] = []
+    static func reduce(value: inout [CGFloat], nextValue: () -> [CGFloat]) { if value.isEmpty { value = nextValue() } }
+}
+
+/// The top of what floats at the record's foot, in the pane (`.infinity`: not laid out).
+private struct RecordFootEdge: PreferenceKey {
+    static let defaultValue: CGFloat = .infinity
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = min(value, nextValue()) }
+}
+
 /// One item of the record.
 private struct RecordRow: View {
     let item: RecordItem
@@ -216,6 +274,8 @@ private struct RecordRow: View {
     let running: Bool
     /// Where a message's pictures and a step whole are asked for (absent before the session is known).
     let source: RecordSource?
+    /// The reader is opening or closing a part of it: the record's length changes by their doing.
+    let own: () -> Void
     let showChanges: () -> Void
     @State private var open = false
     @State private var whole = false
@@ -242,7 +302,7 @@ private struct RecordRow: View {
                 MarkdownBlocks(text: head ?? item.text, size: Look.prose(look).size, color: item.thinking ? Look.ink2 : Look.ink,
                                lineSpacing: Look.prose(look).lineSpacing, blockSpacing: Look.prose(look).blockSpacing)
                 if head != nil {
-                    Button { whole = true } label: { Text("Show More").mono(Look.size(12, look), weight: .medium) }.buttonStyle(.plain).foregroundStyle(Color.signal)
+                    Button { own(); whole = true } label: { Text("Show More").mono(Look.size(12, look), weight: .medium) }.buttonStyle(.plain).foregroundStyle(Color.signal)
                 } else if item.clipped {
                     Text("这条回答很长，只读入了开头。").font(.system(size: Look.size(11.5, look))).foregroundStyle(Look.faint)
                 }
@@ -262,7 +322,7 @@ private struct RecordRow: View {
         let shown = open || verbose || PaneRecord.previewOpenStep?.hasPrefix("\(item.id)/") == true
         return VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
-                Button { open.toggle() } label: {
+                Button { own(); open.toggle() } label: {
                     HStack(spacing: 6) {
                         RecordFold(open: shown)
                         Text(RecordDisplay.summary(item, running: running)).mono(Look.size(11.5, look)).foregroundStyle(Look.ink2).lineLimit(1)
@@ -281,7 +341,7 @@ private struct RecordRow: View {
             }
             if shown {
                 ForEach(steps, id: \.offset) { index, step in
-                    RecordStepLine(step: step, verbose: verbose, source: source, work: item.id, index: index, opened: PaneRecord.previewOpenStep == "\(item.id)/\(index)")
+                    RecordStepLine(step: step, verbose: verbose, source: source, work: item.id, index: index, opened: PaneRecord.previewOpenStep == "\(item.id)/\(index)", own: own)
                 }
             }
         }

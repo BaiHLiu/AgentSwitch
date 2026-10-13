@@ -15,6 +15,10 @@ final class PaneRecord {
     private(set) var mode: String?
     /// There is more before what is shown.
     private(set) var more = false
+    /// The earliest item the pane shows (nil: the latest ones; `SessionRecord.shownFrom`).
+    private(set) var start: String?
+    /// The reader is at the record's end, as the pane last said.
+    @ObservationIgnored var atEnd = true
     /// Read at least once (an empty record is then really empty).
     private(set) var loaded = false
     private(set) var loadingEarlier = false
@@ -137,7 +141,7 @@ final class PaneRecord {
         guard info.agentSessionId != session || info.harness != harness else { return }
         harness = info.harness
         session = info.agentSessionId
-        items = []; plan = []; usage = nil; mode = nil; more = false; cursor = 0; error = nil; effortAsked = nil
+        items = []; plan = []; usage = nil; mode = nil; more = false; cursor = 0; error = nil; effortAsked = nil; start = nil
         openFiles = []; diffs = [:]
         loaded = session == nil
         refresh()
@@ -149,7 +153,7 @@ final class PaneRecord {
         following = nil
         terminal = nil
         session = nil
-        items = []; plan = []; usage = nil; mode = nil; more = false; cursor = 0; loaded = false; error = nil
+        items = []; plan = []; usage = nil; mode = nil; more = false; cursor = 0; loaded = false; error = nil; start = nil
         activity = nil; subagents = []; activitySince = nil; modelNow = nil; effortAsked = nil; modeNow = nil; suggestion = nil; daybreakNow = nil
         progress = nil; sent = []; choices = nil; notices = []
         draft = ""
@@ -220,8 +224,12 @@ final class PaneRecord {
         }
     }
 
-    /// What the record shows: its items, and at their end what was sent and is not in them yet.
-    func shown(working: Bool) -> [RecordItem] { SessionRecord.withSent(items: SessionRecord.withNotices(items: items, notices: notices), sent: sent, working: working) }
+    /// What the pane shows: the record's items from the earliest it has opened, and at their end what was sent and is
+    /// not in them yet.
+    func shown(working: Bool) -> [RecordItem] { SessionRecord.shown(items: items, start: start, notices: notices, sent: sent, working: working) }
+
+    /// There is more before what is shown: held here, or with the service.
+    var earlierWaits: Bool { more || SessionRecord.shownFrom(items: items, start: start) > 0 }
 
     private func stillNow() {
         if progress != nil { progress = nil }
@@ -259,14 +267,19 @@ final class PaneRecord {
         if usage != page.usage { usage = page.usage }
         if mode != page.mode { mode = page.mode }
         let (next, replaced) = SessionRecord.merged(held: items, page: page.items)
-        if items != next { items = next }
+        if items != next {
+            let kept = SessionRecord.shownStart(items: items, start: start, atEnd: atEnd)
+            if start != kept { start = kept }
+            items = next
+        }
         if replaced { cursor = page.cursor; more = page.more }
         loaded = true
         error = nil
     }
 
-    /// The page before the earliest shown.
+    /// What is before the earliest shown: what the pane holds first, then the service's page before that.
     func earlier() {
+        if let before = SessionRecord.shownEarlier(items: items, start: start) { start = before; return }
         guard let id = session, more, !loadingEarlier else { return }
         loadingEarlier = true
         let harness = harness, client = client, before = cursor
@@ -275,6 +288,7 @@ final class PaneRecord {
             guard let page = try? await client().sessionRecord(harness: harness, id: id, limit: 80, before: before), let self, id == self.session else { return }
             let known = Set(self.items.map(\.id))
             self.items = page.items.filter { !known.contains($0.id) } + self.items
+            self.start = self.items.first?.id
             self.cursor = page.cursor
             self.more = page.more
         }
@@ -613,6 +627,17 @@ final class PaneRecord {
         self.choices = choices
         more = true
         loaded = true
+    }
+
+    /// The probe's: the record as a read would leave it now.
+    func stageItems(_ items: [RecordItem], loaded: Bool = true, session: String? = "preview", activity: TerminalActivity? = nil) {
+        self.session = session
+        let kept = SessionRecord.shownStart(items: self.items, start: start, atEnd: atEnd)
+        if start != kept { start = kept }
+        self.items = items
+        self.loaded = loaded
+        self.activity = activity
+        if activity == nil { activitySince = nil }
     }
 
     /// The design preview's: what it offers as the next message.
