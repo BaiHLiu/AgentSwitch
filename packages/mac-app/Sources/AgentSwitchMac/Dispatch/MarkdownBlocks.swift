@@ -14,13 +14,38 @@ struct MarkdownBlocks: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: blockSpacing) {
-            ForEach(Array(DispatchMarkdown.readableBlocks(text).enumerated()), id: \.offset) { _, block in
-                MarkdownBlockView(block: block, size: size, lineSpacing: lineSpacing)
+            ForEach(Array(Self.runs(DispatchMarkdown.readableBlocks(text)).enumerated()), id: \.offset) { _, run in
+                switch run {
+                case .prose(let blocks):
+                    ProseText(blocks: blocks, size: size, color: color, lineSpacing: lineSpacing, blockSpacing: blockSpacing)
+                case .apart(let block):
+                    MarkdownBlockView(block: block, size: size, lineSpacing: lineSpacing)
+                }
             }
         }
         .foregroundStyle(color)
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Prose next to prose is one text, selectable across (ProseText); code and a table are views of their own.
+    enum Run { case prose([DispatchMarkdownBlock]), apart(DispatchMarkdownBlock) }
+
+    static func runs(_ blocks: [DispatchMarkdownBlock]) -> [Run] {
+        #if DEBUG
+        // `-proseApart YES`: every block a view of its own, as before ProseText (for comparing in a probe).
+        if UserDefaults.standard.bool(forKey: "proseApart") { return blocks.map(Run.apart) }
+        #endif
+        var out: [Run] = []
+        for block in blocks {
+            switch block {
+            case .code, .table:
+                out.append(.apart(block))
+            default:
+                if case .prose(let before) = out.last { out[out.count - 1] = .prose(before + [block]) } else { out.append(.prose([block])) }
+            }
+        }
+        return out
     }
 }
 

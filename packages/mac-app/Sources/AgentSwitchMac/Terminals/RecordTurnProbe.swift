@@ -175,6 +175,9 @@ enum RecordTurnProbe {
         func click(_ x: CGFloat, top: CGFloat) async {
             guard let scroll = scroller(host), let window = host.window else { return }
             let at = scroll.convert(NSPoint(x: x, y: scroll.isFlipped ? top : scroll.bounds.height - top), to: nil)
+            // What the window gives the press to (a text laid out by AppKit under something SwiftUI draws over it would
+            // take it: ProseText).
+            log.say("     the click at \(Int(at.x)),\(Int(at.y)) meets \(window.contentView?.hitTest(at).map { String(describing: type(of: $0)) } ?? "nothing")")
             for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
                 guard let e = NSEvent.mouseEvent(with: type, location: at, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
                                                  context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1) else { continue }
