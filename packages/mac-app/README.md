@@ -194,7 +194,7 @@ Two Macs that both run AgentSwitch pair once and each can use the other's Dispat
   another) drives the real window to the other node and back and writes its pictures and `calls.txt`; start the two
   services with `packages/daemon/scripts/mesh_smoke.sh` and its `MESH_SMOKE_THEN`. It also changes page once on this
   node's own pages: `page-change.png` is the window a tenth of a second in, and `calls.txt` says whether the page was
-  being drawn in (the pixel look) or there at once (`-appearance classic`: no scan-line refresh, `ScanRefresh.plays`).
+  being drawn in (the pixel look) or there at once (`-appearance classic`: no scan-line refresh, `ScanRefresh.plays`). Then it opens the other node in a window of its own (`window-node.png`), asks for that node again from the main window (the other window comes forward, the main one stays on this Mac), clicks the strip's `×` (`window-node-strip-hidden.png`) and closes that window, each with a line in `calls.txt` (`MainWindows`: a node is in one window at most; docs/mesh-v0.md §9 B 2).
 
 ## Credential gate as a system service
 

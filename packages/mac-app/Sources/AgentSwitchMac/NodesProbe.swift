@@ -9,22 +9,26 @@ import AppKit
 /// it was being drawn in — the pixel look — or there at once — the classic one), then on the other node's by the call the bar's node menu makes (`node-dispatch.png`,
 /// `node-terminals.png`), then back (`back.png`); Settings › Nodes from the service's own answers
 /// (`settings-nodes.png`); and what the calls through the other node returned (`calls.txt`), so the client's decoding
-/// is checked against a real service on the far side of a real connection. Nothing else of the app starts.
+/// is checked against a real service on the far side of a real connection. Then the other node in a window of its own
+/// (`window-node.png`), asked for again from the main window (the other comes forward, the main one stays), and its
+/// strip put away by a click on its `×` (`window-node-strip-hidden.png`). Nothing else of the app starts.
 @MainActor
 enum NodesProbe {
     static var directory: URL? { UserDefaults.standard.string(forKey: "nodesProbe").map { URL(fileURLWithPath: $0) } }
 
-    static func run(_ main: MainWindowController, model: AppModel, into dir: URL) {
+    static func run(_ windows: MainWindows, model: AppModel, into dir: URL) {
+        let main = windows.main
         model.probeServiceUp()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         MainWindowController.probing = true
         Task {
-            let ok = await go(main, model: model, into: dir)
+            let ok = await go(windows, model: model, into: dir)
             exit(ok ? 0 : 1)
         }
     }
 
-    private static func go(_ main: MainWindowController, model: AppModel, into dir: URL) async -> Bool {
+    private static func go(_ windows: MainWindows, model: AppModel, into dir: URL) async -> Bool {
+        let main = windows.main
         var lines: [String] = []
         func step(_ name: String, _ body: () async throws -> String) async {
             do { lines.append("ok   \(name): \(try await body())") } catch { lines.append("FAIL \(name): \(error)") }
@@ -73,6 +77,7 @@ enum NodesProbe {
         main.show(.dispatch)
         try? await Task.sleep(for: .seconds(2))
         shot(main.window?.contentView, dir.appendingPathComponent("back.png"))
+        await own(node, windows: windows, into: dir) { lines.append($0) }
         let navigation = SettingsNavigation(wizardStore: SetupWizardStore(defaults: nil))
         navigation.tab = .nodes
         let settings = SettingsWindowController.makeWindow(model: model, navigation: navigation, appearance: NSAppearance(named: .darkAqua))
@@ -80,6 +85,41 @@ enum NodesProbe {
         shot(settings.contentView?.superview ?? settings.contentView, dir.appendingPathComponent("settings-nodes.png"))
         write()
         return true
+    }
+
+    /// The node menu's `Open in New Window`, its `Use AgentSwitch On` for a node in another window, the strip's `×`.
+    private static func own(_ node: NodeStatus, windows: MainWindows, into dir: URL, say: (String) -> Void) async {
+        let main = windows.main
+        UserDefaults.standard.set(false, forKey: NodeStrip.hiddenKey)
+        windows.open(node, beside: main)
+        try? await Task.sleep(for: .seconds(5))
+        guard let other = windows.on(node.id), other !== main, let window = other.window else { return say("FAIL own window: none opened") }
+        say("ok   own window: \(windows.all.count) windows; main on \(main.state.nodeId ?? "this Mac"), the other on \(other.state.nodeId ?? "this Mac"); titles “\(main.window?.title ?? "-")” and “\(window.title)”; the other \(Int(window.frame.minX - (main.window?.frame.minX ?? 0))) pt right of the main one")
+        shot(window.contentView, dir.appendingPathComponent("window-node.png"))
+        // The main window's menu asks for that node, as its item does: the other window comes forward, this one stays.
+        main.probeUseNode(node)
+        try? await Task.sleep(for: .seconds(1))
+        say("\(main.state.nodeId == nil && windows.all.count == 2 ? "ok  " : "FAIL") the node asked for again from the main window: main on \(main.state.nodeId ?? "this Mac"), \(windows.all.count) windows")
+        windows.open(node, beside: main)
+        try? await Task.sleep(for: .seconds(1))
+        say("\(windows.all.count == 2 ? "ok  " : "FAIL") Open in New Window again: \(windows.all.count) windows")
+        // The strip's `×`, clicked as the pointer would: at the strip's right end, under the bar.
+        if let content = window.contentView {
+            let top = other.state.barHeight + 1 + NodeStrip.height / 2
+            let at = NSPoint(x: content.bounds.width - 19, y: content.bounds.height - top)
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                guard let e = NSEvent.mouseEvent(with: type, location: at, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                                 context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1) else { continue }
+                NSApp.postEvent(e, atStart: false)
+            }
+        }
+        try? await Task.sleep(for: .seconds(1))
+        say("\(UserDefaults.standard.bool(forKey: NodeStrip.hiddenKey) ? "ok  " : "FAIL") the strip's × clicked: hidden=\(UserDefaults.standard.bool(forKey: NodeStrip.hiddenKey))")
+        shot(window.contentView, dir.appendingPathComponent("window-node-strip-hidden.png"))
+        UserDefaults.standard.set(false, forKey: NodeStrip.hiddenKey)
+        window.performClose(nil)
+        try? await Task.sleep(for: .seconds(1))
+        say("\(windows.all.count == 1 ? "ok  " : "FAIL") the node's window closed: \(windows.all.count) window(s)")
     }
 
     private static func shot(_ view: NSView?, _ file: URL) {

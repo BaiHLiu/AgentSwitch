@@ -17,7 +17,7 @@ struct AgentSwitchApp: App {
             MenuContentView()
                 .environment(delegate.model)
                 .environment(\.showSettings, ShowSettingsAction { [delegate] tab in delegate.settings.show(tab) })
-                .environment(\.showMainWindow, ShowMainWindowAction { [delegate] page in delegate.main.show(page) })
+                .environment(\.showMainWindow, ShowMainWindowAction { [delegate] page in delegate.mainWindows.show(page) })
                 .environment(\.quitApp, QuitAction { [delegate] in delegate.quit() })
                 // The mark stops while the panel is closed (ui-v0 §7.4).
                 .followsWindow()
@@ -47,16 +47,18 @@ enum SoftType {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
     lazy var settings = SettingsWindowController(model: model)
-    /// The main window, Dispatch and Terminals (docs/dispatch-v0.md §1).
-    lazy var main = MainWindowController(model: model)
+    /// The main window, Dispatch and Terminals (docs/dispatch-v0.md §1), and one more for each node opened in a window
+    /// of its own (docs/mesh-v0.md §9 B 2).
+    lazy var mainWindows = MainWindows(model: model)
+    var main: MainWindowController { mainWindows.main }
     /// Terminals in windows of their own, beside the main window (docs/dispatch-v0.md §1 单独的窗口).
     lazy var windows = TerminalWindows(client: { [model] in model.client })
     /// The menu bar's Live Activity (assistant-v0 §4): its own status item, left of the app's. A task opens on the main
     /// window's Dispatch page, a terminal on its Terminals page; what is open there in the window in use needs no telling.
-    lazy var live = LiveActivity(model: model, openTerminal: { [weak self] id, node in self?.main.show(terminal: id, node: node) },
-                                 openTask: { [weak self] id, node in self?.main.show(task: id, node: node) },
-                                 watching: { [weak self] in (self?.main.watchingTerminals ?? []).union(self?.windows.watching ?? []) },
-                                 watchingTask: { [weak self] in self?.main.watchingTask })
+    lazy var live = LiveActivity(model: model, openTerminal: { [weak self] id, node in self?.mainWindows.show(terminal: id, node: node) },
+                                 openTask: { [weak self] id, node in self?.mainWindows.show(task: id, node: node) },
+                                 watching: { [weak self] in (self?.mainWindows.watchingTerminals ?? []).union(self?.windows.watching ?? []) },
+                                 watchingTask: { [weak self] in self?.mainWindows.watchingTask })
     /// Which of our windows are open: the Dock icon shows while any is.
     private var openWindows: Set<String> = []
     private var signalSources: [DispatchSourceSignal] = []
@@ -130,7 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let dir = NodesProbe.directory {
             NSApp.setActivationPolicy(.accessory)
-            NodesProbe.run(main, model: model, into: dir)
+            NodesProbe.run(mainWindows, model: model, into: dir)
             return
         }
         if let dir = PerfProbe.directory {
@@ -147,14 +149,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let atLogin = Self.launchedAtLogin
         // The bundle has LSUIElement; `swift run` has no bundle, so decide the Dock presence here in both cases.
         settings.onVisibilityChange = { [weak self] open in self?.windowVisibility("settings", open) }
-        main.onVisibilityChange = { [weak self] open in self?.windowVisibility("main", open) }
-        main.openSettings = { [weak self] in self?.settings.show(nil) }
-        main.openNodes = { [weak self] in self?.settings.show(.nodes) }
+        mainWindows.onVisibilityChange = { [weak self] name, open in self?.windowVisibility(name, open) }
+        mainWindows.openSettings = { [weak self] in self?.settings.show(nil) }
+        mainWindows.openNodes = { [weak self] in self?.settings.show(.nodes) }
         wireWindows()
         windows.onVisibilityChange = { [weak self] open in self?.windowVisibility("terminal-windows", open) }
-        settings.openTask = { [weak self] id in self?.main.show(task: id) }
+        settings.openTask = { [weak self] id in self?.mainWindows.show(task: id) }
         live.onSnapshot = { [weak self] snapshot in
-            self?.main.liveChanged(snapshot)
+            self?.mainWindows.liveChanged(snapshot)
             self?.bringForward(snapshot?.shown, now: snapshot?.now ?? Date())
         }
         updateDockPresence(settingsWindowOpen: false)
@@ -331,8 +333,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func wireWindows() {
-        main.windows = windows
-        windows.onChange = { [weak self] ids in self?.main.detachedChanged(ids) }
+        mainWindows.windows = windows
+        windows.onChange = { [weak self] ids in self?.mainWindows.detachedChanged(ids) }
         windows.mainFrame = { [weak self] in self?.main.window?.frame }
         windows.newTerminal = { [weak self] in self?.main.newTerminal() }
         windows.onError = { [weak self] message in self?.model.errorMessage = message }
@@ -352,7 +354,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Clicking the Dock icon (or opening the app again from Finder) brings up the main window on the page it showed
     /// last (Dispatch the first time); the settings window while the service is not up.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if model.daemonReady { main.show() } else { settings.show(nil) }
+        if model.daemonReady { mainWindows.show() } else { settings.show(nil) }
         return true
     }
 

@@ -129,6 +129,10 @@ h1 { font: 700 15px var(--mono); margin: 0 0 8px; color: #e9e6df; }
 .menu .it .k { color: var(--sys-ink2); font: 11.5px var(--mono); display: inline-flex; gap: 8px; align-items: center; }
 .menu hr { border: 0; height: 1px; background: rgba(127,127,127,.25); margin: 4px 8px; }
 .menu .hdr { font-size: 11px; color: var(--sys-ink2); padding: 4px 8px 2px; }
+.menu .sub { position: relative; }
+.menu .submenu { display: none; position: absolute; left: calc(100% - 4px); top: -5px; width: 220px; padding: 5px; border-radius: 10px; background: var(--sys-menu); }
+.menu .sub:hover .submenu { display: block; color: var(--sys-ink); }
+.via .x { color: var(--ink2); padding: 0 2px; }
 /* the pages, sketched */
 .col { width: 100%; max-width: 720px; margin: 0 auto; padding: 14px 24px; display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
 .me { display: flex; justify-content: flex-end; }
@@ -376,7 +380,11 @@ function hostMenu() {
     const right = h.off ? "Offline" : `${h.busy ? `<span>${spin()}${h.busy}</span>` : ""}${h.wait ? `<span>${sq("var(--amber)")}${h.wait}</span>` : ""}${h.path ? `<span>${h.path}</span>` : ""}`;
     return `<div class="it" data-host="${k}" style="${h.off ? "opacity:.45" : ""}"><span>${S.host === k ? "✓" : ""}</span><span>${h.name}${h.me ? " <small style=\"color:var(--sys-ink2)\">This Mac</small>" : ""}</span><span class="k">${right}</span></div>`;
   };
-  return `<div class="menu"><div class="hdr">Use AgentSwitch On</div>${it("mbp")}${it("mini")}${it("studio")}<hr><div class="it"><span></span><span>Pair Another Node…</span><span class="k"></span></div><div class="it"><span></span><span>Nodes…</span><span class="k">⌘,</span></div></div>`;
+  // 2026-10-14 (user: 每一个节点都可以单独开一个窗口): each node but this window's own, in a window of its own; one
+  // already in its own window comes forward.
+  const own = (k) => { const h = HOSTS[k]; return `<div class="it" style="${h.off ? "opacity:.45" : ""}"><span></span><span>${h.name}${h.me ? " <small style=\"color:var(--sys-ink2)\">This Mac</small>" : ""}</span><span class="k"></span></div>`; };
+  const windows = Object.keys(HOSTS).filter((k) => k !== S.host).map(own).join("");
+  return `<div class="menu"><div class="hdr">Use AgentSwitch On</div>${it("mbp")}${it("mini")}${it("studio")}<hr><div class="it sub"><span></span><span>Open in New Window</span><span class="k">›</span><div class="submenu">${windows}</div></div><hr><div class="it"><span></span><span>Pair Another Node…</span><span class="k"></span></div><div class="it"><span></span><span>Nodes…</span><span class="k">⌘,</span></div></div>`;
 }
 
 function bar() {
@@ -391,7 +399,8 @@ function via() {
   const h = HOSTS[S.host];
   if (h.me) return "<div></div>";
   const term = S.keys === "text" ? " · 它不收原样按键：终端用回复框" : "";
-  return `<div class="via">${sq("var(--signal)")}<span>正在使用 <b>${h.name}</b> · ${h.path}${term}</span><span class="sp"></span><button class="btn" data-host="mbp">[ Back to This Mac ]</button></div>`;
+  if (S.viaHidden) return "<div></div>";
+  return `<div class="via">${sq("var(--signal)")}<span>正在使用 <b>${h.name}</b> · ${h.path}${term}</span><span class="sp"></span><button class="btn" data-host="mbp">[ Back to This Mac ]</button><button class="btn x" data-do="hidevia" title="Hide">×</button></div>`;
 }
 
 function dispatchPage() {
@@ -599,6 +608,7 @@ document.addEventListener("click", (e) => {
   if (page) { S.page = page.dataset.page; S.menu = false; drawWin(); return; }
   const d = e.target.closest("[data-do]");
   if (d && d.dataset.do === "menu") { S.menu = !S.menu; drawWin(); return; }
+  if (d && d.dataset.do === "hidevia") { S.viaHidden = true; drawWin(); return; }
   const step = e.target.closest("[data-step]");
   if (step) { S.step = +step.dataset.step; drawPair(); return; }
   const pm = e.target.closest("[data-pm]");

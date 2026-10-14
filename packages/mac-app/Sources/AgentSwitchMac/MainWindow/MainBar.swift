@@ -23,6 +23,8 @@ struct MainBarActions {
     var exitFullScreen: () -> Void = {}
     /// The bar's node menu and the strip's way back: the window's pages become that node's (nil: this Mac's).
     var useNode: (NodeStatus?) -> Void = { _ in }
+    /// The node menu's `Open in New Window`: that node's pages in a window of their own (nil: this Mac's).
+    var openWindow: (NodeStatus?) -> Void = { _ in }
     /// Settings › Nodes.
     var openNodes: () -> Void = {}
 }
@@ -43,6 +45,7 @@ struct MainWindowRoot: View {
     let actions: MainBarActions
     /// The Browser page's model: its hold is the status bar's right on Browser.
     var browser: BrowserPageModel?
+    @AppStorage(NodeStrip.hiddenKey) private var stripHidden = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -55,8 +58,9 @@ struct MainWindowRoot: View {
                 // The bar's edge, while there is an outline to draw (BarRule).
                 BarRule(shown: side > 0)
                 // Another node's pages: whose they are, said across the window, with the way back.
-                if let node = state.node {
-                    NodeStrip(node: model.nodes.node(node.id) ?? node, known: model.nodes.node(node.id) != nil) { actions.useNode(nil) }
+                if let node = state.node, NodeStrip.shown(node: model.nodes.node(node.id) ?? node, known: model.nodes.node(node.id) != nil, hidden: stripHidden) {
+                    NodeStrip(node: model.nodes.node(node.id) ?? node, known: model.nodes.node(node.id) != nil, back: { actions.useNode(nil) },
+                              hide: { stripHidden = true })
                     HairRule(color: Look.line)
                 }
                 HStack(spacing: 0) {
@@ -245,6 +249,16 @@ struct NodeChoice: View {
                     }
                 }
                 Divider()
+                // 2026-10-14 (user: 这里每一个节点都可以单独开一个窗口): every node but this window's own; one already in a
+                // window of its own comes forward.
+                Menu("Open in New Window") {
+                    if state.node != nil { Button(item(ownName, detail: "This Mac", current: false)) { actions.openWindow(nil) } }
+                    ForEach(nodes.filter { $0.id != state.nodeId }) { node in
+                        Button(item(node.name, detail: NodeText.menuDetail(node), current: false)) { actions.openWindow(node) }
+                            .disabled(node.state != .online)
+                    }
+                }
+                Divider()
                 Button("Pair Another Node…", action: actions.openNodes)
                 Button("Nodes…", action: actions.openNodes)
             } label: {
@@ -273,12 +287,20 @@ struct NodeChoice: View {
 }
 
 /// Under the bar while the window's pages are another node's (demo mesh.html §2): whose they are and how it is
-/// reached, and the way back — a task on the Mac mini is not to be taken for one of this Mac's.
+/// reached, and the way back — a task on the Mac mini is not to be taken for one of this Mac's. `×` puts it away for
+/// good (2026-10-14, user: 这个东西可关掉; the bar's `@ <node>` still says whose the pages are); a node that stops
+/// answering or was removed brings it back, red, and that one stays (`shown`).
 struct NodeStrip: View {
     let node: NodeStatus
     /// This Mac still has the node in its book (false: it was removed while the window was on it).
     let known: Bool
     let back: () -> Void
+    var hide: () -> Void = {}
+
+    static let hiddenKey = "nodeStripHidden"
+
+    /// Whether the strip is drawn: always while something is wrong there, else unless it was put away.
+    static func shown(node: NodeStatus, known: Bool, hidden: Bool) -> Bool { !hidden || !known || node.state != .online }
 
     static let height: CGFloat = 24
 
@@ -291,6 +313,13 @@ struct NodeStrip: View {
             Spacer(minLength: 12)
             Button(action: back) { BracketLabel(word: "Back to This Mac") }
                 .buttonStyle(BracketButtonStyle(size: 12))
+            if !trouble {
+                Button(action: hide) { LookGlyph(glyph: "×", symbol: "xmark", size: 13) }
+                    .buttonStyle(QuietButtonStyle())
+                    .foregroundStyle(Look.ink2)
+                    .help("Hide")
+                    .accessibilityLabel("Hide")
+            }
         }
         .mono(12)
         .lineLimit(1)

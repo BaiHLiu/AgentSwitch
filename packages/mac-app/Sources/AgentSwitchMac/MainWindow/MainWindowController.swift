@@ -26,6 +26,15 @@ final class MainWindowController: NSObject {
     var openSettings: () -> Void = {}
     /// Settings › Nodes (the bar's node menu).
     var openNodes: () -> Void = {}
+    /// The node menu's `Open in New Window`: that node's pages in a window of their own (MainWindows).
+    var openWindow: (NodeStatus?) -> Void = { _ in }
+    /// Another window already on this node (nil: this Mac) comes forward instead: true when there was one. A node is in
+    /// one window at most (docs/mesh-v0.md §9 B 2, 2026-10-14).
+    var elsewhere: (String?) -> Bool = { _ in false }
+    /// Where the window's frame is kept: the main window's own, or the node's for a window opened on it.
+    private let frameName: String
+    /// Where a window opened on a node goes the first time: beside the window it was opened from.
+    private let firstFrame: NSRect?
     /// What `GET /live` last said of this Mac: the rail's marks again once the window is back from another node.
     private var ownLive: LiveSnapshot?
     /// Another node's `GET /live`, asked while the window's pages are that node's.
@@ -57,6 +66,8 @@ final class MainWindowController: NSObject {
     var probeClient: DaemonClient { model.client(on: state.nodeId) }
     /// The status bar's lock, as a click on it.
     func probeSeal() { barActions.seal() }
+    /// The node menu's `Use AgentSwitch On`, as its item calls it.
+    func probeUseNode(_ node: NodeStatus?) { barActions.useNode(node) }
     #endif
 
     static let contentSize = NSSize(width: 1280, height: 820)
@@ -67,11 +78,15 @@ final class MainWindowController: NSObject {
     /// Where the terminal window was before there was a main window: the main window opens there the first time.
     static let terminalFrameName = "AgentSwitchTerminal"
 
-    init(model: AppModel) {
+    /// `node`: the node the window opens on (a window of its own for it, MainWindows); nil: the main window, on this Mac.
+    init(model: AppModel, node: NodeStatus? = nil, frameName: String = MainWindowController.frameName, firstFrame: NSRect? = nil) {
         self.model = model
+        self.frameName = frameName
+        self.firstFrame = firstFrame
         state = MainWindowState(page: MainPage.restored(UserDefaults.standard.string(forKey: MainPage.storeKey)),
                                 railHidden: MainRailLayout.hidden(UserDefaults.standard.object(forKey: MainRailLayout.hiddenKey) as? Bool))
         super.init()
+        if let node { state.use(node: node) }
         // The rail put away stays put away the next time (docs/dispatch-v0.md §1 图标栏可以收起).
         state.onRailHidden = { hidden in
             #if DEBUG
@@ -169,6 +184,7 @@ final class MainWindowController: NSObject {
         let page = state.pages.contains(state.page) ? state.page : .terminals
         swap(to: page)
         windowChanged()
+        updateTitle()
         if watched, ScanRefresh.playsNow {
             container?.drawIn(page)
             if page == .terminals { terminals?.pageDrawsIn() }
@@ -210,6 +226,12 @@ final class MainWindowController: NSObject {
         return NSApp.isActive && window.isKeyWindow && window.isVisible && !window.isMiniaturized
     }
 
+    /// The window open and in front, on the page it shows (another window was asked for this node).
+    func raise() {
+        open()
+        bringForward()
+    }
+
     private func bringForward() {
         guard let window else { return }
         // What the window's notifications will say anyway, at once (the Browser page starts following its tab).
@@ -246,8 +268,11 @@ final class MainWindowController: NSObject {
         // The delegate holds a drag at the least size whatever the window thinks its own is.
         window.delegate = leastSize
         window.isReleasedWhenClosed = false
-        if !window.setFrameUsingName(Self.frameName), !window.setFrameUsingName(Self.terminalFrameName) { window.center() }
-        window.setFrameAutosaveName(Self.frameName)
+        if !window.setFrameUsingName(frameName) {
+            if let firstFrame { window.setFrame(firstFrame, display: false) }
+            else if !window.setFrameUsingName(Self.terminalFrameName) { window.center() }
+        }
+        window.setFrameAutosaveName(frameName)
         self.window = window
         observe(window)
         watchKeys()
@@ -388,7 +413,9 @@ final class MainWindowController: NSObject {
         case .browser: browser?.current.map(BrowserTabText.title)
         case .dispatch, .clash: nil
         }
-        window?.title = page.flatMap { $0.isEmpty ? nil : $0 } ?? "AgentSwitch"
+        let title = page.flatMap { $0.isEmpty ? nil : $0 } ?? "AgentSwitch"
+        // Another node's pages: its name too, for the Dock's list of windows and Mission Control.
+        window?.title = state.node.map { "\(title) — \($0.name)" } ?? title
     }
 
     /// Next time the window opens afresh (the daemon may have restarted and forgotten the terminal page's session).
@@ -503,7 +530,11 @@ final class MainWindowController: NSObject {
             toggleView: { [weak self] in self?.terminals?.toggleView() },
             closeWindow: { [weak self] in self?.window?.performClose(nil) },
             exitFullScreen: { [weak self] in self?.window?.toggleFullScreen(nil) },
-            useNode: { [weak self] node in self?.use(node: node) },
+            useNode: { [weak self] node in
+                guard let self, !self.elsewhere(node?.id) else { return }
+                self.use(node: node)
+            },
+            openWindow: { [weak self] node in self?.openWindow(node) },
             openNodes: { [weak self] in self?.openNodes() })
     }
 
