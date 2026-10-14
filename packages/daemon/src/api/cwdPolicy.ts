@@ -11,7 +11,9 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 export type CwdRules = { readonly home: string; readonly denied: readonly string[] };
 
-const DENIED_UNDER_HOME = [".ssh", ".claude", ".codex", ".agentswitch", ".secret-gate", "Library", ".gnupg", ".aws", ".config"] as const;
+const DENIED_UNDER_HOME = [".ssh", ".claude", ".codex", ".agentswitch", ".secret-gate", "Library", ".gnupg", ".aws", ".config",
+  // Linux's places for the same: the keyring, OpenCode's logins, NSS's certificates and keys, Firefox's profiles.
+  ".local/share/keyrings", ".local/share/opencode", ".pki", ".mozilla"] as const;
 /** macOS mounts the data volume here too; `/Users/x` is also `/System/Volumes/Data/Users/x`. */
 const DATA_VOLUME = "/System/Volumes/Data";
 

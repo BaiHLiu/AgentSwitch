@@ -6,7 +6,9 @@ import { buildDaemon, type DaemonConfig } from "../src/daemon.js";
 import { Client } from "../src/client.js";
 import { QuotaService } from "../src/quota/index.js";
 import { echoRouter } from "../src/router/routers/echo.js";
-import { decisionJson, TARGETS_PATH } from "./helpers.js";
+import { decisionJson, TARGETS_PATH, workDir } from "./helpers.js";
+
+const CWD = workDir();
 
 function daemon(replies: string[] = [decisionJson({ harness: "codex", model: "gpt-5.5", effort: null })]) {
   const home = mkdtempSync(join(tmpdir(), "agentswitch-api-"));
@@ -22,7 +24,7 @@ describe("HTTP API", () => {
   it("health, submit, list, show, events (SSE) and done", async () => {
     const { d, client } = daemon();
     expect((await client.health()).ok).toBe(true);
-    const t = await client.submit("do x", "/tmp");
+    const t = await client.submit("do x", CWD);
     expect(t.status).toBe("queued");
     const seen: string[] = [];
     await client.watch(t.id, (ev) => { seen.push(ev.type); });
@@ -38,7 +40,7 @@ describe("HTTP API", () => {
 
   it("approval round trip through the API", async () => {
     const { d, client } = daemon();
-    const t = await client.submit('x @echo {"approval":"rm -rf /tmp/x"}', "/tmp");
+    const t = await client.submit('x @echo {"approval":"rm -rf /tmp/x"}', CWD);
     let approvalId = "";
     await client.watch(t.id, async (ev) => {
       if (ev.type === "approval_request") {
@@ -55,12 +57,12 @@ describe("HTTP API", () => {
 
   it("validation errors, 404s, cancel", async () => {
     const { d, client } = daemon([decisionJson({ harness: "codex", model: "gpt-5.5", effort: null })]);
-    await expect(client.submit("", "/tmp")).rejects.toThrow(/task/);
+    await expect(client.submit("", CWD)).rejects.toThrow(/task/);
     await expect(client.task("nope")).rejects.toThrow(/not found/);
     await expect(client.cancel("nope")).rejects.toThrow(/not found/);
     const res = await d.app.request("/tasks/nope/events");
     expect(res.status).toBe(404);
-    const t = await client.submit('x @echo {"approval":"rm"}', "/tmp");
+    const t = await client.submit('x @echo {"approval":"rm"}', CWD);
     await new Promise((r) => setTimeout(r, 30));
     expect((await client.cancel(t.id)).status).toBe("cancelled");
     await d.engine.idle();
@@ -78,7 +80,7 @@ describe("HTTP API", () => {
     expect((await client.task(t.id)).status).toBe("done");
     expect(d.store.eventsSince(t.id).map((e) => e.type).at(-1)).toBe("cleaned");
     expect(existsSync(t.cwd)).toBe(false);
-    const persistent = await client.submit("keep", "/tmp");
+    const persistent = await client.submit("keep", CWD);
     expect(persistent.ephemeral).toBe(false);
     await d.engine.idle();
     d.close();
@@ -86,10 +88,10 @@ describe("HTTP API", () => {
 
   it("parent_id: inherits a persistent parent's cwd, gets a fresh ephemeral dir after an ephemeral parent, 404 on unknown", async () => {
     const { d, client } = daemon();
-    const p1 = await client.submit("first", "/tmp");
+    const p1 = await client.submit("first", CWD);
     await d.engine.idle();
     const c1 = await client.submit("again", undefined, { parentId: p1.id });
-    expect(c1).toMatchObject({ parentId: p1.id, cwd: "/tmp", ephemeral: false });
+    expect(c1).toMatchObject({ parentId: p1.id, cwd: CWD, ephemeral: false });
     await d.engine.idle();
     const p2 = await client.submit("eph", undefined);
     await d.engine.idle();
@@ -176,7 +178,7 @@ describe("HTTP API", () => {
     const targets = await (await d.app.request("/targets")).json() as { quota: Record<string, number>; harnesses: object };
     expect(targets.quota).toEqual({ codex: 0.5 });
     expect(Object.keys(targets.harnesses)).toContain("claude-code");
-    const preview = await client.preview("summarize", "/tmp") as { verdict: { harness: string } };
+    const preview = await client.preview("summarize", CWD) as { verdict: { harness: string } };
     expect(preview.verdict.harness).toBe("codex");
     expect((await client.routingLog()).length).toBe(1);
     expect((await client.context()).text).toBe("");

@@ -1,7 +1,8 @@
-/** Who may reach the remote listener (app-v0 §2 来源地址) and which of this Mac's addresses a phone can use (§2 配对:
+/** Who may reach the remote listener (app-v0 §2 来源地址) and which of this machine's addresses another device can use (§2 配对:
  *  `lan`). Pure apart from reading the interface table, which callers may pass in. */
 
 import { BlockList, isIPv4, isIPv6 } from "node:net";
+import { readFileSync } from "node:fs";
 import { networkInterfaces, type NetworkInterfaceInfo } from "node:os";
 
 /** Source networks the remote listener accepts: loopback, RFC 1918, link-local, Tailscale CGNAT, IPv6 ULA (incl.
@@ -59,10 +60,55 @@ export function guardConnection(socket: GuardedSocket, allow: (address: string |
   return false;
 }
 
-/** This Mac's private IPv4 addresses (RFC 1918, not internal), in interface order, without duplicates. */
-export function lanAddresses(interfaces: NodeJS.Dict<NetworkInterfaceInfo[]> = networkInterfaces()): string[] {
-  const found = Object.values(interfaces).flatMap((list) => list ?? [])
-    .filter((i) => i.family === "IPv4" && !i.internal && LAN.check(i.address, "ipv4"))
-    .map((i) => i.address);
+/** Interfaces that container and VM software makes on the machine itself: Docker's `docker0` and `br-<id>`, veth
+ *  pairs, libvirt, VMware, VirtualBox, Podman, CNI, LXC/LXD, Kubernetes overlays. Their addresses lead to no other
+ *  device; a Linux workstation has a dozen of them, more than a payload may carry (mesh-v0 §4.7). */
+const VIRTUAL_INTERFACE = /^(docker\d|br-[0-9a-f]{6,}|veth|virbr|vmnet|vboxnet|podman|cni|flannel|cali|lxcbr|lxdbr|kube|weave|tunl)/;
+/** At most this many addresses of each kind go in a pairing payload (the schema's limit). */
+export const ADDRESS_LIMIT = 16;
+const OVERLAY = blockList([["100.64.0.0", 10, "ipv4"]]);
+
+type Interfaces = NodeJS.Dict<NetworkInterfaceInfo[]>;
+
+function ipv4Of(interfaces: Interfaces, keep: (name: string, address: string) => boolean): string[] {
+  const found = Object.entries(interfaces).flatMap(([name, list]) => (list ?? [])
+    .filter((i) => i.family === "IPv4" && !i.internal && keep(name, i.address))
+    .map((i) => i.address));
   return [...new Set(found)];
+}
+
+/** This machine's private IPv4 addresses (RFC 1918, not internal, not on a container or VM interface): the
+ *  interfaces of the default route first (`first`, best first), the rest in interface order; no duplicates. */
+export function lanAddresses(interfaces: Interfaces = networkInterfaces(), first: readonly string[] = defaultRouteInterfaces()): string[] {
+  const rank = (name: string) => { const i = first.indexOf(name); return i < 0 ? first.length : i; };
+  const ordered = Object.keys(interfaces).map((name, i) => ({ name, i })).sort((a, b) => rank(a.name) - rank(b.name) || a.i - b.i);
+  const sorted = Object.fromEntries(ordered.map(({ name }) => [name, interfaces[name]]));
+  return ipv4Of(sorted, (name, address) => !VIRTUAL_INTERFACE.test(name) && LAN.check(address, "ipv4")).slice(0, ADDRESS_LIMIT);
+}
+
+/** Overlay addresses in 100.64/10 (Tailscale, NetBird, Headscale): reachable from the other devices on that overlay
+ *  network. Tailscale's own come from its CLI as well; this finds the others. */
+export function overlayAddresses(interfaces: Interfaces = networkInterfaces()): string[] {
+  return ipv4Of(interfaces, (name, address) => !VIRTUAL_INTERFACE.test(name) && OVERLAY.check(address, "ipv4"));
+}
+
+/** The interfaces Linux routes the default route through, lowest metric first (`/proc/net/route`); [] elsewhere. */
+export function defaultRouteInterfaces(table: () => string = () => readFileSync("/proc/net/route", "utf8")): string[] {
+  let text: string;
+  try { text = table(); } catch { return []; }
+  const routes = text.split("\n").slice(1).map((line) => line.trim().split(/\s+/))
+    .filter((f) => f.length > 7 && f[1] === "00000000" && f[7] === "00000000")
+    .map((f) => ({ name: f[0]!, metric: Number(f[6]) || 0 }));
+  return [...new Set(routes.sort((a, b) => a.metric - b.metric).map((r) => r.name))];
+}
+
+/** `AGENTSWITCH_LAN`: the addresses to offer instead of the ones found, comma-separated, each an IPv4 address or an
+ *  interface name (its private IPv4 addresses). Only addresses the remote listener accepts are kept; null when unset
+ *  or empty, so discovery goes on. */
+export function lanOverride(spec: string | undefined, interfaces: Interfaces = networkInterfaces()): string[] | null {
+  const items = (spec ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (!items.length) return null;
+  const found = items.flatMap((item) => isIPv4(item) ? [item]
+    : (interfaces[item] ?? []).filter((i) => i.family === "IPv4" && !i.internal).map((i) => i.address));
+  return [...new Set(found)].filter((a) => isAllowedSource(a) && !a.startsWith("127.")).slice(0, ADDRESS_LIMIT);
 }

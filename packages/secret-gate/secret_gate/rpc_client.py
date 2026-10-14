@@ -49,6 +49,9 @@ class RpcClient:
                 reply = _read_line(sock)
         except TimeoutError:
             raise ServiceUnavailable(f"{SERVICE_UNAVAILABLE}（等待超时）") from None
+        except (ConnectionResetError, BrokenPipeError):
+            # Linux resets a Unix socket closed with our request unread (the peer check refused us); macOS reads empty
+            raise ServiceUnavailable(f"{SERVICE_UNAVAILABLE}（连接被关闭）") from None
         except OSError as exc:
             raise ServiceUnavailable(f"{SERVICE_UNAVAILABLE}（{exc.strerror or exc}）") from None
         if not reply:

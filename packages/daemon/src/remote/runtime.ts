@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import type { GateOptions } from "../executors/gate.js";
-import { lanAddresses } from "./address.js";
+import { ADDRESS_LIMIT, lanAddresses, lanOverride, overlayAddresses } from "./address.js";
 import { Presence } from "./devices.js";
 import { gateKeyReader, type GateKeyReader } from "./gateKey.js";
 import { PairingDesk } from "./pairing.js";
@@ -38,10 +38,13 @@ export function macName(run: () => string = () => execFileSync(SCUTIL, ["--get",
   return hostname().replace(/\.local$/, "");
 }
 
-/** LAN from the interface table, Tailscale from its CLI; each side fails to [] on its own. */
-export async function discoverAddresses(): Promise<Addresses> {
-  const tailnet = await tailnetAddresses().catch(() => [] as string[]);
-  return { lan: lanAddresses(), tailnet };
+/** LAN from the interface table (or `AGENTSWITCH_LAN`, mesh-v0 §4.7), the overlay from Tailscale's CLI and any other
+ *  100.64/10 interface (NetBird, Headscale); each side fails to [] on its own. */
+export async function discoverAddresses(env: NodeJS.ProcessEnv = process.env): Promise<Addresses> {
+  const tailscale = await tailnetAddresses().catch(() => [] as string[]);
+  const lan = lanOverride(env.AGENTSWITCH_LAN) ?? lanAddresses();
+  const tailnet = [...new Set([...tailscale, ...overlayAddresses()])].filter((a) => !lan.includes(a)).slice(0, ADDRESS_LIMIT);
+  return { lan, tailnet };
 }
 
 export type RemoteRuntimeOptions = {

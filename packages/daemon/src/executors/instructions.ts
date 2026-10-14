@@ -1,5 +1,6 @@
 /** Global guidance every executor receives: AgentSwitch's notes plus secret-gate's AGENTS.md. */
 
+import { withHostNote } from "../util/hostNote.js";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,5 +51,5 @@ export function executorInstructions(paths: { executor?: string; gate?: string }
   for (const p of [paths.executor ?? EXECUTOR_MD, paths.gate ?? GATE_AGENTS_MD]) {
     if (existsSync(p)) parts.push(readFileSync(p, "utf8").trim());
   }
-  return parts.join("\n\n");
+  return withHostNote(parts.join("\n\n"));
 }

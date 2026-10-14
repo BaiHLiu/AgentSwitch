@@ -19,6 +19,8 @@ import { BrowserError, type PlaceKind, type TabOwner } from "./types.js";
 export const CREDENTIAL_DIRS: readonly string[] = [
   ".ssh", ".aws", ".gnupg", ".kube", ".azure", ".docker", ".password-store",
   ".config/gh", ".config/gcloud", "Library/Keychains",
+  // Linux: the keyring, NSS's keys, OpenCode's logins (its database as well as auth.json).
+  ".local/share/keyrings", ".pki", ".local/share/opencode",
 ];
 
 /** File names that are credentials wherever they are: environment files, private keys and certificates (the gate's

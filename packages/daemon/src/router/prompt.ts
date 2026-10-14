@@ -1,5 +1,6 @@
 /** The router agent's instructions and the per-task message. Kept as plain text so it can be diffed. */
 
+import { withHostNote } from "../util/hostNote.js";
 import { contextSection } from "./context.js";
 import { EMPTY_CONTEXT, type LoadedContext } from "../core/contextDoc.js";
 import { COMMUNICATION_GUIDANCE } from "../util/communication.js";
@@ -73,7 +74,7 @@ export function systemPrompt(targets: Targets, extras: LoadedContext | PromptExt
   return `You are the dispatcher for AgentSwitch. A task arrives; you decide which coding agent and model
 should execute it and write a brief for that executor. You do not execute anything yourself.
 
-${COMMUNICATION_GUIDANCE}
+${withHostNote(COMMUNICATION_GUIDANCE)}
 
 Available targets (choose only from this list; every model is selectable):
 ${catalogText(targets)}

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { Store } from "../src/engine/store.js";
-import { guardConnection, isAllowedSource, lanAddresses, normalizeAddress } from "../src/remote/address.js";
+import { ADDRESS_LIMIT, defaultRouteInterfaces, guardConnection, isAllowedSource, lanAddresses, lanOverride, normalizeAddress, overlayAddresses } from "../src/remote/address.js";
 import { authenticate, hashToken, LAST_SEEN_THROTTLE_MS, newToken, ONLINE_WINDOW_MS, Presence, registerDevice } from "../src/remote/devices.js";
 import { currentKey, gateKeyReader } from "../src/remote/gateKey.js";
 import { CROCKFORD, formatCode, MAX_WRONG_ATTEMPTS, normalizeCode, PAIR_LINK_PREFIX, PAIR_RATE_LIMIT, PAIR_RATE_WINDOW_MS, pairPayload, PairingDesk, PAIRING_TTL_MS } from "../src/remote/pairing.js";
@@ -69,6 +69,45 @@ describe("remote source addresses", () => {
     };
     expect(lanAddresses(table)).toEqual(["192.168.1.5", "10.0.0.7", "172.20.0.1"]);
     expect(Array.isArray(lanAddresses())).toBe(true);
+  });
+
+  // mesh-v0 §4.7: a Linux workstation listed 24 addresses, 17 of them Docker bridges, and a payload carries 16.
+  const v4 = (address: string) => ({ address, family: "IPv4", internal: false, netmask: "", mac: "", cidr: null }) as never;
+  const linux = {
+    lo: [{ address: "127.0.0.1", family: "IPv4", internal: true, netmask: "", mac: "", cidr: null } as never],
+    docker0: [v4("172.18.0.1")], "br-8f0e86d84190": [v4("192.168.48.1")], veth079376e: [v4("172.17.0.9")],
+    vmnet8: [v4("192.168.131.1")], virbr0: [v4("192.168.122.1")],
+    wlp3s0: [v4("10.20.100.1")], br0: [v4("10.20.3.1")], wg0: [v4("10.20.2.1")], enp0s31f6: [v4("192.168.1.23")],
+    wt0: [v4("100.101.7.42")],
+  };
+
+  it("leaves out container and VM interfaces and puts the default route's first", () => {
+    expect(lanAddresses(linux, ["enp0s31f6"])).toEqual(["192.168.1.23", "10.20.100.1", "10.20.3.1", "10.20.2.1"]);
+    expect(lanAddresses(linux, [])).toEqual(["10.20.100.1", "10.20.3.1", "10.20.2.1", "192.168.1.23"]);
+    const many = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`wg${i}`, [v4(`10.9.${i}.1`)]]));
+    expect(lanAddresses(many, [])).toHaveLength(ADDRESS_LIMIT);
+  });
+
+  it("finds overlay addresses outside Tailscale's CLI (NetBird)", () => {
+    expect(overlayAddresses(linux)).toEqual(["100.101.7.42"]);
+  });
+
+  it("reads the default route from /proc/net/route, lowest metric first; nothing where there is none", () => {
+    const table = [
+      "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT",
+      "wlp3s0\t00000000\t0164A8C0\t0003\t0\t0\t600\t00000000\t0\t0\t0",
+      "enp0s31f6\t00000000\tFE01A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0",
+      "wg0\t0000140A\t00000000\t0001\t0\t0\t0\t00FFFFFF\t0\t0\t0",
+    ].join("\n");
+    expect(defaultRouteInterfaces(() => table)).toEqual(["enp0s31f6", "wlp3s0"]);
+    expect(defaultRouteInterfaces(() => { throw new Error("ENOENT"); })).toEqual([]);
+  });
+
+  it("AGENTSWITCH_LAN names the addresses by hand: interfaces or addresses, only ones the listener accepts", () => {
+    expect(lanOverride(undefined, linux)).toBeNull();
+    expect(lanOverride(" , ", linux)).toBeNull();
+    expect(lanOverride("wg0, 192.168.1.23,nope", linux)).toEqual(["10.20.2.1", "192.168.1.23"]);
+    expect(lanOverride("8.8.8.8,127.0.0.1,wt0", linux)).toEqual(["100.101.7.42"]);
   });
 });
 

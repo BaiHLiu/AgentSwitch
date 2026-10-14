@@ -15,7 +15,9 @@ import { isSelfHarm, routerSupervisor, SupervisorConfig } from "../src/router/su
 import { buildDaemon, type DaemonConfig } from "../src/daemon.js";
 import { Client } from "../src/client.js";
 import { QuotaService } from "../src/quota/index.js";
-import { decisionJson, realTargets, TARGETS_PATH } from "./helpers.js";
+import { decisionJson, realTargets, TARGETS_PATH, workDir } from "./helpers.js";
+
+const CWD = workDir();
 
 const targets = realTargets();
 
@@ -39,8 +41,8 @@ describe("hardening (audit 2026-09-22)", () => {
     const d = buildDaemon(cfg, { router: echoRouter(() => decisionJson({ harness: "codex", model: "gpt-5.5", effort: null })), quota: new QuotaService([]) });
     const fetchImpl: typeof fetch = (input, init) => Promise.resolve(d.app.request(input instanceof Request ? input : String(input).replace("http://test", ""), init));
     const client = new Client("http://test", fetchImpl);
-    const other = await client.submit("other", "/tmp");
-    const t = await client.submit('x @echo {"approval":"npm test"}', "/tmp");
+    const other = await client.submit("other", CWD);
+    const t = await client.submit('x @echo {"approval":"npm test"}', CWD);
     let approvalId = "";
     await client.watch(t.id, async (ev) => {
       if (ev.type === "approval_request") {

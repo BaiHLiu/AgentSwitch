@@ -1,0 +1,4 @@
+# setuptools, which builds the secret-gate wheel during build-runtime.sh (no build isolation, never in the runtime).
+# The same pure-Python wheel and hash as packages/mac-app/scripts/python-build-requirements.txt.
+setuptools==84.0.0 \
+    --hash=sha256:51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670

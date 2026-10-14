@@ -1,0 +1,171 @@
+# Tests and builds every package on GitHub's runners, with the commands each package's README gives. No job calls a
+# real model or needs a secret: the scripts that do stay in each package's scripts/ and are run by hand (CLAUDE.md).
+# What it builds — the Linux runtimes (started once as a throw-away node) and the Mac app (ad-hoc signed) — is kept
+# as the run's artifacts for a week.
+name: CI
+
+on:
+  push:
+    paths-ignore: ["docs/**", "**/*.md"]
+  pull_request:
+    paths-ignore: ["docs/**", "**/*.md"]
+  workflow_dispatch:
+
+# A newer push to the same branch or pull request replaces a run still going; main's runs all finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  daemon:
+    name: daemon · typecheck, vitest, build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: packages/daemon
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: packages/daemon/package-lock.json
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: packages/mac-app/scripts/python-constraints.txt
+      # The contract tests against the real secret-gate CLI run when the package's venv is there.
+      - name: secret-gate venv
+        working-directory: packages/secret-gate
+        run: python -m venv .venv && .venv/bin/pip install --quiet -c ../mac-app/scripts/python-constraints.txt -e '.[dev]'
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  secret-gate:
+    name: secret-gate · pytest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: packages/secret-gate
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: packages/mac-app/scripts/python-constraints.txt
+      # The tested set of secret-gate's dependencies (the Mac app bundles the same versions).
+      - run: python -m venv .venv && .venv/bin/pip install --quiet -c ../mac-app/scripts/python-constraints.txt -e '.[dev]'
+      - run: .venv/bin/pytest
+
+  linux-runtime:
+    name: Linux runtime · ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, os: ubuntu-24.04 }
+          - { arch: aarch64, os: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      # The pinned Node and Python tarballs (checked against runtime-pins.sh on every build) and the wheels.
+      - uses: actions/cache@v6
+        with:
+          path: packages/linux/.build-cache
+          key: linux-runtime-${{ matrix.arch }}-${{ hashFiles('packages/linux/scripts/runtime-pins.sh', 'packages/linux/scripts/python-*.txt') }}
+      - name: build-runtime.sh
+        run: packages/linux/scripts/build-runtime.sh "$RUNNER_TEMP/runtime"
+      - name: smoke.sh (keeper, gate and daemon in a throw-away home)
+        run: packages/linux/scripts/smoke.sh "$RUNNER_TEMP/runtime"
+      - name: pack
+        run: tar -C "$RUNNER_TEMP" -czf "$RUNNER_TEMP/agentswitch-runtime-linux-${{ matrix.arch }}.tar.gz" runtime
+      - uses: actions/upload-artifact@v7
+        with:
+          path: ${{ runner.temp }}/agentswitch-runtime-linux-${{ matrix.arch }}.tar.gz
+          archive: false
+          retention-days: 7
+
+  mac-tests:
+    name: macOS · swift test (mac-app, SwiftTerm patches, secret-gate-ui)
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - run: xcodebuild -version && swift --version
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: packages/mac-app/scripts/python-constraints.txt
+      # The probes against a real gate run when the dev venv is there.
+      - name: secret-gate venv
+        working-directory: packages/secret-gate
+        run: python -m venv .venv && .venv/bin/pip install --quiet -c ../mac-app/scripts/python-constraints.txt -e '.[dev]'
+      - name: mac-app
+        working-directory: packages/mac-app
+        run: swift test
+      - name: SwiftTerm (vendored, its patches)
+        working-directory: packages/mac-app/Vendor/SwiftTerm
+        run: swift test
+      - name: secret-gate-ui
+        working-directory: packages/secret-gate-ui
+        run: swift test
+
+  mac-app:
+    name: macOS · AgentSwitch.app
+    runs-on: macos-26
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: packages/mac-app
+    steps:
+      - uses: actions/checkout@v7
+      - run: xcodebuild -version && brew install xcodegen
+      - uses: actions/cache@v6
+        with:
+          path: packages/mac-app/.build-cache
+          key: mac-runtime-${{ hashFiles('packages/mac-app/scripts/runtime-pins.sh', 'packages/mac-app/scripts/python-*.txt') }}
+      # A home of its own: build-app.sh refuses a bundle carrying "$HOME/", and the wheels it installs (msgpack,
+      # markupsafe, cryptography, …) were built on GitHub's macOS runners, whose home this runner's is too.
+      - name: build-app.sh (ad-hoc signature)
+        run: mkdir -p "$HOME" && scripts/build-app.sh
+        env:
+          SIGN_IDENTITY: "-"
+          HOME: ${{ runner.temp }}/home
+      - name: pack
+        run: ditto -c -k --keepParent build/AgentSwitch.app "$RUNNER_TEMP/AgentSwitch-mac-arm64.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          path: ${{ runner.temp }}/AgentSwitch-mac-arm64.zip
+          archive: false
+          retention-days: 7
+
+  ios-app:
+    name: iOS · AgentSwitchKit, simulator build
+    runs-on: macos-26
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: packages/ios-app
+    steps:
+      - uses: actions/checkout@v7
+      - run: xcodebuild -version && brew install xcodegen
+      - name: AgentSwitchKit
+        run: swift test
+      # `swift test` writes Package.resolved without the app's pins (README); the app builds from the committed one.
+      - run: git checkout -- Package.resolved
+      - name: build-sim.sh
+        run: scripts/build-sim.sh

@@ -177,3 +177,11 @@
 - 去别的节点的连接只在证书指纹与配对时一致之后才交给 HTTP：令牌不会发到别的证书后面。调用方自己出示的 `Authorization`（本机令牌）不转给对方，对方收到的是这个节点的设备令牌。
 - `/nodes/…` 只在本机接口上，远程路由表里没有：配对进来的设备不能借这个节点去用第三个节点。没有跨节点调度，密文不跨节点（每个节点自己的网关和密钥对）。
 - **风险是对称的**：互通的两个节点，一个上面的 agent 越过了上面的底线，就能在另一个上面开终端。只留一个方向、或移除，随时可以在任一边做；移除时会请对方吊销自己这台设备。
+
+## Linux 节点（`packages/linux`、daemon `src/keeper/`，mesh-v0 §4；2026-10-13）
+
+- **凭据网关与登录用户同一个账户**（mesh-v0 §4.5 的“同用户”一档；独立账户那一档还没做）。私钥在 `~/.secret-gate`（0700），挡住 agent 的只有禁读规则——字符串匹配的底线，同一个用户的进程存心要读是读得到的。这是 Mac 在 2026-09-27 装上网关服务之前的状态。服务器上 agent 更常以自动或跳过权限的方式跑，所以独立账户是要补的下一步，不要把现在的样子当成隔离。
+- 网关服务的公开目录在 Linux 上按 `/var/lib/agentswitch/gate-public` 算进禁读名单（daemon `src/executors/protected.ts`），为以后的独立账户留好；同用户一档下那里没有东西。
+- 看护进程（`agentswitch node run`）交给网关和 daemon 的环境是一张白名单（daemon `src/keeper/plan.ts`）：不带代理变量、不带任何密钥，`PATH` 取登录 shell 的；和 Mac 应用的 `ChildEnvironment` 同一个原则。
+- 工作目录与浏览器打开文件的禁区补上 Linux 的凭据位置：`~/.local/share/keyrings`（GNOME 钥匙串）、`~/.local/share/opencode`（OpenCode 的登录与库）、`~/.pki`（NSS 的证书和私钥）；工作目录另禁 `~/.mozilla`。Claude Code 在 Linux 上把登录放在 `~/.claude/.credentials.json`（Mac 上在钥匙串），`~/.claude` 本来就在工作目录禁区里、文件名本来就在浏览器的凭据文件名里。
+- 远程口的来源限制不变（私网、链路本地、100.64/10、IPv6 ULA）。配对载荷里的地址去掉了容器与虚拟机的网卡，不改变谁能连进来。

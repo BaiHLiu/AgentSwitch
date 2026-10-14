@@ -4,7 +4,7 @@
  *  a web address the agent asks the system to open is opened in. */
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -268,6 +268,25 @@ describe("a web address the agent asks the system to open", () => {
     expect(said.code).toBe(1);
     expect(said.err).toContain("was not opened in the profile's browser (409)");
     expect((await run(env.BROWSER!, [link], { ...mine, AGENTSWITCH_TERMINAL_URL: "http://127.0.0.1:1" })).code).toBe(1);
+  });
+
+  it("on Linux it is `xdg-open` too, and hands anything else to the system's own `xdg-open`, not to itself", async () => {
+    const sys = mkdtempSync(join(tmpdir(), "agentswitch-open-sys-"));
+    const said = join(sys, "said");
+    writeFileSync(join(sys, "xdg-open"), `#!/bin/sh\nprintf '%s' "$*" > ${JSON.stringify(said)}\n`, { mode: 0o755 });
+    const dir = mkdtempSync(join(tmpdir(), "agentswitch-open-"));
+    const env = openInProfileBrowser(dir, `${sys}:/usr/bin:/bin`, "linux");
+    const taken = await service(200);
+    const mine = { ...env, AGENTSWITCH_TERMINAL_URL: taken.url, AGENTSWITCH_TERMINAL_ID: "t1", AGENTSWITCH_TERMINAL_HOOK_TOKEN: "hook-token" };
+    expect((await run("/bin/sh", ["-c", `xdg-open "https://claude.ai/login"`], mine)).code).toBe(0);
+    expect(taken.asked.map((a) => JSON.parse(a.body))).toEqual([{ url: "https://claude.ai/login" }]);
+    expect((await run("/bin/sh", ["-c", "xdg-open /home/u/report.pdf"], mine)).code).toBe(0);
+    expect(readFileSync(said, "utf8")).toBe("/home/u/report.pdf");
+    // No opener on the machine (a server): it says so rather than looping.
+    const bare = openInProfileBrowser(mkdtempSync(join(tmpdir(), "agentswitch-open-")), "/nonexistent", "linux");
+    const none = await run(bare.BROWSER!, ["/home/u/report.pdf"], { ...bare });
+    expect(none.code).toBe(1);
+    expect(none.err).toContain("no program here opens");
   });
 
   it("gets there for real: the opener itself, asking the local listener as the service runs it — its guard and its token in front", async () => {

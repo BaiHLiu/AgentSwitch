@@ -21,10 +21,17 @@
  *                               using one (`--both`: and it stops using this one)
  *   --on <node>                 with any daemon-backed command: the same on another node, by its id or name
  *                               (`agentswitch --on studio tasks`)
+ *   node [run | name ["<name>"] | restart]   this node (docs/mesh-v0.md §4): what it is and offers; `run` keeps the gate
+ *                               and the daemon running in the foreground (what the systemd service runs, and the Mac
+ *                               app does on a Mac); `name` names it; `restart` restarts the daemon with node.json
+ *   service install | uninstall | status | start | stop | restart | logs   the systemd user service that runs `node run`
+ *   doctor                      what this node has and lacks: runtime, service, agents and their sign-ins, tools
+ *   console [--open]            a one-time link that signs a browser on this machine into the web console
  */
 
 import { readLocalToken } from "./api/localAuth.js";
 import { NODES_KEY_HEADER, readNodesKey } from "./nodes/book.js";
+import { spawn } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -41,8 +48,15 @@ import { echoRouter } from "./router/routers/echo.js";
 import { opencodeRouter } from "./router/routers/opencode.js";
 import { loadTargets } from "./router/targets.js";
 import { withModelOverlay } from "./router/modelOverlay.js";
+import { doctor } from "./keeper/doctor.js";
+import { layout, readSettings, writeSettings } from "./keeper/plan.js";
+import { qrLines } from "./keeper/qr.js";
+import { homes, runningKeeper, runNode } from "./keeper/run.js";
+import { service } from "./keeper/systemd.js";
 
 const cfg = defaultConfig();
+// A node without the Mac app keeps its ports in node.json (keeper/plan.ts); the commands find its service there too.
+const nodePort = (() => { try { return process.env.AGENTSWITCH_PORT ? null : readSettings(cfg.home).ports?.local ?? null; } catch { return null; } })();
 /** How much of an agent summary, a task and a thread title one output line shows. */
 const SUMMARY_CHARS = 120;
 const TASK_CHARS = 60;
@@ -67,11 +81,13 @@ const { values, positionals } = parseArgs({
     failed: { type: "string" },
     kind: { type: "string", default: "refusal" },
     excerpt: { type: "string", default: "" },
-    server: { type: "string", default: `http://127.0.0.1:${cfg.port}` },
+    server: { type: "string", default: `http://127.0.0.1:${nodePort ?? cfg.port}` },
     camoufox: { type: "string" },
     playwright: { type: "string" },
     prerelease: { type: "boolean", default: false },
     json: { type: "boolean", default: false },
+    qr: { type: "boolean", default: true },
+    open: { type: "boolean", default: false },
     watch: { type: "boolean", default: true },
     refresh: { type: "boolean", default: false },
     allow: { type: "boolean", default: false },
@@ -150,7 +166,7 @@ async function watchInteractive(id: string): Promise<void> {
   }
 }
 
-const USAGE = "usage: serve | engine | task | tasks | show | watch | approve | cancel | handoff | threads | thread | archive | reopen | rmthread | approvals | quota | preview | log | mcp | skills | health | context init | route | reroute | browser-mcp | pair | devices | nodes [add|remove]; --on <node>";
+const USAGE = "usage: serve | engine | task | tasks | show | watch | approve | cancel | handoff | threads | thread | archive | reopen | rmthread | approvals | quota | preview | log | mcp | skills | health | context init | route | reroute | browser-mcp | pair | devices | nodes [add|remove] | node [run|name|restart] | service | doctor | console; --on <node>";
 
 const ago = (ts: number | null): string => {
   if (ts === null) return "never";
@@ -231,10 +247,23 @@ async function main(): Promise<number> {
     case "health": { out(await client.health()); return 0; }
     // docs/mesh-v0.md: who uses this node, and the nodes it uses. Always this node's own service, whatever `--on` says.
     case "pair": {
+      const before = new Set((await here.devices()).map((d) => d.id));
       const p = await here.pairing(!values["one-way"]);
       if (values.json) { out(p); return 0; }
-      console.log(`code   ${p.code}   (once, for ${Math.round((p.expiresAt - Date.now()) / 60_000)} minutes)\nlink   ${p.link}\n\nOn a phone: scan the code in the app, or paste the link. On another node: agentswitch nodes add '<link>'${values["one-way"] ? "\nOne way: that node will use this one; this one will not use it." : ""}`);
-      return 0;
+      if (values.qr && process.stdout.isTTY) console.log(`${qrLines(p.link).join("\n")}\n`);
+      const info = await here.remoteInfo().catch(() => null);
+      const fp = info?.fingerprint ? info.fingerprint.match(/.{1,4}/g)!.join(" ") : null;
+      console.log(`code   ${p.code}   (once, for ${Math.round((p.expiresAt - Date.now()) / 60_000)} minutes)\nlink   ${p.link}${info ? `\nname   ${info.name}  port ${info.port}\naddr   ${[...info.lan, ...info.tailnet].join("  ") || "none found"}` : ""}${fp ? `\nfp     ${fp}` : ""}\n\nOn a phone: scan the code in the app, or paste the link. On another node: agentswitch nodes add '<link>'${values["one-way"] ? "\nOne way: that node will use this one; this one will not use it." : ""}`);
+      if (!process.stdout.isTTY) return 0;
+      // Who redeems it (Ctrl-C stops waiting; the code stays good until it expires).
+      console.log("\nwaiting for a device to pair…");
+      while (Date.now() < p.expiresAt) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const added = (await here.devices()).filter((d) => !before.has(d.id));
+        if (added.length) { for (const d of added) console.log(`paired: ${d.name} (${d.platform}, ${d.id})`); return 0; }
+      }
+      console.log("the code expired");
+      return 1;
     }
     case "devices": {
       if (a1 === "revoke") { if (!a2) throw new Error("devices revoke <id>"); out(await here.revokeDevice(a2)); return 0; }
@@ -299,6 +328,35 @@ async function main(): Promise<number> {
         }
         await new Promise((r) => setTimeout(r, 1000));
       }
+    }
+    case "node": {
+      const { home, runDir } = homes();
+      const hup = (): boolean => { const pid = runningKeeper(runDir); if (!pid) return false; process.kill(pid, "SIGHUP"); return true; };
+      if (a1 === "run") return runNode();
+      if (a1 === "restart") { if (!hup()) throw new Error("no keeper runs for this home (agentswitch service start)"); console.log("restarting the daemon"); return 0; }
+      if (a1 === "name") {
+        if (a2 === undefined) { console.log(readSettings(home).name ?? "(the host name)"); return 0; }
+        const settings = readSettings(home);
+        writeSettings(home, a2.trim() ? { ...settings, name: a2.trim() } : Object.fromEntries(Object.entries(settings).filter(([k]) => k !== "name")));
+        console.log(`named ${a2.trim() || "after the host"}${hup() ? "; restarting the daemon" : "; takes effect when the service starts"}`);
+        return 0;
+      }
+      if (a1) throw new Error('node [run | name ["<name>"] | restart]');
+      const [self, info] = await Promise.all([here.node(), here.remoteInfo()]);
+      if (values.json) { out({ ...self, remote: info, settings: readSettings(home) }); return 0; }
+      console.log(`name   ${self.name} (${self.kind}, ${self.version})\nhome   ${self.home}\nhas    ${self.has.join(" ")}`);
+      if (info.enabled) console.log(`port   ${info.port}\nfp     ${info.fingerprint!.match(/.{1,4}/g)!.join(" ")}\nlan    ${info.lan.join("  ") || "-"}\noverlay ${info.tailnet.join("  ") || "-"}\nonline ${info.onlineDevices} device(s)`);
+      else console.log("remote access is off (node.json \"remote\": false)");
+      return 0;
+    }
+    case "service": return service(a1, layout());
+    case "doctor": return doctor();
+    case "console": {
+      const { path } = await here.consoleLink();
+      const url = `${values.server}${path}`;
+      console.log(`${url}\n(one use, within a minute; from another machine: ssh -L ${new URL(values.server).port}:127.0.0.1:${new URL(values.server).port} <this host> first)`);
+      if (values.open) spawn("xdg-open", [url], { stdio: "ignore", detached: true }).unref();
+      return 0;
     }
     case "browser-mcp": {
       const { bridgeArgs, runBridge } = await import("./browser/bridgeClient.js");

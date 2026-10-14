@@ -13,6 +13,7 @@ import { QuotaService } from "../src/quota/index.js";
 import { createRemoteApp, PAIR_FAILED, UNAUTHORIZED } from "../src/remote/app.js";
 import { Presence, registerDevice } from "../src/remote/devices.js";
 import { PAIR_LINK_PREFIX, PAIR_RATE_LIMIT, PairingDesk, PAIRING_TTL_MS, type PairPayload } from "../src/remote/pairing.js";
+import { RemoteRequestLog, STREAMED_WINDOW_MS } from "../src/remote/requestLog.js";
 import { remoteRuntime, type RemoteRuntime } from "../src/remote/runtime.js";
 import { listenRemote, type RemoteListener } from "../src/remote/server.js";
 import { ensureTls, SYSTEM_OPENSSL, type TlsMaterial } from "../src/remote/tls.js";
@@ -386,6 +387,39 @@ describe("remote app, in process", () => {
     expect((await app.request("/tasks", { headers: auth }, env)).status).toBe(200);
     expect(lines).toEqual([`remote: device ${device.id} PUT /context → 200`, `remote: device ${device.id} DELETE /tasks/nope → 404`]);
     d.close();
+  });
+
+  it("typing, scrolling and resizing are a line a minute per device and target, with how many more; failures each", () => {
+    const lines: string[] = [];
+    const due: { fn: () => void; ms: number }[] = [];
+    const log = new RemoteRequestLog((l) => lines.push(l), (fn, ms) => due.push({ fn, ms }));
+    for (let i = 0; i < 40; i++) log.write("dev1", "POST", "/terminals/t1/write", 200);
+    log.write("dev1", "POST", "/terminals/t1/resize", 200);
+    log.write("dev2", "POST", "/terminals/t1/write", 200);
+    log.write("dev1", "POST", "/profile-browser/claude-code:a/browser/tabs/b1/input", 200);
+    log.write("dev1", "POST", "/browser/tabs/b1/input", 200);
+    log.write("dev1", "POST", "/browser/tabs/b1/input", 200);
+    log.write("dev1", "POST", "/terminals/t1/write", 404);
+    log.write("dev1", "POST", "/terminals/t1/input", 200);
+    log.write("dev1", "POST", "/terminals/t1/input", 200);
+    log.write("dev1", "DELETE", "/terminals/t1", 200);
+    expect(lines).toEqual([
+      "remote: device dev1 POST /terminals/t1/write → 200",
+      "remote: device dev1 POST /terminals/t1/resize → 200",
+      "remote: device dev2 POST /terminals/t1/write → 200",
+      "remote: device dev1 POST /profile-browser/claude-code:a/browser/tabs/b1/input → 200",
+      "remote: device dev1 POST /browser/tabs/b1/input → 200",
+      "remote: device dev1 POST /terminals/t1/write → 404",
+      "remote: device dev1 POST /terminals/t1/input → 200",
+      "remote: device dev1 POST /terminals/t1/input → 200",
+      "remote: device dev1 DELETE /terminals/t1 → 200",
+    ]);
+    expect(due.map((d) => d.ms)).toEqual(Array(5).fill(STREAMED_WINDOW_MS));
+    lines.length = 0;
+    for (const d of due.splice(0)) d.fn();
+    expect(lines).toEqual(["remote: device dev1 POST /terminals/t1/write ×39 more in that minute", "remote: device dev1 POST /browser/tabs/b1/input ×1 more in that minute"]);
+    log.write("dev1", "POST", "/terminals/t1/write", 200);
+    expect(lines.at(-1)).toBe("remote: device dev1 POST /terminals/t1/write → 200");
   });
 
   it("with remote access off the local routes say so and nothing can pair", async () => {

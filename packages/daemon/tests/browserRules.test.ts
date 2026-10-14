@@ -109,7 +109,9 @@ describe("files a person may open", () => {
 
   it("refuses the credential folders: dot-folders anywhere, the others under home, whatever the case", () => {
     for (const p of [join(home, ".ssh", "config"), join(home, ".ssh"), join(home, ".aws", "credentials-x"), join(home, ".gnupg", "pubring.kbx"), join(home, ".config", "gh", "hosts.yml"),
-      join(home, "Library", "Keychains", "login.keychain-db"), join(home, ".SSH", "config"), "/Volumes/backup/.ssh/known_hosts", join(home, ".kube", "config")]) {
+      join(home, "Library", "Keychains", "login.keychain-db"), join(home, ".SSH", "config"), "/Volumes/backup/.ssh/known_hosts", join(home, ".kube", "config"),
+      // Linux (mesh-v0 §4.4): the keyring, NSS's keys, OpenCode's database
+      join(home, ".local", "share", "keyrings", "login.keyring"), join(home, ".pki", "nssdb", "key4.db"), join(home, ".local", "share", "opencode", "opencode.db")]) {
       const err = refusal(() => checkLocalFile(p, rules));
       expect(err.code, p).toBe("forbidden");
       expect(err.message, p).toMatch(/位于凭据目录中|属于凭据文件/);
@@ -135,7 +137,7 @@ describe("files a person may open", () => {
   });
 
   // 2026-10-02 review: `realpath` keeps the data volume's spelling, so `/System/Volumes/Data<home>/…` was opened.
-  it("the data volume's spelling and any letter case lead to the same refusals (real files on this Mac)", () => {
+  it.skipIf(process.platform !== "darwin")("the data volume's spelling and any letter case lead to the same refusals (real files on this Mac)", () => {
     const data = (p: string) => `/System/Volumes/Data${p}`;
     expect(existsSync(data(join(asHome, "local-token")))).toBe(true);
     for (const p of [data(join(asHome, "local-token")), data(join(asHome, "browser-profiles", "main", "Cookies")), data(join(gateHome, "keys.json")),

@@ -8,8 +8,9 @@ import { codexHookArgs } from "./codexHooks.js";
 import { CodexCompanion } from "./codexTerminal.js";
 import { CODEX_DAYBREAK_FEATURE } from "../harness/codexFeatures.js";
 import { OpenCodeCompanion } from "./opencodeTerminal.js";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { which } from "../util/which.js";
 import { fileURLToPath } from "node:url";
 import { withoutCredentialRepair } from "../executors/gate.js";
 import { protectedDeny } from "../executors/opencodeShared.js";
@@ -149,13 +150,16 @@ const shq = (s: string): string => `"${s.replace(/(["\\$`])/g, "\\$1")}"`;
  *  the protected paths, also its own deny rules for them (`//` = from the filesystem root): they hold for the built-in
  *  file tools even when the service does not answer the hook (which then lets the call through). */
 /** `open` and `BROWSER` for a terminal whose profile has a browser of its own: a small program put first on the PATH
- *  under the name `open` (what Claude Code calls to show a page) and named as `BROWSER` (what other tools call). Given
- *  a web address and nothing else to do with it, it asks this service to open the address in the profile's browser;
- *  anything else it hands to the system's own `open`. If the service does not take the address it fails, saying so —
- *  it does not fall back to the user's browser. */
-export function openInProfileBrowser(dir: string, path: string): Record<string, string> {
+ *  under the name `open` (what Claude Code calls to show a page on macOS; `xdg-open` elsewhere) and named as `BROWSER`
+ *  (what other tools call). Given a web address and nothing else to do with it, it asks this service to open the address
+ *  in the profile's browser; anything else it hands to the system's own opener. If the service does not take the
+ *  address it fails, saying so — it does not fall back to the user's browser. */
+export function openInProfileBrowser(dir: string, path: string, platform: NodeJS.Platform = process.platform): Record<string, string> {
   const bin = join(dir, "bin"), file = join(bin, "open");
   mkdirSync(bin, { recursive: true, mode: 0o700 });
+  // The system's own opener, found before this folder joins the PATH (the shim would otherwise call itself).
+  const system = platform === "darwin" ? "/usr/bin/open" : which("xdg-open", path);
+  const other = system ? `exec ${shq(system)} "$@"` : `echo "AgentSwitch: no program here opens $*." >&2; exit 1`;
   writeFileSync(file, `#!/bin/sh
 # AgentSwitch: a web address is opened in this terminal's profile's own browser (docs/profiles-v0.md §5.1).
 url=""
@@ -163,20 +167,21 @@ for a in "$@"; do
   case "$a" in
     http://*|https://*) url="$a" ;;
     -*) ;;
-    *) exec /usr/bin/open "$@" ;;
+    *) ${other} ;;
   esac
 done
-[ -n "$url" ] || exec /usr/bin/open "$@"
-# As JSON: the service's local listener takes no other body (api/localGuard.ts). Asked of this Mac itself, whatever
+[ -n "$url" ] || { ${other} ; }
+# As JSON: the service's local listener takes no other body (api/localGuard.ts). Asked of this machine itself, whatever
 # proxy this terminal has.
 esc=$(printf '%s' "$url" | /usr/bin/sed -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g')
 code=$(/usr/bin/curl -s -m 40 --noproxy '*' -o /dev/null -w '%{http_code}' -X POST "$AGENTSWITCH_TERMINAL_URL/terminals/open" \\
   -H "content-type: application/json" -H "x-agentswitch-terminal: $AGENTSWITCH_TERMINAL_ID" -H "authorization: Bearer $AGENTSWITCH_TERMINAL_HOOK_TOKEN" \\
   --data-binary "{\\"url\\":\\"$esc\\"}")
 [ "$code" = "200" ] && exit 0
-echo "AgentSwitch: this address was not opened in the profile's browser ($code). Open it yourself in a browser that leaves this Mac the same way." >&2
+echo "AgentSwitch: this address was not opened in the profile's browser ($code). Open it yourself in a browser that leaves this machine the same way." >&2
 exit 1
 `, { mode: 0o755 });
+  if (platform !== "darwin") { rmSync(join(bin, "xdg-open"), { force: true }); symlinkSync("open", join(bin, "xdg-open")); }
   return { PATH: `${bin}:${path}`, BROWSER: file };
 }
 

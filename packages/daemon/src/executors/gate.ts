@@ -1,6 +1,7 @@
 /** secret-gate wiring shared by the real executors: proxy env, MCP entries, per-harness config text.
  *  Mirrors packages/secret-gate/scripts/*_browser_demo.sh, which are the verified reference. */
 
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { connect, type Socket } from "node:net";
 import { join, resolve } from "node:path";
@@ -18,6 +19,9 @@ export type GateOptions = {
   readonly proxy: string;          // http://127.0.0.1:8080
   readonly playwrightVersion: string;
   readonly allowedOrigins: readonly string[];
+  /** The browser Playwright MCP starts when it is not Google Chrome where Playwright looks for it: off macOS without
+   *  /opt/google/chrome, a Chromium on the PATH (mesh-v0 §4.4). Absent: Playwright's own choice, Chrome. */
+  readonly browserExecutable?: string;
 };
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -52,7 +56,22 @@ export function defaultGate(env: NodeJS.ProcessEnv = process.env, venv: string =
     proxy: env.SECRET_GATE_PROXY ?? "http://127.0.0.1:8080",
     playwrightVersion: env.PW_MCP_VERSION ?? "0.0.82",
     allowedOrigins: (env.AGENTSWITCH_BROWSER_ORIGINS ?? "").split(";").filter(Boolean),
+    ...withBrowser(chromeExecutable(env)),
   };
+}
+
+const withBrowser = (path: string | null) => path ? { browserExecutable: path } : {};
+
+/** Google Chrome where Playwright's `chrome` channel looks on Linux, else a Chromium on the PATH; null on macOS, where
+ *  the channel finds Chrome itself, and when there is neither. `AGENTSWITCH_CHROME` names one outright. */
+export function chromeExecutable(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, exists: (p: string) => boolean = existsSync): string | null {
+  if (env.AGENTSWITCH_CHROME) return env.AGENTSWITCH_CHROME;
+  if (platform === "darwin" || exists("/opt/google/chrome/chrome")) return null;
+  for (const name of ["chromium", "chromium-browser", "google-chrome-stable", "google-chrome"]) {
+    const found = which(name, env.PATH);
+    if (found) return found;
+  }
+  return null;
 }
 
 export const NO_PROXY_HOSTS = "127.0.0.1,localhost,api.anthropic.com,.anthropic.com,claude.ai,.claude.ai,api.openai.com,chatgpt.com,.openai.com,api.deepseek.com,.deepseek.com,.statsig.com,.sentry.io";
@@ -159,10 +178,25 @@ export function mcpServerEnv(gate: GateOptions | null | undefined, env: NodeJS.P
   return { ...inheritedEnv(env), ...gateEnv(gate) };
 }
 
+const playwrightPackage = (gate: GateOptions): string => `@playwright/mcp@${gate.playwrightVersion}`;
+
 function playwrightArgs(gate: GateOptions, profile: string): string[] {
-  return ["browser", "--", "npx", "-y", "--prefer-offline", `@playwright/mcp@${gate.playwrightVersion}`,
+  return ["browser", "--", "npx", "-y", "--prefer-offline", playwrightPackage(gate),
     `--proxy-server=${gate.proxy}`, "--ignore-https-errors", `--user-data-dir=${profile}`,
+    ...(gate.browserExecutable ? [`--executable-path=${gate.browserExecutable}`] : []),
     ...(gate.allowedOrigins.length ? [`--allowed-origins=${gate.allowedOrigins.join(";")}`] : [])];
+}
+
+/** At start-up, in the background: the browser MCP fetched once without `--prefer-offline`. The executors run it with
+ *  that flag (a browser step starts without asking the registry), which also trusts npm's cached list of a package's
+ *  versions; a list cached before the pinned version's Playwright was published fails every browser step with
+ *  ETARGET until something refreshes it (seen on a Linux node whose npm cache was older, mesh-v0 §12). */
+export function warmBrowserMcp(gate: GateOptions | null, run: (cmd: string, args: string[], done: (err: Error | null) => void) => void =
+  (cmd, args, done) => { execFile(cmd, args, { timeout: 180_000 }, (err) => done(err)); }): void {
+  if (!gate) return;
+  run("npx", ["-y", playwrightPackage(gate), "--version"], (err) => {
+    if (err) console.error(`browser MCP: ${playwrightPackage(gate)} could not be fetched (${err.message.split("\n")[0]}); browser steps may fail`);
+  });
 }
 
 /** MCP servers in Claude Code / Agent SDK shape. */
