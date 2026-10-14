@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } fr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
+import { createServer as createTcpServer, type AddressInfo, type Socket } from "node:net";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { mountBrowserIdentity } from "../src/api/browserIdentity.js";
@@ -218,6 +218,36 @@ describe("a proxy's exit (docs/browser-v0.md §7.2 第 5 条)", () => {
     } finally {
       await forwarder.stop();
       target.close();
+    }
+  });
+});
+
+describe("an https lookup", () => {
+  // User, 2026-10-14 (a profile's Exit named this Mac's own address): the lookup's TLS went straight to the lookup —
+  // `agent: false` made Node take a fresh agent of its own and pass over the tunnel it was handed.
+  it("speaks inside the tunnel the proxy opened, never straight to the lookup", async () => {
+    const seen: string[] = [];
+    const proxy = createTcpServer((socket: Socket) => {
+      let head = "";
+      socket.on("data", (d: Buffer) => {
+        if (!head.includes("\r\n\r\n")) {
+          head += d.toString("latin1");
+          if (head.includes("\r\n\r\n")) { seen.push(head.split("\r\n")[0]!); socket.write("HTTP/1.1 200 Connection established\r\n\r\n"); }
+          return;
+        }
+        seen.push(d[0] === 0x16 ? "tls hello" : "other");
+        socket.destroy();
+      });
+      socket.on("error", () => undefined);
+    });
+    await new Promise<void>((r) => proxy.listen(0, "127.0.0.1", r));
+    try {
+      const via = { server: `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`, username: "u", password: "p" };
+      // A name that resolves nowhere: only the tunnel can carry it.
+      await expect(exitProbe({ forwarder: async () => via, url: "https://lookup.invalid/json", timeoutMs: 3_000 })()).rejects.toThrow();
+      expect(seen).toEqual(["CONNECT lookup.invalid:443 HTTP/1.1", "tls hello"]);
+    } finally {
+      proxy.close();
     }
   });
 });

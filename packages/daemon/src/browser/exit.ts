@@ -72,7 +72,9 @@ function get(url: URL, via: ForwarderAddress, timeoutMs: number): Promise<string
     tunnel.on("error", reject).on("timeout", () => tunnel.destroy(new Error("the lookup timed out")));
     tunnel.on("connect", (res, socket) => {
       if (res.statusCode !== 200) { socket.destroy(); reject(new Error(`the proxy answered ${res.statusCode}`)); return; }
-      const req = httpsRequest({ host: url.hostname, port, method: "GET", path: `${url.pathname}${url.search}`, headers, timeout: timeoutMs, agent: false,
+      // No `agent` at all: with `agent: false` Node makes a fresh agent, which opens its own connection straight to the
+      // lookup and passes over `createConnection` — the exit named was this Mac's own (user, 2026-10-14).
+      const req = httpsRequest({ host: url.hostname, port, method: "GET", path: `${url.pathname}${url.search}`, headers: { ...headers, connection: "close" }, timeout: timeoutMs,
         createConnection: () => tlsConnect({ socket, servername: url.hostname }) }, (r) => done(read(r).finally(() => socket.destroy())));
       req.on("error", (err) => { socket.destroy(); reject(err); }).on("timeout", () => req.destroy(new Error("the lookup timed out"))).end();
     });
