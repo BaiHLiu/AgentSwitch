@@ -103,4 +103,9 @@ that is not a Mac.
 ```bash
 packages/linux/scripts/build-runtime.sh <out>   # a runtime in <out>, no install
 packages/linux/scripts/lock-python.sh           # regenerate python-requirements-<arch>.txt (needs uv)
+packages/linux/scripts/smoke.sh <runtime>       # start it once as a throw-away node (own home, ports 24711–24714),
+                                                # check that the daemon answers and doctor finds keeper, gate, daemon
 ```
+
+CI (`.github/workflows/ci.yml`) builds both architectures' runtimes, runs `smoke.sh` on each and keeps them as the
+run's artifacts.

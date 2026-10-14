@@ -161,6 +161,11 @@ cd packages/ios-app     && swift test                # AgentSwitchKit
 cd packages/secret-gate && .venv/bin/pytest
 ```
 
+CI (`.github/workflows/ci.yml`) runs these on every push and pull request, besides the vendored SwiftTerm's tests and
+`secret-gate-ui`'s, and builds what ships: the Linux runtimes (each started once as a throw-away node), the Mac app
+(ad-hoc signed) and the iPhone app for the simulator. The runtimes and the Mac app are kept as the run's artifacts for
+a week.
+
 The screens can be looked at without a Mac service or a phone: the Mac app draws any page to a picture
 (`-designPreview <dir>`), the iPhone app opens on sample data (`-uiDemo YES -uiDemoScreen <name>`), and
 `docs/design/index.html` lists the demo pages the screens are built from.
