@@ -82,7 +82,8 @@ describe("keeping a process running", () => {
     const first = child.pid!;
     await new Promise((r) => setTimeout(r, 300));
     expect(lines).toContain("[t] up");
-    expect(startTime(first)).not.toBeNull();
+    // The start time comes from /proc: Linux only, where the keeper runs; elsewhere there is none to read.
+    if (process.platform === "linux") expect(startTime(first)).not.toBeNull();
     process.kill(first, "SIGKILL");
     for (let i = 0; i < 40 && (!child.running || child.pid === first); i++) await new Promise((r) => setTimeout(r, 100));
     expect(child.pid).not.toBe(first);
