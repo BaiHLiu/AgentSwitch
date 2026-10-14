@@ -493,12 +493,17 @@ const NOTICE_LOOKS_MS = [500, 1500];
 
 /** The lines `after` has that `before` had not, above the agent's input line: what a command printed. Each without
  *  its bullet; rules, the echo of what was typed and blank lines left out. */
+/** Claude Code's own rows while it works or just after: its spinner line (`· Waddling…`, `✻ Crunched for 12s · done
+ *  11:30 PM`) and the tip under it. They change on their own; none of them is what a command said (2026-10-14). */
+const SPINNER_ROW = /^[·✢✳✶✻✽*]\s+\S/u;
+const TIP_ROW = /^\s*(?:⎿\s*)?Tip:\s/u;
+
 export function printedSince(before: readonly string[], after: readonly string[]): string {
   const had = new Set(before.map((l) => l.trim()));
   let end = after.length;
   for (let i = after.length - 1; i >= 0; i--) if (/^\s*(?:[│|]\s*)?[›❯>](?:\s|$)/u.test(after[i]!)) { end = i; break; }
   return after.slice(0, end)
-    .filter((l) => l.trim() && !had.has(l.trim()) && !/^[\s─━╭╮╰╯│|]+$/u.test(l) && !/^\s*[›❯>]\s/u.test(l))
+    .filter((l) => l.trim() && !had.has(l.trim()) && !/^[\s─━╭╮╰╯│|]+$/u.test(l) && !/^\s*[›❯>]\s/u.test(l) && !SPINNER_ROW.test(l) && !TIP_ROW.test(l))
     .map((l) => l.replace(/^\s*(?:[•⏺●]|⎿)\s*/u, "").trim())
     .filter(Boolean).slice(-6).join("\n").slice(0, 600);
 }
@@ -1358,7 +1363,11 @@ export class TerminalHost {
   private reported(s: Session, sessionId: string): void {
     // A profile that had never run had no device of its own when the terminal started; it has one by now.
     s.device ??= this.device(s);
-    if (s.agentSessionId !== sessionId) this.opts.onSession?.(s.harness, sessionId, s.profile?.id ?? null);
+    if (s.agentSessionId !== sessionId) {
+      this.opts.onSession?.(s.harness, sessionId, s.profile?.id ?? null);
+      // What its screen said to commands belongs with the record it was said beside, not a new one (`/clear`).
+      if (s.agentSessionId && s.notices.length) { s.notices = []; s.emit({ type: "notices", notices: [] }); }
+    }
     s.agentSessionId = sessionId;
     if (!s.ownSessionId && (!s.resumedFrom || s.forked) && sessionId !== s.resumedFrom) s.ownSessionId = sessionId;
   }
@@ -1701,12 +1710,15 @@ export class TerminalHost {
    *  moments is told to the record's screens as a notice. Call before the command is typed. */
   commanded(id: string): void {
     const s = this.need(id);
-    if (s.status === "exited") return;
-    const before = this.screenTail(id, s.rows);
+    // At work its screen keeps changing — the answer it writes, its spinner, what you queued — and a command typed then
+    // waits for the turn's end: what is new on it is not the command's answer (2026-10-14, user: a `/clear` sent while
+    // Claude Code worked left the end of its last answer and its spinner in the record).
+    if (s.status === "exited" || s.status === "working") return;
+    const before = this.screenTail(id, s.rows), record = s.agentSessionId;
     let told = "";
     for (const ms of NOTICE_LOOKS_MS) {
       setTimeout(() => {
-        if (!this.sessions.has(id) || s.status === "exited") return;
+        if (!this.sessions.has(id) || s.status === "exited" || s.agentSessionId !== record) return;
         const after = this.screenTail(id, s.rows);
         // A list it opened is offered as one (`choices`), not said as a notice.
         const text = choicesOnScreen(after) ? "" : printedSince(before, after);

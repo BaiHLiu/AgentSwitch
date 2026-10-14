@@ -615,6 +615,39 @@ describe("terminal host", () => {
     expect(events.filter((e) => e.type === "notices")).toHaveLength(1);
   });
 
+  it("leaves Claude Code's spinner and tip rows out of what a command printed (2026-10-14)", () => {
+    const before = ["⏺ 2. 换个浏览器再试", "", "❯ ", "────"];
+    const after = ["⏺ 2. 换个浏览器再试", "  3. 还是不行的话，点 contact support", "", "✻ Crunched for 12s · done 11:30 PM", "", "· Waddling…",
+      "  ⎿  Tip: Use Plan Mode to prepare for a complex request", "", "❯ ", "────"];
+    expect(printedSince(before, after)).toBe("3. 还是不行的话，点 contact support");
+  });
+
+  it("reads nothing for a command sent while the agent works, and lets its notices go with the record they were said beside (2026-10-14)", async () => {
+    const host = new TerminalHost({ launcher: fakeLauncher(() => "http://127.0.0.1:9", true) });
+    closers.push(() => host.closeAll());
+    const info = await host.spawn({ harness: "codex", cwd: tmpdir() });
+    const events: TerminalEvent[] = [];
+    host.subscribe(info.id, null, (e) => events.push(e));
+    await until(() => host.get(info.id)!.title === "fake agent");
+    const token = (host as unknown as { sessions: Map<string, { hookToken: string }> }).sessions.get(info.id)!.hookToken;
+    await host.hook(info.id, token, { event: "SessionStart", payload: { session_id: "th1" } });
+    await new Promise((r) => setTimeout(r, 200));
+    host.commanded(info.id);
+    host.write(info.id, "/daybreak\r");
+    await until(() => host.get(info.id)!.notices.length === 1, 4000);
+    // A new record (`/clear`): the notice went with the old one.
+    await host.hook(info.id, token, { event: "SessionStart", payload: { session_id: "th2" } });
+    expect(host.get(info.id)!.notices).toEqual([]);
+    expect(events.filter((e) => e.type === "notices").pop()).toEqual({ type: "notices", notices: [] });
+    // At work: nothing is read.
+    await host.hook(info.id, token, { event: "UserPromptSubmit", payload: {} });
+    expect(host.get(info.id)!.status).toBe("working");
+    host.commanded(info.id);
+    host.write(info.id, "/daybreak\r");
+    await new Promise((r) => setTimeout(r, 1800));
+    expect(host.get(info.id)!.notices).toEqual([]);
+  });
+
   it("reads an agent's own list of commands off its screen, and whether its input is empty (2026-10-08)", () => {
     // Codex 0.162's own snapshot of the list, above its input; Claude Code's, below it.
     expect(commandRows(["› /model     choose what model and reasoning effort to use", "  /memories  configure memory use and generation", "  /mcp       list MCP tools; use /mcp verbose or /mcp login <name>", "", "› /m", "", "  gpt-test default · /tmp/project"]))

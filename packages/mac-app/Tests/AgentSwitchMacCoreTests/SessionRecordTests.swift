@@ -434,4 +434,12 @@ final class SessionRecordTests: XCTestCase {
         XCTAssertFalse(short.laidOut(end: 420, length: 420))
         XCTAssertTrue(short.atEnd)
     }
+
+    func testANoticeGoesWhereItsTimePutsItFirstWhenOlderThanAll() {
+        let items = [RecordItem(id: "u", kind: .user, at: 2_000, text: "自托管 chromium 吧"), RecordItem(id: "a", kind: .answer, at: 3_000)]
+        let notice = { (at: Int64) in ScreenNotice(id: "n\(at)", text: "Set model", at: at) }
+        XCTAssertEqual(SessionRecord.withNotices(items: items, notices: [notice(2_500)]).map(\.id), ["u", "notice-n2500", "a"])
+        XCTAssertEqual(SessionRecord.withNotices(items: items, notices: [notice(1_000)]).map(\.id), ["notice-n1000", "u", "a"])
+        XCTAssertEqual(SessionRecord.withNotices(items: items, notices: [notice(9_000)]).map(\.id), ["u", "a", "notice-n9000"])
+    }
 }

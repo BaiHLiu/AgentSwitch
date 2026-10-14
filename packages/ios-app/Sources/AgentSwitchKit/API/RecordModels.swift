@@ -74,8 +74,9 @@ public struct ScreenNotice: Decodable, Hashable, Sendable {
         var out = items
         for notice in notices {
             let note = RecordItem(id: "notice-\(notice.id)", kind: .note, at: notice.at, text: notice.text)
-            let index = out.lastIndex { $0.at <= notice.at }.map { $0 + 1 } ?? (out.isEmpty ? 0 : out.count)
-            out.insert(note, at: min(index, out.count))
+            // Older than all of it (a record begun after it, as by `/clear`): first, not last (2026-10-14).
+            let index = out.lastIndex { $0.at <= notice.at }.map { $0 + 1 } ?? 0
+            out.insert(note, at: index)
         }
         return out
     }
