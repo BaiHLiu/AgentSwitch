@@ -191,6 +191,8 @@ export type LaunchRequest = {
   /** Its profile pays by a key (docs/profiles-v0.md §3.6): the agent asks this service for the key when it needs it
    *  (hookClient.ts `key`), and is told here where to send it and the model to start on when none is chosen. */
   readonly api?: { readonly name: string; readonly baseUrl?: string; readonly model?: string };
+  /** Its profile has Claude Code's telemetry off (docs/profiles-v0.md §3.7): `DISABLE_TELEMETRY=1`. */
+  readonly telemetryOff?: true;
   readonly hookToken: string;
 };
 export type LaunchPlan = { readonly file: string; readonly args: readonly string[]; readonly env: Record<string, string>; readonly hooks: boolean; readonly companion?: Companion };
@@ -851,13 +853,13 @@ export class TerminalHost {
 
   /** Starts an agent. The terminal is listed from the moment it is made (a second resume of the same session finds it),
    *  while a companion starts; the program follows. */
-  async spawn(req: { harness: TerminalHarness; cwd: string; model?: string; effort?: string; resume?: string; fork?: boolean; name?: string; mode?: PermissionMode; allowBypass?: boolean; cols?: number; rows?: number; profile?: { id: string; name: string; /** Absent: it runs in the Mac's own folder. */ home?: string; proxy?: string; exit?: { ip: string; place: string | null }; browserKey?: string; color?: string; api?: { baseUrl?: string; model?: string } }; firstInput?: string }): Promise<TerminalInfo> {
+  async spawn(req: { harness: TerminalHarness; cwd: string; model?: string; effort?: string; resume?: string; fork?: boolean; name?: string; mode?: PermissionMode; allowBypass?: boolean; cols?: number; rows?: number; profile?: { id: string; name: string; /** Absent: it runs in the Mac's own folder. */ home?: string; proxy?: string; exit?: { ip: string; place: string | null }; browserKey?: string; color?: string; api?: { baseUrl?: string; model?: string }; telemetryOff?: true }; firstInput?: string }): Promise<TerminalInfo> {
     if (!this.helperChecked) { ensureSpawnHelper(); this.helperChecked = true; }
     const id = randomUUID().slice(0, 8);
     const hookToken = randomBytes(24).toString("base64url");
     let plan: LaunchPlan;
     try {
-      plan = this.opts.launcher({ id, harness: req.harness, cwd: req.cwd, hookToken, mode: req.mode ?? "manual", ...(req.profile ? { ...(req.profile.home ? { configHome: req.profile.home } : {}), ...(req.profile.proxy ? { proxy: req.profile.proxy } : {}), ...(req.profile.browserKey ? { browserKey: req.profile.browserKey } : {}), ...(req.profile.api ? { api: { name: req.profile.name, ...req.profile.api } } : {}) } : {}), ...(req.firstInput ? { firstInput: req.firstInput } : {}), ...(req.allowBypass ? { allowBypass: true } : {}), ...(req.model ? { model: req.model } : {}), ...(req.effort ? { effort: req.effort } : {}), ...(req.resume ? { resume: req.resume, ...(req.fork ? { fork: true } : {}) } : {}) });
+      plan = this.opts.launcher({ id, harness: req.harness, cwd: req.cwd, hookToken, mode: req.mode ?? "manual", ...(req.profile ? { ...(req.profile.home ? { configHome: req.profile.home } : {}), ...(req.profile.proxy ? { proxy: req.profile.proxy } : {}), ...(req.profile.browserKey ? { browserKey: req.profile.browserKey } : {}), ...(req.profile.api ? { api: { name: req.profile.name, ...req.profile.api } } : {}), ...(req.profile.telemetryOff ? { telemetryOff: true as const } : {}) } : {}), ...(req.firstInput ? { firstInput: req.firstInput } : {}), ...(req.allowBypass ? { allowBypass: true } : {}), ...(req.model ? { model: req.model } : {}), ...(req.effort ? { effort: req.effort } : {}), ...(req.resume ? { resume: req.resume, ...(req.fork ? { fork: true } : {}) } : {}) });
     } catch (err) {
       this.ended(id, true);
       throw new TerminalError("unavailable", (err as Error).message);

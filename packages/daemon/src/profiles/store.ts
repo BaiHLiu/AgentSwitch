@@ -63,13 +63,17 @@ export type Profile = { readonly id: string; readonly name: string; readonly kin
   /** It has a claude.ai session key kept for its own browser (§3.4); the key itself is never told. */
   readonly sessionKey?: true;
   /** The device Claude Code says it is under this profile (§3.5): the `userID` of its own file; absent till it has run. */
-  readonly device?: string };
+  readonly device?: string;
+  /** Claude Code's telemetry is off under it (§3.7: `DISABLE_TELEMETRY`); absent: on, as Claude Code has it. */
+  readonly telemetry?: false };
 export type AgentProfiles = { readonly current: string; readonly profiles: readonly Profile[]; /** More than `Default` can be made for this agent. */ readonly creatable: boolean;
   /** The ways a new profile of this agent can sign in; empty where none can be made. */ readonly kinds: readonly ProfileKind[] };
 
 type Stored = { current?: string; profiles?: { id: string; name: string; kind: ProfileKind; createdAt: number; color?: ProfileColor; proxy?: ProfileProxy; exit?: ProfileExit; api?: ProfileApi;
   /** A claude.ai session key, a ciphertext of the gate's (§3.4), and whether the browser has yet to be given it. */
-  sessionKey?: string; sessionKeyDue?: boolean }[] };
+  sessionKey?: string; sessionKeyDue?: boolean;
+  /** `false`: Claude Code's telemetry is off under it (§3.7). */
+  telemetry?: false }[] };
 type File = { agents?: Partial<Record<ProfileAgent, Stored>> };
 
 export class ProfileError extends Error {
@@ -191,6 +195,17 @@ export class ProfileStore {
   /** `id`'s colour; null for `Default` and for one that is not there. */
   colorOf(agent: ProfileAgent, id: string): ProfileColor | null {
     return this.read().agents?.[agent]?.profiles?.find((p) => p.id === id)?.color ?? null;
+  }
+
+  /** Claude Code's telemetry is off under `id` (§3.7); false for `Default` and for one that is not there. */
+  telemetryOff(agent: ProfileAgent, id: string): boolean {
+    return this.read().agents?.[agent]?.profiles?.find((p) => p.id === id)?.telemetry === false;
+  }
+
+  /** Claude Code's telemetry under `id` from the next terminal on: on (as Claude Code has it) or off. */
+  setTelemetry(agent: ProfileAgent, id: string, on: boolean): void {
+    if (agent !== "claude-code") throw new ProfileError("invalid", "only Claude Code's telemetry can be turned off");
+    this.change(agent, id, ({ telemetry: _was, ...p }) => (on ? p : { ...p, telemetry: false }));
   }
 
   setColor(agent: ProfileAgent, id: string, color: ProfileColor): void {

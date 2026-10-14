@@ -33,18 +33,25 @@ export function mountProfiles(app: Hono<any>, deps: ApiDeps): void {
 
   app.post("/profiles", async (c) => {
     if (remoteCaller(c.env)) return c.json({ error: "profiles are made on the Mac" }, 403);
-    const body = await parseBody(c, z.object({ agent: Agent, name: z.string().min(1).max(80), kind: z.enum(["subscription", "api"]).default("subscription"), api: Api.optional() }));
+    const body = await parseBody(c, z.object({ agent: Agent, name: z.string().min(1).max(80), kind: z.enum(["subscription", "api"]).default("subscription"), api: Api.optional(),
+      /** false: Claude Code's telemetry off under it from the start (§3.7). */ telemetry: z.boolean().optional() }));
     if (!body.ok) return c.json({ error: body.error }, 400);
+    if (body.data.telemetry === false && body.data.agent !== "claude-code") return c.json({ error: "only Claude Code's telemetry can be turned off" }, 400);
+    // As made, with its telemetry as asked.
+    const made = (id: string) => {
+      if (body.data.telemetry === false) store.setTelemetry(body.data.agent, id, false);
+      return { profile: store.all()[body.data.agent].profiles.find((p) => p.id === id), agents: store.all() };
+    };
     try {
       // One that pays by a key (§3.6) is made with it: the gate opens the ciphertext once first, for where it is sent.
       if (body.data.kind === "api") {
         if (!body.data.api?.key) return c.json({ error: "a profile that pays by a key needs the key" }, 400);
         if (!deps.apiKeys) return c.json({ error: "this service cannot keep an API key" }, 503);
         const profile = await deps.apiKeys.create(body.data.agent, body.data.name, { key: body.data.api.key.trim(), baseUrl: body.data.api.baseUrl?.trim() || undefined, model: body.data.api.model?.trim() || undefined });
-        return c.json({ profile, agents: store.all() }, 201);
+        return c.json(made(profile.id), 201);
       }
       const profile = store.create(body.data.agent, body.data.name, body.data.kind);
-      return c.json({ profile, agents: store.all() }, 201);
+      return c.json(made(profile.id), 201);
     } catch (err) {
       if (err instanceof ApiKeyError) return c.json({ error: err.message }, 400);
       const f = failed(err); return c.json({ error: f.error }, f.status);
@@ -116,6 +123,17 @@ export function mountProfiles(app: Hono<any>, deps: ApiDeps): void {
       if (err instanceof SessionKeyError) return c.json({ error: err.message }, 400);
       const f = failed(err); return c.json({ error: f.error }, f.status);
     }
+    return c.json({ agents: store.all() });
+  });
+
+  // Claude Code's telemetry under a profile (§3.7): on or off for the terminals started under it from now on.
+  app.put("/profiles/:agent/:id/telemetry", async (c) => {
+    if (remoteCaller(c.env)) return c.json({ error: "a profile's telemetry is set on the Mac" }, 403);
+    const agent = Agent.safeParse(c.req.param("agent"));
+    if (!agent.success) return c.json({ error: "no such agent" }, 404);
+    const body = await parseBody(c, z.object({ on: z.boolean() }));
+    if (!body.ok) return c.json({ error: body.error }, 400);
+    try { store.setTelemetry(agent.data, c.req.param("id"), body.data.on); } catch (err) { const f = failed(err); return c.json({ error: f.error }, f.status); }
     return c.json({ agents: store.all() });
   });
 

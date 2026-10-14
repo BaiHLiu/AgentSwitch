@@ -207,6 +207,8 @@ function agents() {
     <div class="field"><label>Sign-In</label><div class="pick"><button class="${sh.kind === "sub" ? "on" : ""}" data-a="kind" data-v="sub">Subscription</button><button class="${sh.kind === "api" ? "on" : ""}" data-a="kind" data-v="api">API Key</button></div></div>
     ${sh.kind === "api" ? `<div class="field"><label>API Key</label><div class="in faint">为它要发往的地址加密后保存，之后不再显示</div></div><div class="field"><label>Base URL</label><div class="in faint">留空是厂商自己的地址 · 填了就发到那里（中转）</div></div><div class="field"><label>Model</label><div class="in faint">Optional</div></div>
     <p>已做（2026-10-13，profiles-v0 §3.6）：Claude Code 与 Codex。终端里的 agent 用时向本机服务取 key，不写进它的设置和环境变量。Codex 只有这一种配置，且就在这台 Mac 原有的 Codex 目录里运行。已做的界面里这一步没有下面的 Identity：代理在配置那一行的 Proxy… 里设。</p>` : ""}
+    ${sh.agent === "Claude Code" ? `<div class="field"><label>Telemetry</label><div class="pick"><button class="${!sh.quiet ? "on" : ""}" data-a="quiet" data-v="0">On</button><button class="${sh.quiet ? "on" : ""}" data-a="quiet" data-v="1">Off</button></div></div>
+    <p>关掉就是在它名下开的终端里设 <code>DISABLE_TELEMETRY=1</code>：Claude Code 不再上报使用统计。之后在配置那一行的右键菜单里也能改，只影响之后开的终端（已做，profiles-v0 §3.7；已做的界面里是一个勾选框）。</p>` : ""}
     <div class="field"><label>Identity</label><div class="pick"><button class="${!sh.own ? "on" : ""}" data-a="own" data-v="0">This Mac</button><button class="${sh.own ? "on" : ""}" data-a="own" data-v="1">Own</button></div></div>
     ${sh.own ? `<div class="field"><label>Exit</label><div class="in">http://proxy.example:8080 <span class="faint">· user · ••••</span></div></div>
     <div class="field"><label>Fingerprint</label><div class="in">macOS · Firefox 156 · 2560×1440 <span class="faint">generated</span></div></div>
@@ -294,6 +296,7 @@ document.addEventListener("click", (e) => {
   else if (a === "cur") S.current[agent] = name;
   else if (a === "new") S.sheet = { agent, name: agent === "Codex" ? "Team" : "Second", kind: "sub", own: true };
   else if (a === "kind") { S.sheet.kind = v; S.sheet.own = v === "sub"; }
+  else if (a === "quiet") { S.sheet.quiet = v === "1"; }
   else if (a === "own") S.sheet.own = v === "1";
   else if (a === "close") S.sheet = null;
   else if (a === "create") { const s = S.sheet; S.profiles[s.agent].push({ name: s.name, who: s.kind === "api" ? "api.example.com" : "Not Signed In", own: s.own, exit: s.own ? "http · Tokyo" : undefined }); S.sheet = null; }

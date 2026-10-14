@@ -132,15 +132,19 @@ public struct AgentProfile: Decodable, Equatable, Sendable, Identifiable {
     public let device: String?
     /// One that pays by a key (§3.6): where the key is sent, the model it starts on; nil: it signs in with an account.
     public let api: ProfileApiInfo?
+    /// `false`: Claude Code's telemetry is off under it (docs/profiles-v0.md §3.7); nil: on.
+    public let telemetry: Bool?
     public var hasSessionKey: Bool { sessionKey == true }
+    public var telemetryOff: Bool { telemetry == false }
     public var paysByKey: Bool { kind == "api" }
 
     public var isDefault: Bool { id == "default" }
     /// Its colour as the screens draw it; nil for none, or one this app does not know yet.
     public var tint: ProfileColor? { color.flatMap(ProfileColor.init(rawValue:)) }
 
-    public init(id: String, name: String, kind: String = "subscription", account: String? = nil, proxy: BrowserProxy? = nil, exit: ProfileExit? = nil, color: String? = nil, sessionKey: Bool? = nil, device: String? = nil, api: ProfileApiInfo? = nil) {
+    public init(id: String, name: String, kind: String = "subscription", account: String? = nil, proxy: BrowserProxy? = nil, exit: ProfileExit? = nil, color: String? = nil, sessionKey: Bool? = nil, device: String? = nil, api: ProfileApiInfo? = nil, telemetry: Bool? = nil) {
         self.api = api
+        self.telemetry = telemetry
         self.sessionKey = sessionKey
         self.device = device
         self.id = id
@@ -240,16 +244,23 @@ extension DaemonClient {
         try decode(ProfilesReply.self, try await call("POST", "/profiles/current", body: try JSONEncoder().encode(["agent": agent, "id": id]))).agents
     }
 
-    public func createProfile(agent: String, name: String, kind: String = "subscription") async throws -> [String: AgentProfiles] {
-        try decode(ProfilesReply.self, try await call("POST", "/profiles", body: try JSONEncoder().encode(["agent": agent, "name": name, "kind": kind]))).agents
+    /// `telemetry`: false to have Claude Code's telemetry off under it from the start (docs/profiles-v0.md §3.7).
+    public func createProfile(agent: String, name: String, kind: String = "subscription", telemetry: Bool = true) async throws -> [String: AgentProfiles] {
+        struct Body: Encodable { let agent: String; let name: String; let kind: String; let telemetry: Bool? }
+        return try decode(ProfilesReply.self, try await call("POST", "/profiles", body: try JSONEncoder().encode(Body(agent: agent, name: name, kind: kind, telemetry: telemetry ? nil : false)))).agents
     }
 
     private struct ApiBody: Encodable { let key: String?; let baseUrl: String?; let model: String? }
 
     /// A new profile that pays by a key (§3.6): `ciphertext` is the key sealed for the site it is sent to.
-    public func createKeyProfile(agent: String, name: String, ciphertext: String, baseUrl: String?, model: String?) async throws -> [String: AgentProfiles] {
-        struct Body: Encodable { let agent: String; let name: String; let kind = "api"; let api: ApiBody }
-        return try decode(ProfilesReply.self, try await call("POST", "/profiles", body: try JSONEncoder().encode(Body(agent: agent, name: name, api: ApiBody(key: ciphertext, baseUrl: baseUrl, model: model))))).agents
+    public func createKeyProfile(agent: String, name: String, ciphertext: String, baseUrl: String?, model: String?, telemetry: Bool = true) async throws -> [String: AgentProfiles] {
+        struct Body: Encodable { let agent: String; let name: String; let kind = "api"; let api: ApiBody; let telemetry: Bool? }
+        return try decode(ProfilesReply.self, try await call("POST", "/profiles", body: try JSONEncoder().encode(Body(agent: agent, name: name, api: ApiBody(key: ciphertext, baseUrl: baseUrl, model: model), telemetry: telemetry ? nil : false)))).agents
+    }
+
+    /// Claude Code's telemetry under a profile, for the terminals started under it from now on (§3.7).
+    public func setProfileTelemetry(agent: String, id: String, on: Bool) async throws -> [String: AgentProfiles] {
+        try decode(ProfilesReply.self, try await call("PUT", "/profiles/\(Self.segment(agent))/\(Self.segment(id))/telemetry", body: try JSONEncoder().encode(["on": on]))).agents
     }
 
     /// A profile's address and model from now on, and its key when one is given (nil: the one it has).

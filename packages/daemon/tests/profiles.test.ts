@@ -391,8 +391,8 @@ esac
     mountTerminals(app, { profiles: w.store, terminals: { host, audit: { record() { /* not looked at */ } }, agents: ["claude-code"], style: () => ({}), elsewhere: async () => null,
       signedIn: (harness: string, home: string) => { questions.push(home); return signedIn(harness, home); } } } as unknown as ApiDeps);
     mountProfiles(app, { profiles: w.store, terminals: { host } } as unknown as ApiDeps);
-    const call = async (method: string, path: string, body?: unknown) => {
-      const res = await app.request(path, { method, ...(body ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}) });
+    const call = async (method: string, path: string, body?: unknown, env: object = {}) => {
+      const res = await app.request(path, { method, ...(body ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}) }, env);
       return { status: res.status, json: (await res.json()) as Record<string, any> };
     };
     return { ...w, host, asked, questions, call };
@@ -501,6 +501,40 @@ esac
     expect((await call("GET", `/terminals/${started.json.terminal.id}`)).json.terminal.profile.color).toBe("mint");
     expect((await call("PUT", `/profiles/claude-code/${a.id}/color`, { color: "red" })).status).toBe(400);
     expect((await call("PUT", "/profiles/claude-code/default/color", { color: "mint" })).status).toBe(404);
+  });
+
+  // User, 2026-10-14: 要求新profile可以选择是否关闭cc的遥测（一个环境变量）.
+  it("can have Claude Code's telemetry off, from when it is made or later, for the terminals started after", async () => {
+    const { store, call, root, asked } = served(async () => true);
+    const quiet = (await call("POST", "/profiles", { agent: "claude-code", name: "Quiet", telemetry: false })).json;
+    expect(quiet.profile).toMatchObject({ name: "Quiet", telemetry: false });
+    const loud = (await call("POST", "/profiles", { agent: "claude-code", name: "Loud" })).json.profile;
+    expect(loud.telemetry).toBeUndefined();
+    await call("POST", "/terminals", { harness: "claude-code", cwd: root, profile: quiet.profile.id });
+    await call("POST", "/terminals", { harness: "claude-code", cwd: root, profile: loud.id });
+    await call("POST", "/terminals", { harness: "claude-code", cwd: root, profile: "default" });
+    expect(asked.map((r) => r.telemetryOff ?? null)).toEqual([true, null, null]);
+    // Turned on again, and off for the other.
+    expect((await call("PUT", `/profiles/claude-code/${quiet.profile.id}/telemetry`, { on: true })).json.agents["claude-code"].profiles[1].telemetry).toBeUndefined();
+    expect(store.telemetryOff("claude-code", loud.id)).toBe(false);
+    await call("PUT", `/profiles/claude-code/${loud.id}/telemetry`, { on: false });
+    expect(store.telemetryOff("claude-code", loud.id)).toBe(true);
+    // Only Claude Code's, only a profile that is there, only from the Mac.
+    expect((await call("PUT", "/profiles/claude-code/default/telemetry", { on: false })).status).toBe(404);
+    expect((await call("PUT", `/profiles/claude-code/${loud.id}/telemetry`, { on: "no" })).status).toBe(400);
+    expect((await call("POST", "/profiles", { agent: "codex", name: "K", kind: "api", api: { key: "enc:v1:x" }, telemetry: false })).status).toBe(400);
+    expect((await call("PUT", `/profiles/claude-code/${loud.id}/telemetry`, { on: true }, markRemote({}, { deviceId: "phone" }))).status).toBe(403);
+  });
+
+  it("starts Claude Code with DISABLE_TELEMETRY under a profile that has it off: in its environment and its settings", () => {
+    const stateDir = mkdtempSync(join(tmpdir(), "agentswitch-profile-quiet-"));
+    const launch = agentLauncher({ binaries: { "claude-code": "/bin/claude" }, hookUrl: () => "http://127.0.0.1:4711", stateDir, node: "/n/node", hookScript: "/n/hook.js", env: { PATH: "/usr/bin", HOME: "/Users/u" } });
+    const quiet = launch({ id: "q1", harness: "claude-code", cwd: "/tmp", mode: "manual", hookToken: "tok", configHome: "/as/p/home", telemetryOff: true });
+    expect(quiet.env.DISABLE_TELEMETRY).toBe("1");
+    expect(JSON.parse(readFileSync(join(stateDir, "q1", "settings.json"), "utf8")).env).toEqual({ DISABLE_TELEMETRY: "1" });
+    const loud = launch({ id: "q2", harness: "claude-code", cwd: "/tmp", mode: "manual", hookToken: "tok", configHome: "/as/p/home" });
+    expect(loud.env.DISABLE_TELEMETRY).toBeUndefined();
+    expect(JSON.parse(readFileSync(join(stateDir, "q2", "settings.json"), "utf8")).env).toBeUndefined();
   });
 
   it("gives one made before profiles had colours a colour, once, and keeps it", () => {

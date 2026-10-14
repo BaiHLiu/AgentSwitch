@@ -192,6 +192,16 @@ Codex
   - 中转的地址须支持各家自己的接口（Anthropic Messages；OpenAI Responses），界面只说明、不探测。
   - 按配置分开的用量；调度任务用配置（第 6 步）。
 
+### 3.7 关掉 Claude Code 的遥测（2026-10-14）
+
+用户：要求新profile可以选择是否关闭cc的遥测（一个环境变量）。
+
+- **是什么**：Claude Code 的配置多一个开关 `Telemetry`，默认开（和 Claude Code 自己一样）。关掉后，在它名下开的终端里设 `DISABLE_TELEMETRY=1`——进程环境和启动那层设置的 `env` 里各写一次（用户自己设置里的 `env` 会盖过进程环境，§3.6 同理）。查实 2.1.299 认这个变量。
+- **只管这一个变量**：不是 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`——那个连自动更新、错误上报、`/bug` 一起关，超出“遥测”；错误上报另有 `DISABLE_ERROR_REPORTING`，没有接。
+- **在哪里设**：Mac 的新建配置表里一个勾选框 `Telemetry`（只有 Claude Code 的出现）；建好以后在配置那一行的右键菜单里切换，名字后面的说明写 `Telemetry Off`。改了只影响之后开的终端，开着的不变。`Default`（这台 Mac 自己的）没有这个开关，要关就照常写进你自己的设置。
+- **接口**：`POST /profiles` 多一个 `telemetry: false`；`PUT /profiles/:agent/:id/telemetry` `{ on }`；只在 Mac 上，只限 Claude Code。`GET /profiles` 里关掉的配置带 `telemetry: false`。
+- **没做**：iPhone 上显示与切换；其它 agent 的同类开关。
+
 ## 4. 出口（代理）
 
 - 出口属于身份：配置自己的身份有自己的出口；用这台 Mac 的配置，出口就是这台 Mac 的。

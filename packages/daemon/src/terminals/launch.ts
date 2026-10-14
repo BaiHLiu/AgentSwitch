@@ -254,7 +254,10 @@ export function agentLauncher(opts: LauncherOptions): Launcher {
         // A profile that pays by a key (§3.6): Claude Code runs the hook program for it (`apiKeyHelper`, sent as both
         // `x-api-key` and `Authorization`), and is told where to send it when that is not Anthropic's own address.
         const keyed = req.api ? { apiKeyHelper: `${hookCommand} key` } : {};
-        const own = { ...proxied, ...(req.api?.baseUrl ? { ANTHROPIC_BASE_URL: req.api.baseUrl } : {}) };
+        // A profile with its telemetry off (§3.7): in both, for the same reason.
+        const quiet = req.telemetryOff ? { DISABLE_TELEMETRY: "1" } : {};
+        Object.assign(env, quiet);
+        const own = { ...proxied, ...quiet, ...(req.api?.baseUrl ? { ANTHROPIC_BASE_URL: req.api.baseUrl } : {}) };
         writeFileSync(settings, JSON.stringify({ ...claudeHookSettings(hookCommand, opts.protected), ...keyed, ...(Object.keys(own).length ? { env: own } : {}) }, null, 2), { mode: 0o600 });
         const args = ["--settings", settings];
         if (browser) {

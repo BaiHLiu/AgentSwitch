@@ -174,6 +174,7 @@ struct AgentsView: View {
                             proxy: { profile in proxying = ProfileProxyTarget(agent: agent, profile: profile) },
                             sessionKey: { profile in keying = ProfileProxyTarget(agent: agent, profile: profile) },
                             apiKey: { profile in paying = ProfileProxyTarget(agent: agent, profile: profile) },
+                            telemetry: { profile, on in change(agent) { try await $0.setProfileTelemetry(agent: agent.rawValue, id: profile.id, on: on) } },
                             color: { profile, color in change(agent) { try await $0.setProfileColor(agent: agent.rawValue, id: profile.id, color: color) } })
         }
     }
@@ -361,6 +362,8 @@ struct ProfileNewSheet: View {
     @State private var draft = ApiKeyDraft()
     @State private var problem: String?
     @State private var busy = false
+    /// Claude Code's telemetry under it (docs/profiles-v0.md §3.7); on, as Claude Code has it.
+    @State private var telemetry = true
 
     init(agent: AgentCLI, kinds: [String], done: @escaping ([String: AgentProfiles]) -> Void) {
         self.agent = agent
@@ -387,6 +390,10 @@ struct ProfileNewSheet: View {
                     .pickerStyle(.segmented)
                 }
                 if byKey { ApiKeyFields(agent: agent, draft: $draft, kept: false) }
+                if agent == .claude {
+                    Toggle("Telemetry", isOn: $telemetry)
+                        .help("关掉后，在它名下开的终端里设 DISABLE_TELEMETRY=1，Claude Code 不再上报使用统计。之后可在配置那一行的右键菜单里改。")
+                }
             }
             .formStyle(.columns)
             Text(byKey ? ApiKeyWords.about(agent) : "一份新的登录，放在它自己的目录里。建好后在它名下开一个终端，会直接从登录开始。")
@@ -404,7 +411,7 @@ struct ProfileNewSheet: View {
     }
 
     private func create() {
-        let client = model.client, gate = model.gateCLI, agent = agent.rawValue, draft = draft, byKey = byKey
+        let client = model.client, gate = model.gateCLI, agent = agent.rawValue, draft = draft, byKey = byKey, telemetry = telemetry
         let name = draft.name.trimmingCharacters(in: .whitespaces)
         busy = true
         problem = nil
@@ -412,9 +419,9 @@ struct ProfileNewSheet: View {
             do {
                 if byKey, let site = draft.site(agent: agent) {
                     let ciphertext = try await gate.seal(GateSealRequest(label: "profile/api-key", sites: site, value: draft.cleanKey))
-                    done(try await client.createKeyProfile(agent: agent, name: name, ciphertext: ciphertext, baseUrl: draft.cleanBaseUrl, model: draft.cleanModel))
+                    done(try await client.createKeyProfile(agent: agent, name: name, ciphertext: ciphertext, baseUrl: draft.cleanBaseUrl, model: draft.cleanModel, telemetry: telemetry))
                 } else {
-                    done(try await client.createProfile(agent: agent, name: name))
+                    done(try await client.createProfile(agent: agent, name: name, telemetry: telemetry))
                 }
                 dismiss()
             } catch { problem = (error as? DaemonError)?.reason ?? (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
@@ -528,6 +535,8 @@ struct ProfilesSection: View {
     let proxy: (AgentProfile) -> Void
     var sessionKey: ((AgentProfile) -> Void)? = nil
     var apiKey: ((AgentProfile) -> Void)? = nil
+    /// Claude Code's telemetry under a profile turned on or off (docs/profiles-v0.md §3.7).
+    var telemetry: ((AgentProfile, Bool) -> Void)? = nil
     let color: (AgentProfile, ProfileColor) -> Void
 
     var body: some View {
@@ -558,7 +567,7 @@ struct ProfilesSection: View {
                     }
                     // The device Claude Code says it is under it (docs/profiles-v0.md §3.5), once it has run there.
                     Text(profile.name).help(profile.device.map(DeviceID.help) ?? "")
-                    Text(ProfileWords.who(profile)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    Text(ProfileWords.who(profile) + (profile.telemetryOff ? " · Telemetry Off" : "")).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                     Spacer()
                     // Where what runs under it leaves from: this Mac, or where its own proxy lets traffic out.
                     Text(profile.way).font(.callout).monospacedDigit().foregroundStyle(profile.proxy == nil ? .tertiary : .secondary).lineLimit(1)
@@ -574,6 +583,12 @@ struct ProfilesSection: View {
                         }
                         Button("Proxy…") { proxy(profile) }.controlSize(.small)
                         Button("Delete…") { remove(profile) }.controlSize(.small)
+                    }
+                }
+                .contextMenu {
+                    // For the terminals started under it from now on: `DISABLE_TELEMETRY=1` when off.
+                    if agent == .claude, !profile.isDefault, let telemetry {
+                        Toggle("Telemetry", isOn: Binding(get: { !profile.telemetryOff }, set: { telemetry(profile, $0) }))
                     }
                 }
             }

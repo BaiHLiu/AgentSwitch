@@ -374,8 +374,9 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
     const paid = wanted === DEFAULT_PROFILE ? null : deps.profiles?.apiOf(body.data.harness, wanted) ?? null;
     if (wanted !== DEFAULT_PROFILE && !profileHome && !paid) return c.json({ error: "no such profile" }, 400);
     const color = wanted !== DEFAULT_PROFILE ? deps.profiles!.colorOf(body.data.harness, wanted) : null;
-    let profile: { id: string; name: string; home?: string; proxy?: string; exit?: { ip: string; place: string | null }; browserKey?: string; color?: string; api?: { baseUrl?: string; model?: string } } | null =
-      wanted !== DEFAULT_PROFILE ? { id: wanted, name: deps.profiles!.nameOf(body.data.harness, wanted) ?? wanted, ...(profileHome ? { home: profileHome } : {}), ...(color ? { color } : {}),
+    const quiet = wanted !== DEFAULT_PROFILE && deps.profiles!.telemetryOff(body.data.harness, wanted);
+    let profile: { id: string; name: string; home?: string; proxy?: string; exit?: { ip: string; place: string | null }; browserKey?: string; color?: string; api?: { baseUrl?: string; model?: string }; telemetryOff?: true } | null =
+      wanted !== DEFAULT_PROFILE ? { id: wanted, name: deps.profiles!.nameOf(body.data.harness, wanted) ?? wanted, ...(profileHome ? { home: profileHome } : {}), ...(color ? { color } : {}), ...(quiet ? { telemetryOff: true as const } : {}),
         ...(paid ? { api: { ...(paid.baseUrl ? { baseUrl: paid.baseUrl } : {}), ...(paid.model ? { model: paid.model } : {}) } } : {}) } : null;
     // A profile with a proxy of its own: before anything is started under it, the proxy is asked where it lets
     // traffic out. One that does not answer starts nothing — the agent is not let out another way (§4).
