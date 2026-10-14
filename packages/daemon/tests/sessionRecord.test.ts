@@ -5,6 +5,7 @@
 import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { mountSessions } from "../src/api/sessions.js";
@@ -12,6 +13,7 @@ import type { ApiDeps } from "../src/api/shared.js";
 import { watchRecord } from "../src/api/terminals.js";
 import { SessionMonitor, type SessionSources } from "../src/sessions/monitor.js";
 import { DIFF_LINES, OUTPUT_CHARS, readChanges, readImage, readRecord, readStep, readStepImage, recordFromMessages, shortPath, STEP_TEXT_CHARS, TEXT_CHARS, unifiedHunks, type RecordItem } from "../src/sessions/record.js";
+import { MESSAGE_CHARS } from "../src/sessions/types.js";
 import type { TerminalHost } from "../src/terminals/host.js";
 
 const REPO = "/Users/u/code/site";
@@ -338,7 +340,7 @@ function monitored() {
   const monitor = new SessionMonitor(sources, () => Date.parse(at(100)));
   const app = new Hono();
   mountSessions(app, { sessions: monitor } as unknown as ApiDeps);
-  return { monitor, app, claudePath };
+  return { monitor, app, claudePath, root };
 }
 
 describe("the record over the API", () => {
@@ -370,6 +372,42 @@ describe("the record over the API", () => {
     expect(kinds(body.items)).toEqual(["user", "work", "answer"]);
     expect(body.items[1]).toMatchObject({ steps: [{ kind: "run", text: "ls" }] });
     expect((await app.request("/sessions/pi/p1/changes")).status).toBe(404);
+  });
+
+  // 2026-10-14, user: an OpenCode answer in the simple view ended in "…（共 2822 字）" — what is this.
+  it("an agent read coarsely keeps a long answer whole in its record, as far as TEXT_CHARS", async () => {
+    const long = "第一段写完了。\n\n" + "后面还有很多。".repeat(400), longer = "长".repeat(TEXT_CHARS + 50);
+    const { app, root } = monitored();
+    writeFileSync(join(root, "pi", "--Users-u-code-site--", "2026-10-07T03-00-00-000Z_p2.jsonl"), [
+      line({ type: "session", version: 3, id: "p2", timestamp: at(0), cwd: REPO }),
+      line({ type: "message", id: "a", timestamp: at(1), message: { role: "user", content: [{ type: "text", text: "写一份方案" }] } }),
+      line({ type: "message", id: "b", timestamp: at(2), message: { role: "assistant", content: [{ type: "text", text: long }] } }),
+      line({ type: "message", id: "c", timestamp: at(3), message: { role: "user", content: [{ type: "text", text: "再长一点" }] } }),
+      line({ type: "message", id: "d", timestamp: at(4), message: { role: "assistant", content: [{ type: "text", text: longer }] } }),
+    ].join("\n") + "\n");
+    const body = await (await app.request("/sessions/pi/p2/record")).json() as { items: RecordItem[] };
+    expect(body.items.map((it) => it.type === "answer" ? [it.text.length, it.clipped ?? false] : it.type)).toEqual(["user", [long.length, false], "user", [TEXT_CHARS, true]]);
+    expect(JSON.stringify(body)).not.toContain("（共");
+    // What the session's messages say (a phone's transcript) is clipped as before, with its length.
+    const said = await (await app.request("/sessions/pi/p2")).json() as { messages: { text: string }[] };
+    expect(said.messages[1]!.text).toBe(`${long.slice(0, MESSAGE_CHARS)}…（共 ${long.length} 字）`);
+  });
+
+  it("so does an OpenCode session's", async () => {
+    const long = "方案如下。\n\n" + "细节。".repeat(1000);
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "agentswitch-record-oc-")));
+    const db = new DatabaseSync(join(root, "opencode.db"));
+    db.exec(`CREATE TABLE session_v2 (id TEXT, parent_id TEXT, directory TEXT, title TEXT, model TEXT, time_created INTEGER, time_updated INTEGER);
+      CREATE TABLE session_message (session_id TEXT, seq INTEGER, type TEXT, data TEXT, time_created INTEGER);`);
+    db.prepare("INSERT INTO session_v2 VALUES ('ses_x1', NULL, ?, '方案', NULL, ?, ?)").run(REPO, Date.parse(at(0)), Date.parse(at(2)));
+    const said = db.prepare("INSERT INTO session_message VALUES ('ses_x1', ?, ?, ?, ?)");
+    said.run(1, "user", JSON.stringify({ text: "写一份方案" }), Date.parse(at(1)));
+    said.run(2, "assistant", JSON.stringify({ content: [{ type: "text", text: long }] }), Date.parse(at(2)));
+    db.close();
+    const app = new Hono();
+    mountSessions(app, { sessions: new SessionMonitor({ claudeProjects: join(root, "claude"), codexSessions: join(root, "codex"), opencodeDb: join(root, "opencode.db"), excluded: [] }, () => Date.parse(at(100))) } as unknown as ApiDeps);
+    const body = await (await app.request("/sessions/opencode/ses_x1/record")).json() as { items: RecordItem[] };
+    expect(body.items.map((it) => it.type === "answer" ? it.text : it.type)).toEqual(["user", long]);
   });
 });
 

@@ -55,8 +55,9 @@
 |---|---|---|---|---|
 | Claude Code | `~/.claude/projects/<目录>/<会话>.jsonl`，边做边写：`assistant` 行的 `text` / `tool_use` / `thinking`，`user` 行的 `tool_result` | 结果行的 `toolUseResult.structuredPatch`（Edit、Write 都有） | 最近一次 TodoWrite 的输入 | `assistant` 行的 `message.usage` 与 `message.model` |
 | Codex | `~/.codex/sessions/…/rollout-*.jsonl`：`event_msg` 里的 `item_completed`，就是它协议里的条目（UserMessage、AgentMessage 带 `phase`、Reasoning、CommandExecution 带 `parsed_cmd`、FileChange、Extension） | FileChange 的 `changes` | 计划更新 | `token_count` 的用量与 `model_context_window` |
-| OpenCode、pi | 第一步沿用现有的粗记录（control-v0 §3：话与一行一个工具），`work` 的步骤只有工具名与一行字 | — | — | — |
+| OpenCode、pi | 第一步沿用现有的粗记录（control-v0 §3：话与一行一个工具），`work` 的步骤只有工具名与一行字；话是全文，同上至多 20000 字（2026-10-14 起，见下） | — | — | — |
 
+- 2026-10-14 **粗记录里的话也是全文**（用户贴图：简略视图里一段回答停在“B 的鉴权直接复用 …（共 2822 字）”，问 what is this；这种结尾只有粗记录会有，所以是 OpenCode 或 pi 的会话，没有去读是哪一个）。粗记录借的是会话消息的读法，那里每条话只留 2000 字、后面写上全长（给手机的会话页用的），简略视图这一路照搬了，后面的部分在简略视图里哪儿都看不到——与上表 `answer` 那一行“不再截到 2000 字”不符。现在给简略视图读的是全文，由记录自己截到 20000 字并标 `clipped`，与 Claude Code、Codex 一样；`GET /sessions/:harness/:id` 的消息照旧截 2000 字。OpenCode、pi、旧版 Codex 会话都走这一路。测试：`sessionRecord.test.ts` 里 pi 的会话与一个假的 OpenCode 库各一段长回答。
 - 读法：从文件末尾往回读一个窗口（2 MB，条目不够再放到 8 MB、32 MB——带截图的会话一行就有几百 KB），解析成条目；`before` 游标往前翻（`Earlier`）。本机 275 MB 的会话文件读最后 60 条用 60 毫秒。子代理的行（`isSidechain`）不进记录。忙时打的话：Claude Code 记成排队操作，读到后写成一条附件而不是用户行，两种都认。
 - **没有逐字输出**：一条消息写完才出现在文件里。回答出现前，界面靠“正在做什么”的一行说明它在动。
 - 两家桌面端的做法（2026-10-07 查，见演示页下方的逐项对照）：Claude 桌面端跑同一个引擎、收结构化的消息流，和终端之间是交接（`/desktop`、`/resume`），同一会话同一时间只在一处跑；Codex 桌面端是 `codex app-server` 的客户端。Codex 那条路（我们的服务也作为客户端连它的后台服务）内容更全、有逐字输出，但“终端开着的同时第二个客户端能看、能答确认”没有文档，更新日志还说别处打开的会话在终端里是锁住的——**先不走，等实测**（§8）。

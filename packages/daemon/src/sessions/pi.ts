@@ -5,7 +5,7 @@
 
 import { basename } from "node:path";
 import { headLines, isTypedText, obj, str, tailLines, time, type Json } from "./jsonl.js";
-import { clipText, type SessionMessage } from "./types.js";
+import { clipText, MESSAGE_CHARS, type SessionMessage } from "./types.js";
 
 export type PiFacts = { readonly id: string; readonly cwd: string; readonly title: string; readonly lastText: string; readonly updatedAt: number; readonly startedAt?: number; readonly model?: string };
 
@@ -62,16 +62,16 @@ export function piFacts(path: string, mtime: number): PiFacts | null {
 }
 
 /** The last `limit` messages: typed prompts, replies, and one line per tool call. */
-export function piMessages(path: string, limit: number): SessionMessage[] {
+export function piMessages(path: string, limit: number, chars = MESSAGE_CHARS): SessionMessage[] {
   const out: SessionMessage[] = [];
   for (const line of tailLines(path).map(obj)) {
     const ts = time(line.timestamp);
     const user = userText(line);
-    if (user) { out.push({ role: "user", text: clipText(user), ts }); continue; }
+    if (user) { out.push({ role: "user", text: clipText(user, chars), ts }); continue; }
     if (role(line) !== "assistant") continue;
     for (const part of parts(line)) {
-      if (part.type === "text" && str(part.text).trim()) out.push({ role: "assistant", text: clipText(str(part.text)), ts });
-      if (part.type === "toolCall") out.push({ role: "tool", tool: str(part.name), text: clipText(toolSummary(obj(part.arguments))), ts });
+      if (part.type === "text" && str(part.text).trim()) out.push({ role: "assistant", text: clipText(str(part.text), chars), ts });
+      if (part.type === "toolCall") out.push({ role: "tool", tool: str(part.name), text: clipText(toolSummary(obj(part.arguments)), chars), ts });
     }
   }
   return out.slice(-limit);

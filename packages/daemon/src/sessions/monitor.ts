@@ -13,7 +13,7 @@ import { openCodeMessages, openCodeSessions, type OpenCodeDelete } from "./openc
 import { piFacts, piMessages } from "./pi.js";
 import type { KeptPictures } from "./pictures.js";
 import { MAX_RECORD_LIMIT, readChanges, readImage, readRecord, readStep, readStepImage, recordFromMessages, type FileDiff, type RecordImage, type SessionRecord, type StepDetail } from "./record.js";
-import { ACTIVE_MS, oneLine, TITLE_CHARS, type SessionHarness, type SessionMessage, type SessionMode, type SessionSummary } from "./types.js";
+import { ACTIVE_MS, MESSAGE_CHARS, oneLine, TITLE_CHARS, type SessionHarness, type SessionMessage, type SessionMode, type SessionSummary } from "./types.js";
 
 export type SessionSources = {
   readonly claudeProjects: string;   // ~/.claude/projects
@@ -89,13 +89,14 @@ export class SessionMonitor {
     return this.list().find((s) => s.harness === harness && s.id === id) ?? null;
   }
 
-  read(harness: SessionHarness, id: string, limit = 80): { session: SessionSummary; messages: SessionMessage[] } | null {
+  /** `chars`: how much of a message is kept (`MESSAGE_CHARS`, with a note of its length); Infinity keeps it whole. */
+  read(harness: SessionHarness, id: string, limit = 80, chars = MESSAGE_CHARS): { session: SessionSummary; messages: SessionMessage[] } | null {
     const session = this.find(harness, id);
     if (!session) return null;
-    if (harness === "opencode") { const messages = openCodeMessages(this.sources.opencodeDb, id, limit); return messages && { session, messages }; }
+    if (harness === "opencode") { const messages = openCodeMessages(this.sources.opencodeDb, id, limit, chars); return messages && { session, messages }; }
     const path = this.files.get(`${harness}:${id}`);
     if (!path) return null;
-    return { session, messages: harness === "claude-code" ? claudeMessages(path, limit) : harness === "pi" ? piMessages(path, limit) : codexMessages(path, limit) };
+    return { session, messages: harness === "claude-code" ? claudeMessages(path, limit, chars) : harness === "pi" ? piMessages(path, limit, chars) : codexMessages(path, limit, chars) };
   }
 
   /** A session's record for the simple view (docs/simple-view-v0.md §2): Claude Code's and Codex's from their files,
@@ -108,7 +109,9 @@ export class SessionMonitor {
       const record = readRecord(harness, path, { ...o, cwd: session.cwd });
       if (record) return { session, record };
     }
-    const coarse = this.read(harness, id, MAX_RECORD_LIMIT);
+    // Whole: the record keeps TEXT_CHARS of each, as the step-by-step reader does. Clipped at MESSAGE_CHARS, an
+    // answer of OpenCode's or pi's ended in "…（共 2822 字）" with no way to read the rest (2026-10-14, user: what is this).
+    const coarse = this.read(harness, id, MAX_RECORD_LIMIT, Infinity);
     return coarse && { session, record: recordFromMessages(coarse.messages, `u${session.updatedAt.toString(36)}`) };
   }
 

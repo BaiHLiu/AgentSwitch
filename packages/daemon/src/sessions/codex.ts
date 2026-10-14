@@ -3,7 +3,7 @@
  *  items are the harness's own context blocks, not what the user typed. */
 
 import { headLines, isTypedText, obj, str, tailLines, time, type Json } from "./jsonl.js";
-import { clipText, type SessionMessage, type SessionMode } from "./types.js";
+import { clipText, MESSAGE_CHARS, type SessionMessage, type SessionMode } from "./types.js";
 import { movedFolder } from "./moved.js";
 
 export type CodexFacts = { readonly id: string; readonly cwd: string; readonly title: string; readonly lastText: string; readonly updatedAt: number; readonly origin?: string; readonly model?: string; readonly mode?: SessionMode; readonly forkedFrom?: string };
@@ -74,18 +74,18 @@ export function codexFacts(path: string, mtime: number): CodexFacts | null {
   return { id, cwd, title, lastText, updatedAt: Math.max(time(last.find((l) => l.timestamp)?.timestamp), mtime), ...(origin ? { origin } : {}), ...(model ? { model } : {}), ...(mode ? { mode } : {}), ...(forkedFrom ? { forkedFrom } : {}) };
 }
 
-export function codexMessages(path: string, limit: number): SessionMessage[] {
+export function codexMessages(path: string, limit: number, chars = MESSAGE_CHARS): SessionMessage[] {
   const out: SessionMessage[] = [];
   for (const line of tailLines(path).map(obj)) {
     if (line.type !== "response_item") continue;
     const payload = obj(line.payload);
     const ts = time(line.timestamp);
     const user = messageText(payload, "user");
-    if (user) { out.push({ role: "user", text: clipText(user), ts }); continue; }
+    if (user) { out.push({ role: "user", text: clipText(user, chars), ts }); continue; }
     const reply = messageText(payload, "assistant");
-    if (reply) { out.push({ role: "assistant", text: clipText(reply), ts }); continue; }
+    if (reply) { out.push({ role: "assistant", text: clipText(reply, chars), ts }); continue; }
     if (payload.type === "function_call" || payload.type === "custom_tool_call" || payload.type === "local_shell_call") {
-      out.push({ role: "tool", tool: str(payload.name) || "shell", text: clipText(toolSummary(payload)), ts });
+      out.push({ role: "tool", tool: str(payload.name) || "shell", text: clipText(toolSummary(payload), chars), ts });
     }
   }
   return out.slice(-limit);

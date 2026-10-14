@@ -4,7 +4,7 @@
 import { basename } from "node:path";
 import { headLines, isTypedText, obj, str, tailLines, time, type Json } from "./jsonl.js";
 import { currentFolder, movedFolder } from "./moved.js";
-import { clipText, type SessionMessage, type SessionMode } from "./types.js";
+import { clipText, MESSAGE_CHARS, type SessionMessage, type SessionMode } from "./types.js";
 
 export type ClaudeFacts = { readonly id: string; readonly cwd: string; readonly title: string; readonly lastText: string; readonly updatedAt: number; readonly branch?: string; readonly model?: string; readonly mode?: SessionMode };
 
@@ -66,17 +66,17 @@ export function claudeFacts(path: string, mtime: number): ClaudeFacts | null {
 }
 
 /** The last `limit` messages: typed prompts, replies, and one line per tool call. */
-export function claudeMessages(path: string, limit: number): SessionMessage[] {
+export function claudeMessages(path: string, limit: number, chars = MESSAGE_CHARS): SessionMessage[] {
   const out: SessionMessage[] = [];
   for (const line of tailLines(path).map(obj)) {
     if (line.isSidechain) continue;
     const ts = time(line.timestamp);
     const user = userText(line);
-    if (user) { out.push({ role: "user", text: clipText(user), ts }); continue; }
+    if (user) { out.push({ role: "user", text: clipText(user, chars), ts }); continue; }
     if (line.type !== "assistant") continue;
     for (const part of content(line).map(obj)) {
-      if (part.type === "text" && str(part.text).trim()) out.push({ role: "assistant", text: clipText(str(part.text)), ts });
-      if (part.type === "tool_use") out.push({ role: "tool", tool: str(part.name), text: clipText(toolSummary(obj(part.input))), ts });
+      if (part.type === "text" && str(part.text).trim()) out.push({ role: "assistant", text: clipText(str(part.text), chars), ts });
+      if (part.type === "tool_use") out.push({ role: "tool", tool: str(part.name), text: clipText(toolSummary(obj(part.input)), chars), ts });
     }
   }
   return out.slice(-limit);

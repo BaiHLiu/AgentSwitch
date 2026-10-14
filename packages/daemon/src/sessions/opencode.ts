@@ -10,7 +10,7 @@ import { dirname } from "node:path";
 import { promisify } from "node:util";
 import { OWN_OPENCODE_AGENTS } from "../core/probes.js";
 import { obj, str } from "./jsonl.js";
-import { clipText, type SessionMessage } from "./types.js";
+import { clipText, MESSAGE_CHARS, type SessionMessage } from "./types.js";
 
 export type OpenCodeFacts = { readonly id: string; readonly cwd: string; readonly title: string; readonly lastText: string; readonly updatedAt: number; readonly startedAt?: number; readonly model?: string };
 
@@ -64,7 +64,7 @@ export function openCodeSessions(path: string, limit: number): OpenCodeFacts[] {
 /** A session's last messages. Null: the database could not be read just now (OpenCode is writing it) — which is not
  *  a session with nothing said: a screen keeps what it shows (2026-10-13, user: 有的时候对话完成会白屏). Each message
  *  says where it stands (`at`: its row and its part), so the same one is the same one at the next read. */
-export function openCodeMessages(path: string, id: string, limit: number): SessionMessage[] | null {
+export function openCodeMessages(path: string, id: string, limit: number, chars = MESSAGE_CHARS): SessionMessage[] | null {
   return withDb(path, null as SessionMessage[] | null, (db) => {
     const rows = db.prepare("SELECT seq, type, data, time_created FROM session_message WHERE session_id = ? AND type IN ('user', 'assistant') ORDER BY seq DESC LIMIT ?").all(id, limit * 3) as { seq: number; type: string; data: string; time_created: number }[];
     const out: SessionMessage[] = [];
@@ -72,15 +72,15 @@ export function openCodeMessages(path: string, id: string, limit: number): Sessi
       const data = obj(parse(row.data)), base = Number(row.seq) * PARTS;
       if (row.type === "user") {
         const text = str(data.text).split("\n\nUser environment context")[0]!.trim();
-        if (text) out.push({ role: "user", text: clipText(text), ts: row.time_created, at: base });
+        if (text) out.push({ role: "user", text: clipText(text, chars), ts: row.time_created, at: base });
         continue;
       }
       (Array.isArray(data.content) ? data.content : []).map(obj).forEach((part, n) => {
         const at = base + Math.min(n, PARTS - 1);
-        if (part.type === "text" && str(part.text).trim()) out.push({ role: "assistant", text: clipText(str(part.text)), ts: row.time_created, at });
+        if (part.type === "text" && str(part.text).trim()) out.push({ role: "assistant", text: clipText(str(part.text), chars), ts: row.time_created, at });
         if (part.type === "tool" || part.type === "tool-call") {
           const input = obj(part.input ?? obj(part.state).input);
-          out.push({ role: "tool", tool: str(part.tool) || str(part.name), text: clipText(str(input.command) || str(input.filePath) || str(input.path) || JSON.stringify(input)), ts: row.time_created, at });
+          out.push({ role: "tool", tool: str(part.tool) || str(part.name), text: clipText(str(input.command) || str(input.filePath) || str(input.path) || JSON.stringify(input), chars), ts: row.time_created, at });
         }
       });
     }
