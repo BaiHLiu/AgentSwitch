@@ -126,6 +126,7 @@ Each one stands alone — its own dependencies, tests and README — and they ta
 | `packages/ios-app` | iPhone app (SwiftUI, iOS 17+): `AgentSwitchKit` (pairing, certificate pinning, sealing on the phone, event streams) and the screens |
 | `packages/secret-gate` | Python credential layer: keypairs, ciphertext and short references, the decrypting proxy, the browser fill gate, MCP tools for the agents |
 | `packages/secret-gate-ui` | macOS app for the gate alone: named keypairs, single and batch sealing, through the secret-gate CLI |
+| `packages/linux` | a Linux machine as a node, without a window: the same runtime the Mac app bundles, a systemd user service, the command line in place of the app's screens |
 
 ## Build
 
@@ -141,6 +142,9 @@ cd packages/mac-app && scripts/build-app.sh          # → build/AgentSwitch.app
 cd packages/ios-app
 scripts/build-sim.sh                                 # simulator
 TEAM=<your team ID> scripts/install-device.sh        # your iPhone; a free Apple ID works, for 7 days at a time
+
+# A Linux machine as a node (x86_64 or aarch64, systemd; packages/linux/README.md)
+packages/linux/scripts/install.sh                    # → ~/.local/share/agentswitch, a systemd user service
 ```
 
 Open the Mac app, follow its first-run steps, and scan the pairing code with the iPhone app. Each package's README
