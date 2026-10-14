@@ -18,6 +18,7 @@ import { isAllowedSource, normalizeAddress } from "./address.js";
 import { authenticate, registerDevice, type Presence } from "./devices.js";
 import type { GateKeyReader } from "./gateKey.js";
 import { PairPayloadSchema, type PairingDesk, type PairPayload } from "./pairing.js";
+import { RemoteRequestLog } from "./requestLog.js";
 import { remoteAllowed } from "./routes.js";
 
 /** POST /pair bodies are three short strings and, from a node, its own payload for the way back. */
@@ -74,6 +75,7 @@ export function createRemoteApp(deps: RemoteAppDeps): Hono<Env> {
   const now = deps.now ?? Date.now;
   const allow = deps.allowSource ?? isAllowedSource;
   const log = deps.log ?? console.error;
+  const writes = new RemoteRequestLog(log);
   const peer = (env: HttpBindings | undefined): string | undefined => env?.incoming?.socket?.remoteAddress;
 
   app.onError((err, c) => {
@@ -152,10 +154,11 @@ export function createRemoteApp(deps: RemoteAppDeps): Hono<Env> {
 
   // The mark lets the API hold a phone to the Mac's decisions (no approval override, no cwd; see api/tasks.ts, api/threads.ts).
   // Every write from a phone leaves a line in the daemon log, deletes and CONTEXT.md saves included (app-v0 §6).
+  // Typing, scrolling and resizing are a line a minute each (requestLog.ts).
   app.all("*", async (c) => {
     const device = c.get("device");
     const res = await deps.local.fetch(c.req.raw, markRemote(c.env, { deviceId: device.id }));
-    if (c.req.method !== "GET") log(`remote: device ${device.id} ${c.req.method} ${c.req.path} → ${res.status}`);
+    if (c.req.method !== "GET") writes.write(device.id, c.req.method, c.req.path, res.status);
     return res;
   });
   return app;
