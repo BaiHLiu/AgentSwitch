@@ -119,7 +119,9 @@ function open(deps: ConfigDeps, page?: PageId, locale: "en" | "zh-Hans" | "ja" =
   return { frame, until, press };
 }
 
-describe("agentswitch config", () => {
+// Each test types as a person would, a key at a time, and waits for each screen: on a busy CI runner that is longer
+// than vitest's 5 s a test (seen 2026-10-15), so these get their own limit.
+describe("agentswitch config", { timeout: 30_000 }, () => {
   it("lists every agent's profiles, moves into a page and back, and shows a profile's rows", async () => {
     const { deps } = world();
     const ui = open(deps);
