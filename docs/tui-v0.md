@@ -4,7 +4,7 @@
 
 同日，对梳理稿的回答：名字你定即可，方便理解和上手；Ink 框架；（语言）保持你推荐的；（Clash 与 agent CLI 的安装）先不做进去。看过初稿后：命名用 agentswitch config 应该更好吧，settings 还有复数非复数的形式，不好记；报错信息是外文这一点，不用管；开始实施吧。
 
-**本文是草案，第一步已做（§7）。** 标“已定”的是用户定的，其余是提议。相关：`docs/mesh-v0.md` §4（Linux 节点以命令行为界面）、`docs/profiles-v0.md` §3.6（API key 配置）、`docs/ui-v0.md` §7（文案规范）。
+**本文是草案，§2 的三步都已做（§7）。** 标“已定”的是用户定的，其余是提议。相关：`docs/mesh-v0.md` §4（Linux 节点以命令行为界面）、`docs/profiles-v0.md` §3.6（API key 配置）、`docs/ui-v0.md` §7（文案规范）。
 
 ## 0. 要点
 
@@ -181,7 +181,7 @@ English（`en`，源语言）、简体中文（`zh-Hans`）、繁體中文（`zh
 
 ## 7. 实现（2026-10-15，catop）
 
-第一步（§2 的 1）和多语言的底子做了，分支 `config-tui`（接在 `terminal-hold` 之后）。
+§2 的三步和多语言都做了，分支 `config-tui`（接在 `terminal-hold` 之后）。侧栏按 Mac 的顺序：Agents、Models、Permissions、Keys、Node、Environment，下面一个 Dispatch 小标题，Context、Extensions。
 
 - **服务一侧**：
   - `POST /profiles/models {agent, baseUrl?, key?, profile?}`（`api/profiles.ts`，只在本机，远程 403；`remote/routes.ts` 不列）。
@@ -201,13 +201,18 @@ English（`en`，源语言）、简体中文（`zh-Hans`）、繁體中文（`zh
   - `--on <节点>`：所有行变灰，Agents 不出 `New Profile…`，Node 只显示对方 `/node` 说的。
   - 按键：↑↓ 移动，⏎ / 空格 按下，Esc / ← 返回，Tab 在页面列表和页面之间切换，L 换语言，Q 退出；问题里 Ctrl+U 清空、粘贴整段进来。
   - 用的是终端的备用屏幕，退出后原来的内容回来。
+- **第二步、第三步**：
+  - Context：CONTEXT.md、MEMORY.md 交给用户自己的编辑器（`$VISUAL`、`$EDITOR`，都没有就 `vi`；`tui/editor.ts`，文件放在只有本用户能读的临时文件夹里，用完删掉；编辑时界面经 Ink 的 `suspendTerminal` 让出终端，回来重画）。没改就不发；CONTEXT.md 保存后说服务加密了几处凭据、哪些行没留下（服务的原话）。平台经验逐条列出，删除先确认。
+  - Extensions：MCP 服务器与技能的列表。服务器页有开关、Claude Code 的审批（`Ask` / `Allow`）、分给哪几个 agent，其余（kind、command、args、env、url、headers、note）作为 JSON 在编辑器里改——Mac 的表单是逐项填，终端里整段编辑更直接；不是合法 JSON 就不发。技能页有开关、分给哪几个 agent、在编辑器里改 SKILL.md。新建先问名字（不能重名、不能用网关保留的名字）；`Import…` 列出各 agent 文件夹里找到、还没装的技能。
+  - Keys：网关的密钥对（`keeper/gateKeys.ts`，调 `secret-gate keys --json …`，和 Mac 的 GateCLI 一样）：列表、公钥、设为当前、删除（确认框写明“用它加密的密文将无法再解密”）、新建（再问要不要设为当前）。`--on` 时不显示：密钥对是各节点自己的。
+  - Environment：`agentswitch doctor` 的各行（`doctor` 多了一个 `print` 参数，界面收集它的输出），✓ ✗ ! 分别着色，`Check Again` 再查一遍。`--on` 时不显示。
 - **分层**：`tests/layers.test.ts` 加了 `i18n`（叶子）和 `tui`（可用 `profiles`、`keeper`、`i18n`），扫描也包括 `.tsx`。`tui` 不 import `client.ts`，用自己的 `ConfigClient` 接口，由 `cli.ts` 传进来。
 - **验证**：
-  - `tests/configTui.test.tsx`（12 条，`ink-testing-library` 渲染成字符串，假的服务与网关）：列表与配置页；分步新建按 key 付费的配置（key 封成密文才离开、模型从地址的列表里选）；地址没列的模型先问再带 `force`；整段粘贴的代理（密码按 host:port 封）；换到另一个站点时要新 key；session key 按 claude.ai 封；删除先确认；调用失败显示在状态行；模型保存并重启；Bypass 要再确认；node.json 只写改了的、不认识的字段原样留着；换语言写进 node.json；另一个节点只读。
+  - `tests/configTui.test.tsx`（19 条，`ink-testing-library` 渲染成字符串，假的服务与网关）：列表与配置页；分步新建按 key 付费的配置（key 封成密文才离开、模型从地址的列表里选）；地址没列的模型先问再带 `force`；整段粘贴的代理（密码按 host:port 封）；换到另一个站点时要新 key；session key 按 claude.ai 封；删除先确认；调用失败显示在状态行；模型保存并重启；Bypass 要再确认；node.json 只写改了的、不认识的字段原样留着；换语言写进 node.json；另一个节点只读；CONTEXT.md 在编辑器里改、没改不发、说出加密与删掉的行；编辑器失败不发；用 JSON 加 MCP 服务器、坏 JSON 不发、开关；导入技能、给某个 agent 关掉；密钥对设为当前、删除要确认；doctor 的各行；日文全译、中文只译整句。
   - `tests/i18n.test.ts`：语言标签的识别与优先顺序；每种语言条目齐全、没有空串、带参数的都能调；日语与西语确实译了，两种中文的每个整句都译了；`src/tui/` 里注释以外不得出现中日文字符。
-  - `tests/configText.test.ts`：代理、session key、端口的读法，供应商识别，旧服务的纯文本 404。
+  - `tests/configText.test.ts`：代理、session key、端口的读法，供应商识别，旧服务的纯文本 404，编辑器（带参数的 `$EDITOR`、失败时报错、不留文件），网关密钥对的调用与它的拒绝原话。
   - `tests/profiles.test.ts`：`probeModels` 的五种回答；`POST /profiles/models` 用刚封的 key 和配置存的 key、换站点被拒、远程 403。
   - 实机：在 dellarch 的 tmux 里对正在运行的服务只读地看了四页的英文、简体中文、日文三种，中日文的标签列对齐正常。当时运行的服务还是旧版，`Test Connection` 得到 `HTTP 404`，部署后才有这条接口。
   - `packages/linux/scripts/smoke.sh` 加了一条：在 `script` 给的伪终端里跑 `agentswitch config`，要能画出第一屏、按 Q 退出。
   - 全部 1820+ 条单元测试通过。
-- **还没做**：§2 的第二步（Context、Extensions、默认目录已在 Node 页）和第三步（Keys、Environment）；供应商地址的实测。命令行的 `policy` 也认 `skip` 了。
+- **还没做**：供应商地址的实测；部署后在 dellarch 上用真 key 试 `Test Connection`。命令行的 `policy` 也认 `skip` 了。

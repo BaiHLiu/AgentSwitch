@@ -3,7 +3,7 @@
  *  Asking is a promise, so a page asks in sequence what a Mac sheet shows at once (a new profile: its name, how it signs
  *  in, its address, its key, its model). What is being done, and what came of it, is said on the status line. */
 
-import { Box, Text, useInput, usePaste } from "ink";
+import { Box, Text, useApp, useInput, usePaste } from "ink";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Locale, Messages } from "../i18n/index.js";
 
@@ -39,6 +39,8 @@ export type Ui = {
   /** `work` done while the status line says `label`; what it throws is said there, and undefined returned. */
   run<T>(label: string, work: () => Promise<T>): Promise<T | undefined>;
   say(text: string, tone?: Tone): void;
+  /** `work` given the terminal (an editor): the screen steps aside and is drawn again after. */
+  external<T>(work: () => Promise<T> | T): Promise<T>;
   /** A question takes the page's place: the page does not take keys meanwhile. */
   readonly asking: boolean;
   readonly busy: boolean;
@@ -59,6 +61,7 @@ export function UiProvider({ children }: { children: (question: ReactNode, statu
   const [status, setStatus] = useState<Status>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const busyRef = useRef(0);
+  const { suspendTerminal } = useApp();
 
   const pick = useCallback((req: PickRequest) => new Promise<string | null>((resolve) => setQuestion({ kind: "pick", req, done: (v) => { setQuestion(null); resolve(v); } })), []);
   const ask = useCallback((req: AskRequest) => new Promise<string | null>((resolve) => setQuestion({ kind: "ask", req, done: (v) => { setQuestion(null); resolve(v); } })), []);
@@ -73,7 +76,13 @@ export function UiProvider({ children }: { children: (question: ReactNode, statu
     finally { busyRef.current -= 1; if (busyRef.current === 0) setBusy(null); }
   }, []);
 
-  const ui = useMemo<Ui>(() => ({ pick, ask, confirm, run, say, asking: question !== null, busy: busy !== null }), [pick, ask, confirm, run, say, question, busy]);
+  const external = useCallback(async <T,>(work: () => Promise<T> | T): Promise<T> => {
+    let out: T | undefined;
+    await suspendTerminal(async () => { out = await work(); });
+    return out as T;
+  }, [suspendTerminal]);
+
+  const ui = useMemo<Ui>(() => ({ pick, ask, confirm, run, say, external, asking: question !== null, busy: busy !== null }), [pick, ask, confirm, run, say, external, question, busy]);
   const line = busy ? <Text color={COLOR.accent}>{busy}…</Text> : status ? <Text color={COLOR[status.tone]} wrap="wrap">{status.text}</Text> : null;
   return <UiContext.Provider value={ui}>{children(question ? <QuestionView q={question} /> : null, line)}</UiContext.Provider>;
 }
@@ -263,7 +272,7 @@ export function Form({ rows, active, leave, height }: { rows: readonly Row[]; ac
         const here = active && index === at;
         return (
           <Box key={r.id}>
-            <Text {...(here ? { color: COLOR.accent } : r.disabled ? { color: COLOR.dim } : {})}>{here ? "▸ " : "  "}</Text>
+            <Box flexShrink={0}><Text {...(here ? { color: COLOR.accent } : r.disabled ? { color: COLOR.dim } : {})}>{here ? "▸ " : "  "}</Text></Box>
             <Box width={r.value === undefined ? undefined : labelWidth} flexShrink={0}>
               <Text {...(here ? { color: COLOR.accent } : r.disabled && r.value === undefined ? { color: COLOR.dim } : {})} wrap="truncate-end">{r.label}</Text>
             </Box>

@@ -7,8 +7,10 @@ import { render } from "ink-testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NodeSettings } from "../src/keeper/plan.js";
 import type { AgentProfiles, Profile, ProfileAgent } from "../src/profiles/store.js";
-import { ConfigApp } from "../src/tui/app.js";
-import type { ConfigClient, ConfigDeps, ModelSettings } from "../src/tui/deps.js";
+import { ConfigApp, type PageId } from "../src/tui/app.js";
+import type { ConfigClient, ConfigDeps, McpServerInput, ModelSettings } from "../src/tui/deps.js";
+import type { McpServer, Skill } from "../src/extensions/types.js";
+import type { Keypair } from "../src/keeper/gateKeys.js";
 
 const KEY = { up: "\u001B[A", down: "\u001B[B", right: "\u001B[C", left: "\u001B[D", enter: "\r", esc: "\u001B", tab: "\t" };
 
@@ -27,6 +29,9 @@ function world() {
     harnesses: { "claude-code": { models: ["opus", "sonnet"], default_model: "opus" }, codex: { models: ["gpt-a", "gpt-b"], default_model: "gpt-b" } }, restartRequired: false };
   let policy = { mode: "scoped", human: ["delete", "git_push"] };
   let settings: NodeSettings = { name: "box", lan: "10.0.0.9" };
+  let servers: McpServer[] = [{ name: "files", kind: "stdio", command: "npx", args: ["-y", "files-mcp"], env: {}, headers: {}, enabled: true, harnesses: ["claude-code", "codex", "opencode"], approval: "ask", note: "" }];
+  let skills: Skill[] = [{ name: "notes", description: "Write notes", path: "/h/skills/notes", files: 0, enabled: true, harnesses: ["claude-code", "codex", "opencode"] }];
+  let keypairs: Keypair[] = [{ name: "main", public: "PUBLICKEYMAIN0123456789", current: true }, { name: "old", public: "PUBLICKEYOLD0123456789", current: false, legacy: true }];
   const client = {
     profiles: vi.fn(async () => ({ agents })),
     createProfile: vi.fn(async (agent: ProfileAgent, name: string, kind: "subscription" | "api", api?: { key: string; baseUrl?: string; model?: string }) => {
@@ -54,17 +59,46 @@ function world() {
     mesh: vi.fn(async () => ({ keyboard: true })),
     setMesh: vi.fn(async () => ({})),
     node: vi.fn(async () => ({ name: "studio", kind: "mac", version: "0.1.0", home: "/h", has: ["terminals", "browser"] })),
+    context: vi.fn(async () => ({ path: "/h/CONTEXT.md", text: "# Me\nI work on AgentSwitch.\n", warnings: [] as string[] })),
+    putContext: vi.fn(async () => ({ warnings: ["第 3 行像是一个密码，已删除。"], sealed: [{ label: "context/token" }] })),
+    memory: vi.fn(async () => ({ path: "/h/MEMORY.md", text: "", warnings: [] as string[] })),
+    putMemory: vi.fn(async () => ({ warnings: [] as string[] })),
+    platformMemory: vi.fn(async () => ({ records: [{ id: "f1", origin: "https://shop.example", text: "Checkout needs the address form first.", kind: "operation", status: "verified" }] })),
+    forgetPlatformMemory: vi.fn(async () => ({ ok: true })),
+    mcp: vi.fn(async () => servers),
+    putMcp: vi.fn(async (server: McpServerInput) => { servers = [...servers.filter((x) => x.name !== server.name), { args: [], env: {}, headers: {}, enabled: true, harnesses: ["claude-code", "codex", "opencode"], approval: "ask", note: "", ...server } as McpServer]; return {}; }),
+    removeMcp: vi.fn(async () => ({ ok: true })),
+    skills: vi.fn(async () => skills),
+    skill: vi.fn(async (name: string) => ({ ...skills.find((x) => x.name === name)!, content: "---\nname: notes\n---\nWrite notes.\n" })),
+    putSkill: vi.fn(async (name: string, body: { enabled?: boolean; harnesses?: string[] }) => {
+      const was = skills.find((x) => x.name === name);
+      skills = [...skills.filter((x) => x.name !== name), { name, description: was?.description ?? "", path: `/h/skills/${name}`, files: 0, enabled: body.enabled ?? was?.enabled ?? true, harnesses: (body.harnesses ?? was?.harnesses ?? ["claude-code", "codex", "opencode"]) as Skill["harnesses"] }];
+      return {};
+    }),
+    removeSkill: vi.fn(async () => ({ ok: true })),
+    discoverSkills: vi.fn(async () => [{ name: "pdf", description: "Read PDFs", path: "/home/u/.claude/skills/pdf", source: "~/.claude/skills", installed: false }, { name: "notes", description: "", path: "/x", source: "~/.claude/skills", installed: true }]),
+    importSkill: vi.fn(async () => ({})),
   } satisfies ConfigClient;
   const seal = vi.fn(async (label: string, host: string, value: string) => `enc:v1:${label}-${host}-${value.length}`);
   const node = { read: vi.fn(() => settings), write: vi.fn((next: NodeSettings) => { settings = next; }), restart: vi.fn(() => true) };
-  const deps: ConfigDeps = { client, remote: null, seal, node };
-  return { client, seal, node, deps, settings: () => settings };
+  const edits: { text: string; name: string }[] = [];
+  let editTo: (text: string) => string = (text) => text;
+  const edit = vi.fn(async (text: string, name: string) => { edits.push({ text, name }); return editTo(text); });
+  const keys = {
+    list: vi.fn(async () => keypairs),
+    create: vi.fn(async (name: string, use: boolean) => { keypairs = [...keypairs.map((k) => (use ? { ...k, current: false } : k)), { name, public: "NEWPUBLIC0123456789", current: use }]; return keypairs; }),
+    use: vi.fn(async (name: string) => { keypairs = keypairs.map((k) => ({ ...k, current: k.name === name })); return keypairs; }),
+    retire: vi.fn(async (name: string) => { keypairs = keypairs.filter((k) => k.name !== name); return keypairs; }),
+  };
+  const doctor = vi.fn(async () => ["", "// runtime", "✓ node             v24.6.0", "✗ secret-gate      not at /x", "! installed        running from a checkout"]);
+  const deps: ConfigDeps = { client, remote: null, seal, node, edit, keys, doctor };
+  return { client, seal, node, deps, settings: () => settings, edits, edit, setEdit: (f: (text: string) => string) => { editTo = f; }, keys, doctor };
 }
 
 const shown: { unmount(): void }[] = [];
 afterEach(() => { for (const s of shown.splice(0)) s.unmount(); });
 
-function open(deps: ConfigDeps, page?: "agents" | "models" | "permissions" | "node", locale: "en" | "zh-Hans" | "ja" = "en") {
+function open(deps: ConfigDeps, page?: PageId, locale: "en" | "zh-Hans" | "ja" = "en") {
   const r = render(<ConfigApp deps={deps} locale={locale} rows={40} {...(page ? { page } : {})} />);
   shown.push(r);
   const frame = () => r.lastFrame() ?? "";
@@ -290,5 +324,112 @@ describe("agentswitch config", () => {
     const agents = open({ ...w.deps, remote: "studio" });
     await agents.until("Relay");
     expect(agents.frame()).not.toContain("New Profile…");
+  });
+
+  it("edits CONTEXT.md in the editor and says what the service sealed and dropped; unchanged is not sent", async () => {
+    const w = world();
+    const ui = open(w.deps, "context");
+    await ui.until("2 lines");
+    expect(ui.frame()).toContain("shop.example");
+    w.setEdit((text) => text);
+    await ui.press(KEY.enter, KEY.enter);                        // into the page, CONTEXT.md
+    await ui.until("Unchanged.");
+    expect(w.client.putContext).not.toHaveBeenCalled();
+    w.setEdit((text) => `${text}token: abc\n`);
+    await ui.press(KEY.enter);
+    await ui.until("1 credential was sealed");
+    expect(ui.frame()).toContain("第 3 行像是一个密码");
+    expect(w.client.putContext).toHaveBeenCalledWith("# Me\nI work on AgentSwitch.\ntoken: abc\n");
+    expect(w.edits[0]!.name).toBe("CONTEXT.md");
+    await ui.press(KEY.down, KEY.down, KEY.enter);               // the learned fact
+    await ui.until("Forget this?");
+    await ui.press("y");
+    await ui.until("Forgotten.");
+    expect(w.client.forgetPlatformMemory).toHaveBeenCalledWith("f1");
+  });
+
+  it("says an editor that failed and sends nothing", async () => {
+    const w = world();
+    w.edit.mockRejectedValueOnce(new Error("vi exited 1"));
+    const ui = open(w.deps, "context");
+    await ui.until("2 lines");
+    await ui.press(KEY.enter, KEY.down, KEY.enter);              // MEMORY.md
+    await ui.until("The editor did not save: vi exited 1");
+    expect(w.client.putMemory).not.toHaveBeenCalled();
+  });
+
+  it("adds an MCP server from JSON written in the editor, switches it, and refuses JSON that is not", async () => {
+    const w = world();
+    const ui = open(w.deps, "extensions");
+    await ui.until("files");
+    expect(ui.frame()).toContain("On · npx -y files-mcp");
+    await ui.press(KEY.enter, KEY.down, KEY.enter);              // + Add MCP Server…
+    await ui.until("Server Name");
+    await ui.press("files", KEY.enter);
+    await ui.until("That name is taken.");
+    w.setEdit(() => "{ not json");
+    await ui.press("\u0015", "search", KEY.enter);
+    await ui.until("Not valid JSON, nothing saved");
+    expect(w.client.putMcp).not.toHaveBeenCalled();
+    w.setEdit(() => JSON.stringify({ kind: "http", url: "https://mcp.example/sse" }));
+    await ui.press(KEY.enter);
+    await ui.until("Server Name");
+    await ui.press("search", KEY.enter);
+    await ui.until("MCP Servers › search");
+    expect(w.client.putMcp).toHaveBeenCalledWith({ kind: "http", url: "https://mcp.example/sse", name: "search" });
+    await ui.press(KEY.enter);                                   // Enabled: off
+    await vi.waitFor(() => expect(w.client.putMcp).toHaveBeenLastCalledWith(expect.objectContaining({ name: "search", enabled: false })));
+  });
+
+  it("imports a skill found in an agent's own folder, and turns a skill off for one agent", async () => {
+    const w = world();
+    const ui = open(w.deps, "extensions");
+    await ui.until("Write notes");
+    const rows = ui.frame().split("\n");
+    const at = rows.findIndex((l) => l.includes("Import…")) - rows.findIndex((l) => /files\s+On/.test(l));
+    await ui.press(KEY.enter, ...Array<string>(at).fill(KEY.down), KEY.enter);
+    await ui.until("Import a Skill");
+    expect(ui.frame()).not.toContain("/x");                      // one already installed is not offered
+    await ui.press(KEY.enter);
+    await ui.until("Imported pdf.");
+    expect(w.client.importSkill).toHaveBeenCalledWith("/home/u/.claude/skills/pdf");
+    await ui.press(KEY.up, KEY.up, KEY.enter);                   // notes
+    await ui.until("Skills › notes");
+    await ui.press(KEY.down, KEY.down, KEY.down, KEY.enter);     // Enabled, Edit SKILL.md…, Claude Code, Codex
+    await vi.waitFor(() => expect(w.client.putSkill).toHaveBeenCalledWith("notes", { harnesses: ["claude-code", "opencode"] }));
+  });
+
+  it("makes a key pair current, and deletes one only when asked in so many words", async () => {
+    const w = world();
+    const ui = open(w.deps, "keys");
+    await ui.until("Current · PUBLICKEYMAIN");
+    await ui.press(KEY.enter, KEY.down, KEY.enter);              // old
+    await ui.until("Keys › old");
+    expect(ui.frame()).toContain("PUBLICKEYOLD0123456789");
+    await ui.press(KEY.down, KEY.down, KEY.enter);               // Delete…, after Make Current
+    await ui.until("can never be opened again");
+    await ui.press("n");
+    expect(w.keys.retire).not.toHaveBeenCalled();
+    await ui.press(KEY.up, KEY.enter);                           // Make Current
+    await ui.until("old is the current key pair.");
+    expect(w.keys.use).toHaveBeenCalledWith("old");
+  });
+
+  it("shows doctor's lines marked, and asks again", async () => {
+    const w = world();
+    const ui = open(w.deps, "environment");
+    await ui.until("✗ secret-gate");
+    expect(ui.frame()).toContain("runtime");
+    await ui.press(KEY.enter, KEY.enter);
+    await vi.waitFor(() => expect(w.doctor).toHaveBeenCalledTimes(2));
+  });
+
+  it("speaks Japanese whole and Chinese in sentences", async () => {
+    const ja = open(world().deps, "context", "ja");
+    await ja.until("コンテキスト");
+    expect(ja.frame()).toContain("ディスパッチ");
+    const zh = open(world().deps, "keys", "zh-Hans");
+    await zh.until("网关的密钥对");
+    expect(zh.frame()).toContain("Keys");
   });
 });

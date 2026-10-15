@@ -5,6 +5,11 @@ import type { Approval, Task, TaskEvent } from "./engine/types.js";
 import type { AgentProfiles, Profile, ProfileAgent, ProfileKind } from "./profiles/store.js";
 import type { ModelProbe } from "./profiles/apiKeys.js";
 import type { ModelSettings } from "./router/modelOverlay.js";
+import type { DiscoveredSkill, McpServer, Skill } from "./extensions/types.js";
+import type { PlatformMemory } from "./threads/platformMemory.js";
+
+/** An MCP server as sent: what the service fills in when left out (args, env, headers, enabled, harnesses, approval, note) may be. */
+export type McpServerInput = Pick<McpServer, "name" | "kind"> & Partial<Omit<McpServer, "name" | "kind">>;
 import type { Thread, ThreadState } from "./threads/types.js";
 
 /** Rows the CLI lists by default. */
@@ -116,11 +121,23 @@ export class Client {
   context() { return this.call<{ path: string; text: string; warnings: string[] }>("GET", "/context"); }
   memory() { return this.call<{ path: string; text: string; warnings: string[] }>("GET", "/memory"); }
   putMemory(text: string) { return this.call<{ path: string; warnings: string[] }>("PUT", "/memory", { text }); }
+  /** CONTEXT.md saved: what looks like a credential is sealed first (`sealed`), lines that may not stay are said (`warnings`). */
+  putContext(text: string) { return this.call<{ path: string; warnings: string[]; sealed: { label: string }[] }>("PUT", "/context", { text }); }
+  /** What dispatch learned of platforms (docs/threads-v0.md), and one forgotten. */
+  platformMemory() { return this.call<{ records: PlatformMemory[] }>("GET", "/platform-memory"); }
+  forgetPlatformMemory(id: string) { return this.call<{ ok: true }>("DELETE", `/platform-memory/${encodeURIComponent(id)}`); }
+  putMcp(server: McpServerInput) { return this.call<McpServer>("PUT", `/mcp/${encodeURIComponent(server.name)}`, server); }
+  removeMcp(name: string) { return this.call<{ ok: true }>("DELETE", `/mcp/${encodeURIComponent(name)}`); }
+  skill(name: string) { return this.call<Skill & { content: string }>("GET", `/skills/${encodeURIComponent(name)}`); }
+  putSkill(name: string, body: { content?: string; enabled?: boolean; harnesses?: string[] }) { return this.call<Skill>("PUT", `/skills/${encodeURIComponent(name)}`, body); }
+  removeSkill(name: string) { return this.call<{ ok: true }>("DELETE", `/skills/${encodeURIComponent(name)}`); }
+  discoverSkills() { return this.call<DiscoveredSkill[]>("GET", "/skills/discover"); }
+  importSkill(path: string) { return this.call<Skill>("POST", "/skills/import", { path }); }
   records() { return this.call<unknown[]>("GET", "/records"); }
   files(taskId: string) { return this.call<{ root: "artifacts" | "cwd" | null; files: { path: string; size: number; mtime: number }[] }>("GET", `/tasks/${taskId}/files`); }
   contextExample() { return this.call<{ text: string }>("GET", "/context/example"); }
-  mcp() { return this.call<unknown[]>("GET", "/mcp"); }
-  skills() { return this.call<unknown[]>("GET", "/skills"); }
+  mcp() { return this.call<McpServer[]>("GET", "/mcp"); }
+  skills() { return this.call<Skill[]>("GET", "/skills"); }
 
   /** Follow a task's SSE stream; calls onEvent for each event, resolves when the task ends. */
   async watch(id: string, onEvent: (ev: TaskEvent) => void | Promise<void>, after = 0): Promise<void> {

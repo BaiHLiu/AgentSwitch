@@ -23,10 +23,11 @@ async function version(bin: string, env: NodeJS.ProcessEnv): Promise<string | nu
   try { return (await run(bin, ["--version"], { env, timeout: 15_000 })).stdout.trim().split("\n")[0] ?? null; } catch { return null; }
 }
 
-export async function doctor(env: NodeJS.ProcessEnv = process.env): Promise<number> {
+/** `print` takes each line (`agentswitch config`'s Environment page collects them). */
+export async function doctor(env: NodeJS.ProcessEnv = process.env, print: (line: string) => void = console.log): Promise<number> {
   let bad = 0;
-  const say = (mark: Mark, what: string, detail = "") => { if (mark === "no") bad++; console.log(`${MARK[mark]} ${what.padEnd(16)} ${detail}`); };
-  const section = (title: string) => console.log(`\n// ${title}`);
+  const say = (mark: Mark, what: string, detail = "") => { if (mark === "no") bad++; print(`${MARK[mark]} ${what.padEnd(16)} ${detail}`); };
+  const section = (title: string) => print(`\n// ${title}`);
   const home = env.HOME ?? homedir();
   const { home: asHome, gateHome, runDir } = homes(env);
   const l = layout(env);

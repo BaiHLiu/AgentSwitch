@@ -31,9 +31,10 @@
  *                               [--base-url u] [--model m] [--key]` (a key asked for, never echoed, sealed by this
  *                               node's gate), `color`, `rm`; with --on, listing only (keeper/profiles.ts)
  *   console [--open]            a one-time link that signs a browser on this machine into the web console
- *   config [agents | models | permissions | node] [--lang <en|zh-Hans|zh-Hant|ja|es>]   this node's settings on a
- *                               full screen (docs/tui-v0.md): profiles and their keys, models, approvals, the node's
- *                               own; with --on another node's, read only (tui/)
+ *   config [agents | models | permissions | keys | node | environment | context | extensions] [--lang <en|zh-Hans|
+ *                               zh-Hant|ja|es>]   this node's settings on a full screen (docs/tui-v0.md): profiles and
+ *                               their keys, models, approvals, the gate's key pairs, the node's own, doctor, CONTEXT.md
+ *                               and MEMORY.md, MCP servers and skills; with --on another node's, read only (tui/)
  */
 
 import { readLocalToken } from "./api/localAuth.js";
@@ -62,6 +63,7 @@ import { homes, runningKeeper, runNode } from "./keeper/run.js";
 import { service } from "./keeper/systemd.js";
 import { profilesCommand, readKey, sealWithGate } from "./keeper/profiles.js";
 import { localeOf, messages, pickLocale } from "./i18n/index.js";
+import { GateKeys, gateRunner } from "./keeper/gateKeys.js";
 
 const cfg = defaultConfig();
 // A node without the Mac app keeps its ports in node.json (keeper/plan.ts); the commands find its service there too.
@@ -386,6 +388,7 @@ async function main(): Promise<number> {
       if (!process.stdin.isTTY || !process.stdout.isTTY) { console.error(messages(locale).common.needsTerminal); return 2; }
       const gate = { bin: layout().gate, home: homes().gateHome };
       const { runConfig } = await import("./tui/run.js");
+      const { editText } = await import("./tui/editor.js");
       return runConfig({
         client, remote: values.on ?? null,
         seal: (label, host, value) => {
@@ -397,6 +400,9 @@ async function main(): Promise<number> {
           write: (next) => writeSettings(home, next),
           restart: () => { const pid = runningKeeper(runDir); if (!pid) return false; process.kill(pid, "SIGHUP"); return true; },
         },
+        edit: async (text, name) => editText(text, name),
+        keys: new GateKeys(gateRunner(gate)),
+        doctor: async () => { const lines: string[] = []; await doctor(process.env, (l) => lines.push(l)); return lines; },
       }, locale, a1);
     }
     case "console": {

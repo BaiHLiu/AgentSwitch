@@ -7,13 +7,24 @@ import { useMemo, useState, type ReactNode } from "react";
 import { LOCALE_NAMES, LOCALES, messages, type Locale } from "../i18n/index.js";
 import type { ConfigDeps } from "./deps.js";
 import { AgentsPage } from "./pages/agents.js";
+import { ContextPage } from "./pages/context.js";
+import { EnvironmentPage } from "./pages/environment.js";
+import { ExtensionsPage } from "./pages/extensions.js";
+import { KeysPage } from "./pages/keys.js";
 import { ModelsPage } from "./pages/models.js";
 import { NodePage } from "./pages/node.js";
 import { PermissionsPage } from "./pages/permissions.js";
 import { COLOR, UiProvider, useUi, useWords, WordsContext } from "./ui.js";
 
-export const PAGES = ["agents", "models", "permissions", "node"] as const;
+/** In the Mac's order: the app's own pages, then Dispatch's (under a heading of their own). */
+export const PAGES = ["agents", "models", "permissions", "keys", "node", "environment", "context", "extensions"] as const;
 export type PageId = (typeof PAGES)[number];
+const DISPATCH_FROM: PageId = "context";
+
+const VIEWS: Readonly<Record<PageId, (p: PageProps) => ReactNode>> = {
+  agents: AgentsPage, models: ModelsPage, permissions: PermissionsPage, keys: KeysPage, node: NodePage,
+  environment: EnvironmentPage, context: ContextPage, extensions: ExtensionsPage,
+};
 
 export type PageProps = {
   readonly deps: ConfigDeps;
@@ -84,23 +95,26 @@ function Shell({ deps, question, status, first, setLocale, fixedRows }: { deps: 
         <Box flexDirection="column" width={SIDEBAR_WIDTH} flexShrink={0} borderStyle="single" borderTop={false} borderBottom={false} borderLeft={false} borderColor={COLOR.dim}>
           {PAGES.map((p) => {
             const here = p === page;
-            return <Text key={p} {...(here ? (inPage ? { bold: true } : { color: COLOR.accent, bold: true }) : {})}>{here ? "▸ " : "  "}{t.pages[p]}</Text>;
+            return (
+              <Box key={p} flexDirection="column">
+                {p === DISPATCH_FROM ? <Box marginTop={1}><Text color={COLOR.dim}>{t.pages.dispatch}</Text></Box> : null}
+                <Text {...(here ? (inPage ? { bold: true } : { color: COLOR.accent, bold: true }) : {})} wrap="truncate-end">{here ? "▸ " : "  "}{t.pages[p]}</Text>
+              </Box>
+            );
           })}
         </Box>
         <Box flexDirection="column" flexGrow={1} paddingLeft={2}>
           {question ? <Box flexDirection="column">{question}</Box> : null}
           <Box flexDirection="column" display={question ? "none" : "flex"}>
             {deps.remote ? <Text color={COLOR.warn} wrap="wrap">{t.common.readOnly(deps.remote)}</Text> : null}
-            {page === "agents" ? <AgentsPage {...props} /> : null}
-            {page === "models" ? <ModelsPage {...props} /> : null}
-            {page === "permissions" ? <PermissionsPage {...props} /> : null}
-            {page === "node" ? <NodePage {...props} /> : null}
+            {(() => { const View = VIEWS[page]; return <View key={page} {...props} />; })()}
           </Box>
         </Box>
       </Box>
       <Box minHeight={1}>{status}</Box>
       <Text color={COLOR.dim} wrap="truncate-end">
-        {(inPage ? [t.keys.move, t.keys.open, t.keys.back, t.keys.pane, t.keys.language, t.keys.quit] : [t.keys.move, t.keys.open, t.keys.pane, t.keys.language, t.keys.quit]).join("   ")}
+        {/* A question says its own keys. */}
+        {question ? " " : (inPage ? [t.keys.move, t.keys.open, t.keys.back, t.keys.pane, t.keys.language, t.keys.quit] : [t.keys.move, t.keys.open, t.keys.pane, t.keys.language, t.keys.quit]).join("   ")}
       </Text>
     </Box>
   );
