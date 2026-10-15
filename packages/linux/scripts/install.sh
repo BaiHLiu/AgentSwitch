@@ -120,8 +120,18 @@ if [ "${1:-}" = "--finish" ]; then NOW="${3:-0}"; finish "${2:-}"; exit 0; fi
 
 STAMP="$(date -u +%Y%m%d-%H%M%S)-$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo local)"
 mkdir -p "$RUNTIMES" "$BIN"
+# One install at a time; then what an earlier one left unfinished (a build that was stopped) can go, about a gigabyte
+# each. A build that fails now takes its own unfinished folder with it.
+exec 9>"$RUNTIMES/.install.lock"
+flock -n 9 || die "another install.sh is building in $RUNTIMES"
+for left in "$RUNTIMES"/*.partial; do
+  [ -e "$left" ] || continue
+  rm -rf "$left" && echo "removed an unfinished runtime: $(basename "$left")"
+done
+trap 'rm -rf "$RUNTIMES/$STAMP.partial"' EXIT
 "$HERE/scripts/build-runtime.sh" "$RUNTIMES/$STAMP.partial"
 mv "$RUNTIMES/$STAMP.partial" "$RUNTIMES/$STAMP"
+trap - EXIT
 
 PREVIOUS="$(readlink "$RUNTIMES/current" 2>/dev/null || true)"
 switch "$STAMP"

@@ -25,7 +25,7 @@ agentswitch pair                        # a QR code for the iPhone, a link for a
 | state | `~/.agentswitch` (daemon), `~/.secret-gate` (the gate's keys) |
 | this node's settings | `~/.agentswitch/node.json` |
 
-Run `install.sh` again to update: the new runtime is built beside the old one, `current` is switched, the service
+Run `install.sh` again to update (one at a time; an earlier build that was stopped is removed first): the new runtime is built beside the old one, `current` is switched, the service
 restarted; if the daemon does not answer within a minute, `current` goes back. The two newest runtimes are kept, and
 any older one a terminal still runs on.
 
