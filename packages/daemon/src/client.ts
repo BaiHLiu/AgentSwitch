@@ -105,9 +105,10 @@ export class Client {
   saveModelSettings(update: { router?: { model: string }; default?: { harness: string; model: string } }) { return this.call<{ restartRequired: boolean }>("PUT", "/settings/models", update); }
   workdir() { return this.call<{ path: string; default: string; problem: string | null }>("GET", "/settings/workdir"); }
   setWorkdir(path: string) { return this.call<{ path: string; default: string; problem: string | null }>("PUT", "/settings/workdir", { path }); }
-  /** What paired nodes may do here (docs/mesh-v0.md): type into this node's terminals. */
-  mesh() { return this.call<{ keyboard: boolean }>("GET", "/settings/mesh"); }
-  setMesh(mesh: { keyboard: boolean }) { return this.call<{ keyboard: boolean }>("PUT", "/settings/mesh", mesh); }
+  /** What paired nodes may do here (docs/mesh-v0.md): type into this node's terminals; open tool terminals beside them
+   *  (docs/yazi-v0.md §3; absent from an older service). */
+  mesh() { return this.call<{ keyboard: boolean; files?: boolean; changes?: boolean; tools?: boolean }>("GET", "/settings/mesh"); }
+  setMesh(mesh: { keyboard?: boolean; tools?: boolean }) { return this.call<{ keyboard: boolean; files?: boolean; changes?: boolean; tools?: boolean }>("PUT", "/settings/mesh", mesh); }
   policy() { return this.call<{ policy: { mode: string; human: string[] }; categories: { id: string; title: string }[] }>("GET", "/approvals/policy"); }
   setPolicy(policy: { mode: "manual" | "auto" | "scoped" | "skip"; human?: string[] }) { return this.call<{ policy: unknown }>("PUT", "/approvals/policy", policy); }
   approve(taskId: string, approvalId: string, decision: "allow" | "deny") { return this.call<{ ok: true }>("POST", `/tasks/${taskId}/approve`, { approval_id: approvalId, decision }); }

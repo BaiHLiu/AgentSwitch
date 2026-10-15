@@ -56,8 +56,8 @@ function world() {
     setPolicy: vi.fn(async (next: { mode: string; human?: string[] }) => { policy = { mode: next.mode, human: next.human ?? [] }; return {}; }),
     workdir: vi.fn(async () => ({ path: "/home/u/AgentSwitch", default: "/home/u/AgentSwitch", problem: null })),
     setWorkdir: vi.fn(async () => ({})),
-    mesh: vi.fn(async () => ({ keyboard: true })),
-    setMesh: vi.fn(async () => ({})),
+    mesh: vi.fn(async (): Promise<{ keyboard: boolean; files?: boolean; changes?: boolean; tools?: boolean }> => ({ keyboard: true })),
+    setMesh: vi.fn(async (_next: { keyboard?: boolean; tools?: boolean }) => ({})),
     node: vi.fn(async () => ({ name: "studio", kind: "mac", version: "0.1.0", home: "/h", has: ["terminals", "browser"] })),
     context: vi.fn(async () => ({ path: "/h/CONTEXT.md", text: "# Me\nI work on AgentSwitch.\n", warnings: [] as string[] })),
     putContext: vi.fn(async () => ({ warnings: ["第 3 行像是一个密码，已删除。"], sealed: [{ label: "context/token" }] })),
@@ -314,6 +314,30 @@ describe("agentswitch config", { timeout: 30_000 }, () => {
     await ui.until("The service is restarting");
     expect(settings()).toEqual({ name: "box", lan: "10.0.0.9", remote: false, ports: { local: 5711, opencode: 4712, remote: 4713, gate: 8080 } });
     expect(node.restart).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets paired nodes open yazi only after asking, and sends that switch alone (docs/yazi-v0.md §3)", async () => {
+    const w = world();
+    let mesh = { keyboard: false, tools: false };
+    w.client.mesh.mockImplementation(async () => mesh);
+    w.client.setMesh.mockImplementation(async (next: { keyboard?: boolean; tools?: boolean }) => { mesh = { keyboard: next.keyboard ?? mesh.keyboard, tools: next.tools ?? mesh.tools }; return {}; });
+    const ui = open(w.deps, "node");
+    await ui.until("Paired Nodes May Open yazi");
+    await ui.press(KEY.enter);
+    for (let i = 0; i < 20 && !/▸ Paired Nodes May Open yazi/.test(ui.frame()); i++) await ui.press(KEY.down);
+    expect(ui.frame()).toMatch(/▸ Paired Nodes May Open yazi\s+Off/);
+    await ui.press(KEY.enter);
+    await ui.until("nobody is asked about");
+    await ui.press("n");
+    expect(w.client.setMesh).not.toHaveBeenCalled();
+    await ui.press(KEY.enter);
+    await ui.until("nobody is asked about");
+    await ui.press("y");
+    await vi.waitFor(() => expect(w.client.setMesh).toHaveBeenCalledWith({ tools: true }));
+    await ui.until(/Paired Nodes May Open yazi\s+On/);
+    // Off again without asking.
+    await ui.press(KEY.enter);
+    await vi.waitFor(() => expect(w.client.setMesh).toHaveBeenLastCalledWith({ tools: false }));
   });
 
   it("changes the language at once and keeps it in node.json", async () => {

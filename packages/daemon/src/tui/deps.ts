@@ -38,8 +38,8 @@ export type ConfigClient = {
   setPolicy(policy: { mode: PolicyMode; human?: string[] }): Promise<unknown>;
   workdir(): Promise<{ path: string; default: string; problem: string | null }>;
   setWorkdir(path: string): Promise<unknown>;
-  mesh(): Promise<{ keyboard: boolean }>;
-  setMesh(mesh: { keyboard: boolean }): Promise<unknown>;
+  mesh(): Promise<{ keyboard: boolean; files?: boolean; changes?: boolean; tools?: boolean }>;
+  setMesh(mesh: { keyboard?: boolean; tools?: boolean }): Promise<unknown>;
   node(): Promise<{ name: string; kind: string; version: string; home: string; has: string[] }>;
   context(): Promise<{ path: string; text: string; warnings: string[] }>;
   putContext(text: string): Promise<{ warnings: string[]; sealed: { label: string }[] }>;

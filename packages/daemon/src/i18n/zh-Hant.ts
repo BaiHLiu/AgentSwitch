@@ -86,6 +86,7 @@ export const zhHant: Messages = {
     portRange: "連接埠須在 1024 到 65535 之間。",
     portDistinct: "各連接埠不能相同。",
     unsaved: "有變更：Save & Restart 後生效。",
+    toolsConfirm: "配對的節點將能在這台節點的終端機旁邊開啟 yazi，並用它執行 shell 指令，不經過任何人審批。確定開啟？",
     workFolderHint: "未指定資料夾時任務在這裡執行。須為絕對路徑，不存在時會自動建立。",
   },
   context: {

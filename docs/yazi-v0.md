@@ -41,7 +41,7 @@ yazi 能执行 shell 命令（`:`、`!`、用某个程序打开文件），等�
 可选的做法：
 
 1. **严格按"远程不能开"**：只有本机（Mac 本机终端、Linux 节点本机的网页控制台）能开。最安全，但从 Mac 看 dellarch 时用不了。
-2. **加一个节点开关，默认关**（推荐，2026-10-15 采用）：Linux 节点和 Mac 各自的设置里加 "Paired Nodes May Open Files"（类似已有的 "Paired Nodes May Type"），只能在节点本机修改（`agentswitch config` 的 Node 页、Mac 的 设置 › Nodes），配对设备改不了。开着时，配对的**节点**可以开、可以用（手机仍然不能，它没有键盘）。不开就是方案 1。理由：一个节点已经允许配对节点打字时，对方本来就能让 agent 跑命令；是否再给一个不经审批的 shell，应该由节点的主人自己决定。
+2. **加一个节点开关，默认关**（推荐，2026-10-15 采用）：Linux 节点和 Mac 各自的设置里加 "Paired Nodes May Open yazi"（类似已有的 "Paired Nodes May Type"），只能在节点本机修改（`agentswitch config` 的 Node 页、Mac 的 设置 › Nodes），配对设备改不了。开着时，配对的**节点**可以开、可以用（手机仍然不能，它没有键盘）。不开就是方案 1。理由：一个节点已经允许配对节点打字时，对方本来就能让 agent 跑命令；是否再给一个不经审批的 shell，应该由节点的主人自己决定。
 
 ## 4. 各端
 
@@ -69,3 +69,16 @@ yazi 根据环境变量和对终端的查询来选图片协议（kitty、iTerm2 
 4. 网页控制台。
 
 这部分基于 `terminal-hold`（#3）的持有进程来做。
+
+## 7. 实现记录
+
+### 第 1、2 步：服务和节点开关（2026-10-15）
+
+- **终端的种类**：`TERMINAL_TOOLS = ["yazi"]`，`TerminalInfo.harness` 可以是 agent，也可以是 `yazi`；新加 `parent`（agent 终端为 null）。`TerminalHost.spawnTool(parent, "yazi")` 在 agent 当前的文件夹里开（文件夹不在了就用启动时的），尺寸默认跟 agent 终端一样；同一个 agent 终端已经开着 yazi 时返回开着的那个。工具终端照样交给持有进程，`meta.json` 里记着 `parent`，服务重启后接回；agent 终端没能接回的，工具终端一起删掉。
+- **结束**：yazi 退出后终端立即移除（屏幕先收到 `exit`，再收到 `removed`）；删除 agent 终端时，它旁边的工具终端一起删除。
+- **启动**：`toolLauncher` 用服务的环境加上 `TERM`、`AGENTSWITCH_TERMINAL_ID`，不带 hook、代理、配置和浏览器。yazi 的位置依次找 `YAZI_BIN`、PATH、`/opt/homebrew/bin`、`/usr/local/bin`、`~/.cargo/bin`。
+- **yazi 启动时等终端回答**（实测发现）：yazi 一启动就向终端发一串查询（`CSI ?996n`、`OSC 11;?`、kitty 图片协议的查询、`CSI 16t`、`CSI ?u`，最后是 DA1 `CSI 0c`），**收到 DA1 的回答之前不处理任何按键**。这些查询在任何屏幕连上之前就发出去了，快照里也不带，所以没有人回答，按键全被吞掉（按 `q` 退不出）。现在由服务自己的终端（xterm headless）回答它能回答的（DA1、光标位置）。屏幕如果也回答了，yazi 会丢掉第二个 DA1 回答，用真的 yazi 试过，画面不受影响。测试里的假 yazi 也照这个行为写：去掉服务的回答，测试就会失败。
+- **路由**：`POST /terminals/:id/tool {tool, cols?, rows?}`。本机调用随时可以；配对设备只有在节点打开开关时才可以，而且只限节点（设备的 platform 是 `macos` 或 `linux`），手机总是 403。不让看的调用方：`GET /terminals` 里没有工具终端；工具终端的各条路由一律 404（只对形如终端 id 的路径生效，`/terminals/open` 这类不受影响）。实时活动（`/live`）不算工具终端。审计记一条 `tool`。
+- **开关**：`mesh.json` 加 `tools`，默认 false（起初叫 `files`；合进主线时主线已有同名的 `files`——配对设备能不能读这台节点的文件，files-v0 §7.5——这里改名为 `tools`，界面上是 `Paired Nodes May Open yazi`）。`PUT /settings/mesh` 只认本机调用，原来就是这样；`PUT` 只改请求里带的开关，只带 `keyboard` 的旧屏幕不会改动 `tools`。`GET /node` 的 `has` 加 `yazi`（这台节点装了 yazi）和 `tools`（开关开着）。`agentswitch config` 的 Node 页加 `Paired Nodes May Open Files`，打开前要确认，关闭不用确认；服务较旧、没有 `files` 时不显示这一行。`agentswitch doctor` 在 tools 一节列出 yazi，作为可选项。
+- **验证**：新加 `tests/toolTerminals.test.ts` 7 个测试：同一个 agent 终端只开一个、退出后移除、随 agent 终端一起关闭、各种拒绝、启动环境、实时活动不算；节点和手机在开关关、开两种状态下能看到什么、能开什么、各条路由的状态码；只带 `keyboard` 的请求保留 `tools`。TUI 加 1 个测试。全部 1842 个通过。在 dellarch 上用真的 yazi（`/usr/bin/yazi`）开过：三栏照常画出，按 `q` 后终端被移除。
+- 还没做：Mac 和网页控制台的按钮（第 3、4 步）；图片预览（§5）。
