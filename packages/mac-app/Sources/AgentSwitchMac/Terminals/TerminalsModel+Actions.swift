@@ -106,6 +106,24 @@ extension TerminalsModel {
         }
     }
 
+    /// Files beside a terminal (docs/yazi-v0.md): yazi in the folder its agent works in now, in a new pane to the right
+    /// of the pane it is in (the pane it is in already, when it is open). `pane`: the pane whose button was pressed.
+    func openFiles(_ terminal: TerminalInfo, pane: Int? = nil) {
+        guard !terminal.isTool, terminal.running else { return }
+        if let pane { focus(pane: pane, force: true) }
+        let c = client()
+        Task {
+            do {
+                let tool = try await c.openTool(beside: terminal.id)
+                await refresh()
+                guard self.terminal(tool.id) != nil else { return }
+                openBeside(.terminal(tool.id))
+            } catch {
+                say(Self.reason(error))
+            }
+        }
+    }
+
     private func openBeside(_ item: TerminalRowItem) {
         let term: String? = switch item {
         case .terminal(let id): id

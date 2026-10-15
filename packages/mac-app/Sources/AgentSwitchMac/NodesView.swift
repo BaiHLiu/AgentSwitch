@@ -10,6 +10,7 @@ struct NodesView: View {
     @Environment(SettingsNavigation.self) private var navigation
     @State private var linking = false
     @State private var removing: NodeRow?
+    @State private var askingFiles = false
 
     private var store: NodesStore { model.nodes }
     private var rows: [NodeRow] { NodeRows.build(nodes: store.nodes, devices: model.devices) }
@@ -23,10 +24,16 @@ struct NodesView: View {
                 Toggle("Allow Pairing", isOn: Binding(get: { model.remoteEnabled }, set: { model.setRemoteAccess($0) }))
                 Toggle("Paired Nodes May Type", isOn: Binding(get: { store.mesh?.keyboard ?? true }, set: { on in Task { await store.setKeyboard(on, model) } }))
                     .disabled(store.mesh == nil)
+                // A service that does not know the switch says nothing of it: no row.
+                if let files = store.mesh?.files {
+                    Toggle("Paired Nodes May Open Files", isOn: Binding(get: { files }, set: { on in
+                        if on { askingFiles = true } else { Task { await store.setFiles(false, model) } }
+                    }))
+                }
             } header: {
                 SectionLabel("This Mac")
             } footer: {
-                Footer("Allow Pairing：手机和其他节点能否连接这台 Mac。Paired Nodes May Type：其他节点能否用键盘直接在这台 Mac 的终端里输入；关闭后它们只能使用回复框和指定按键。")
+                Footer("Allow Pairing：手机和其他节点能否连接这台 Mac。Paired Nodes May Type：其他节点能否用键盘直接在这台 Mac 的终端里输入；关闭后它们只能使用回复框和指定按键。Paired Nodes May Open Files：其他节点能否在这台 Mac 的终端旁边打开 yazi（Files）；yazi 能执行 shell 命令且不经审批，默认关闭；手机始终不能。")
             }
             Section {
                 if rows.isEmpty {
@@ -68,6 +75,11 @@ struct NodesView: View {
             while !Task.isCancelled { try? await Task.sleep(for: .seconds(3)); await store.refreshIfDue(model) }
         }
         .sheet(isPresented: $linking) { PairWithLinkSheet().environment(model) }
+        .confirmationDialog("允许配对的节点打开 Files？", isPresented: $askingFiles) {
+            Button("Turn On", role: .destructive) { Task { await store.setFiles(true, model) } }
+        } message: {
+            Text("配对的节点将能在这台 Mac 的终端旁边打开 yazi，并用它执行 shell 命令，不经过任何人审批。")
+        }
         .confirmationDialog("移除「\(removing?.name ?? "")」？", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button("Remove", role: .destructive) { if let row = removing { Task { await remove(row) } } }
         } message: {

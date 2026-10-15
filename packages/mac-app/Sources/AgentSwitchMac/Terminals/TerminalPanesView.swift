@@ -258,6 +258,16 @@ struct PaneHeader: View {
                 Text(ClassicWords.word("[!] Approval", in: look)).font(.system(size: 11, design: look.isClassic ? .default : .monospaced)).foregroundStyle(Color.waiting)
             }
             if let info { AgentSprite(harness: info.harness).opacity(0.75) }
+            // Files beside it: yazi in a pane to the right (docs/yazi-v0.md).
+            if let info, !info.isTool, info.running {
+                Button { model.openFiles(info, pane: pane) } label: {
+                    Image(systemName: "folder").font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Look.ink2)
+                        .frame(width: 22, height: 20).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Open Files Beside")
+            }
             // Its folder in the code editor (docs/terminal-v0.md §1 Mac "在编辑器中打开").
             if let info {
                 Button { model.openInEditor(info) } label: {
@@ -272,7 +282,7 @@ struct PaneHeader: View {
                 .help("Open in \(CodeEditor.load(.standard).short)")
             }
             // The other view of the same session (docs/simple-view-v0.md §1): each pane has its own.
-            if info != nil, let state {
+            if let info, !info.isTool, let state {
                 Button { model.focus(pane: pane); model.toggleSimple(pane: pane) } label: {
                     Group {
                         if look.isClassic { Image(systemName: state.simple ? "terminal" : "text.alignleft").font(.system(size: 10.5, weight: .medium)) }

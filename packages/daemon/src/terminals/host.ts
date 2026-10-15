@@ -1750,8 +1750,8 @@ export class TerminalHost {
     if (s.companion?.daybreak && data.includes("Daybreak")) this.daybreakLooks(s);
     s.lastOutputAt = this.o.now();
     s.emit({ type: "output", seq, data });
-    // Waiting for you, it waits whatever it draws.
-    if (!s.hooks && s.status !== "exited" && !s.attention) {
+    // Waiting for you, it waits whatever it draws. A tool (yazi) draws as it is used and is never at work.
+    if (!s.hooks && s.status !== "exited" && !s.attention && !isTool(s.harness)) {
       // A full-screen agent redraws while it waits — for the typing it echoes, a mouse move over the screen, a focus
       // change, a resize or a redraw asked for — and none of that is work: output answering what was just sent does not
       // make an idle terminal busy (a busy one stays busy while anything comes).

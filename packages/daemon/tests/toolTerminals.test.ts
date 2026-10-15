@@ -48,6 +48,10 @@ describe("tool terminals: the host", () => {
     const events: TerminalEvent[] = [];
     host.subscribe(tool.id, null, (e) => events.push(e));
     await until(() => text(events).includes(`fake yazi in ${cwd}`));
+    // It draws as it is used, and is never at work.
+    host.write(tool.id, "j");
+    await until(() => text(events).includes("yazi got"));
+    expect(host.get(tool.id)?.status).toBe("idle");
     // Asked again: the one already open.
     expect((await host.spawnTool(parent.id, "yazi")).id).toBe(tool.id);
     expect(host.list().filter((t) => t.parent === parent.id)).toHaveLength(1);

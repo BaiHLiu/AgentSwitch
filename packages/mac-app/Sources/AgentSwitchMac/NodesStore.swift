@@ -55,7 +55,12 @@ final class NodesStore {
     }
 
     func setKeyboard(_ on: Bool, _ model: AppModel) async {
-        do { mesh = try await model.client.saveMeshSettings(MeshSettings(keyboard: on)) } catch { model.errorMessage = error.localizedDescription }
+        do { mesh = try await model.client.saveMeshSettings(MeshSettings(keyboard: on, files: mesh?.files)) } catch { model.errorMessage = error.localizedDescription }
+    }
+
+    /// Paired nodes may open Files beside this Mac's terminals (docs/yazi-v0.md §3).
+    func setFiles(_ on: Bool, _ model: AppModel) async {
+        do { mesh = try await model.client.saveMeshSettings(MeshSettings(keyboard: mesh?.keyboard ?? true, files: on)) } catch { model.errorMessage = error.localizedDescription }
     }
 
     /// Pair with the node a link names; the answer, or why not in the service's own words.

@@ -82,3 +82,12 @@ yazi 根据环境变量和对终端的查询来选图片协议（kitty、iTerm2 
 - **开关**：`mesh.json` 加 `files`，默认 false。`PUT /settings/mesh` 只认本机调用，原来就是这样；只带 `keyboard` 的旧屏幕不会改动 `files`。`GET /node` 的 `has` 加 `yazi`（这台节点装了 yazi）和 `files`（开关开着）。`agentswitch config` 的 Node 页加 `Paired Nodes May Open Files`，打开前要确认，关闭不用确认；服务较旧、没有 `files` 时不显示这一行。`agentswitch doctor` 在 tools 一节列出 yazi，作为可选项。
 - **验证**：新加 `tests/toolTerminals.test.ts` 7 个测试：同一个 agent 终端只开一个、退出后移除、随 agent 终端一起关闭、各种拒绝、启动环境、实时活动不算；节点和手机在开关关、开两种状态下能看到什么、能开什么、各条路由的状态码；只带 `keyboard` 的请求保留 `files`。TUI 加 1 个测试。全部 1842 个通过。在 dellarch 上用真的 yazi（`/usr/bin/yazi`）开过：三栏照常画出，按 `q` 后终端被移除。
 - 还没做：Mac 和网页控制台的按钮（第 3、4 步）；图片预览（§5）。
+
+### 第 3 步：Mac（2026-10-15）
+
+- **按钮**：每块的标题栏多一个文件夹图标（agent 终端在运行时才有），列表里 agent 终端的右键菜单多一项 `Open Files Beside`。点了以后在这块的右边分出一块放 yazi；已经开着的，焦点移过去。不能开时（节点上没装 yazi、远程节点没打开开关），页脚显示服务给的原因。没有按 §4 原来写的那样把按钮变灰：那样要多读一次节点的 `has`，而服务本来就会说明原因。
+- **列表**：工具终端不算它所在文件夹的终端，不计入数量，没有 ⌘ 数字，也不出现在 agent 筛选里。它列在自己的 agent 终端下面，排在 subagent 之后，树枝线照常接上。
+- **分屏**：工具终端总是显示终端画面，没有简略视图（切换按钮不显示，快捷键也不起作用）。yazi 退出后，服务移除终端，它所在的那块随之关闭（列表里没有了的终端带走自己的那块，原来就是这样）。
+- **设置**：设置 › Nodes › This Mac 加 `Paired Nodes May Open Files`。打开前弹出确认，关闭直接生效；服务较旧、不认识这个开关时不显示。改 `Paired Nodes May Type` 时保留 `files` 原来的值。
+- **验证**：Core 加 3 个测试：工具终端在列表里的位置和树枝线、`parent` 的解码、`files` 未知时请求里不带它。编译和测试交给 fork 上的 CI；在 Mac 上实际点击、yazi 的图片预览还要 catop 在 Mac 上试。
+- 还没做：网页控制台（第 4 步）。

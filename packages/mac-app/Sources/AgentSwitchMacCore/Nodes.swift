@@ -112,8 +112,14 @@ public struct NodeAdded: Decodable, Equatable, Sendable {
 public struct MeshSettings: Codable, Equatable, Sendable {
     /// A paired node may type into a terminal here with a real keyboard (its keystrokes as they are).
     public var keyboard: Bool
+    /// A paired node (not a phone) may open a tool terminal (yazi) beside a terminal here (docs/yazi-v0.md §3); nil from
+    /// a service that does not know it, and left out of what is sent then.
+    public var files: Bool?
 
-    public init(keyboard: Bool = true) { self.keyboard = keyboard }
+    public init(keyboard: Bool = true, files: Bool? = nil) {
+        self.keyboard = keyboard
+        self.files = files
+    }
 }
 
 extension DaemonClient {
