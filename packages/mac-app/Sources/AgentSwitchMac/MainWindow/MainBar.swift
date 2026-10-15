@@ -20,6 +20,8 @@ struct MainBarActions {
     var toggleView: () -> Void = {}
     /// The Terminals bar's button for the terminal on screen's folder in the code editor.
     var openInEditor: () -> Void = {}
+    /// The Terminals bar's Files: yazi beside the terminal on screen (docs/yazi-v0.md).
+    var openFiles: () -> Void = {}
     /// The bar's own traffic lights while the window is full screen.
     var closeWindow: () -> Void = {}
     var exitFullScreen: () -> Void = {}
@@ -202,9 +204,15 @@ struct MainBar: View {
                         if !head.name.isEmpty {
                             // Its folder in the code editor (terminal-v0 §1 Mac "在编辑器中打开"): on the bar, which is there
                             // with one pane too (the panes' own headers are not).
+                            // Files beside it (docs/yazi-v0.md), for an agent terminal that runs.
+                            if !head.tool, head.running {
+                                ToolbarPixelButton(rows: PixelArt.toolbarFiles, help: "Open Files Beside", action: actions.openFiles)
+                            }
                             ToolbarPixelButton(rows: PixelArt.toolbarCode, help: "Open in \(CodeEditor.load(.standard).short)", action: actions.openInEditor)
-                            ToolbarPixelButton(rows: head.simple ? PixelArt.railTerminals : PixelArt.toolbarRecord,
-                                               help: head.simple ? "Terminal View ⌘⇧E" : "Simple View ⌘⇧E", action: actions.toggleView)
+                            if !head.tool {
+                                ToolbarPixelButton(rows: head.simple ? PixelArt.railTerminals : PixelArt.toolbarRecord,
+                                                   help: head.simple ? "Terminal View ⌘⇧E" : "Simple View ⌘⇧E", action: actions.toggleView)
+                            }
                         }
                         // The pane in focus split in two, the new half empty (docs/terminal-v0.md §1 分屏, 2026-10-03).
                         ToolbarPixelButton(rows: PixelArt.toolbarSplitRight, help: "Split Right ⌘D") { actions.split("right") }

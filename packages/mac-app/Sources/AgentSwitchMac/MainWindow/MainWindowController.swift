@@ -529,6 +529,7 @@ final class MainWindowController: NSObject {
             detach: { [weak self] in self?.terminals?.detachShown() },
             toggleView: { [weak self] in self?.terminals?.toggleView() },
             openInEditor: { [weak self] in self?.terminals?.openInEditor() },
+            openFiles: { [weak self] in self?.terminals?.openFiles() },
             closeWindow: { [weak self] in self?.window?.performClose(nil) },
             exitFullScreen: { [weak self] in self?.window?.toggleFullScreen(nil) },
             useNode: { [weak self] node in
