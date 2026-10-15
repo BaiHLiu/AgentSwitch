@@ -87,6 +87,7 @@ final class NativeTerminalsPage: NSObject, TerminalsPage {
     func newTerminal() { model.showCreate() }
     func toggleView() { model.toggleSimple() }
     func openInEditor() { if let terminal = model.current { model.openInEditor(terminal) } }
+    func openYazi() { if let terminal = model.current { model.openYazi(terminal) } }
     func setDetached(_ ids: Set<String>) { model.setDetached(ids) }
     func detachShown() { if let id = model.current?.id { onDetach(id) } }
 
@@ -181,6 +182,9 @@ final class NativeTerminalsPage: NSObject, TerminalsPage {
         if head.help != help { head.help = help }
         if head.status != terminal?.status { head.status = terminal?.status }
         if head.folder != terminal?.workdir { head.folder = terminal?.workdir }
+        let tool = terminal?.isTool ?? false, running = terminal?.running ?? false
+        if head.tool != tool { head.tool = tool }
+        if head.running != running { head.running = running }
         let mark = TerminalListText.mark(model.terminals)
         let state = PixelArt.MarkState(page: mark.state)
         if head.mark != state { head.mark = state }

@@ -34,6 +34,8 @@ protocol TerminalsPage: AnyObject {
     /// The bar's editor button for the terminal on screen (terminal-v0 §1 Mac "在编辑器中打开"). A requirement for the
     /// same reason as `toggleView`.
     func openInEditor()
+    /// The bar's yazi button: yazi beside the terminal on screen (docs/yazi-v0.md).
+    func openYazi()
     func shortcut(_ key: String)
     func pageDrawsIn()
     func windowKeyChanged(_ key: Bool)
@@ -62,8 +64,9 @@ protocol TerminalsPage: AnyObject {
 extension TerminalsPage {
     /// The web page has no record view.
     func toggleView() {}
-    /// The web page has no editor button.
+    /// The web page has no editor button, and its own menu for yazi.
     func openInEditor() {}
+    func openYazi() {}
 
     /// The hidden default that keeps the web page (`defaults write com.agentswitch.mac terminalsPageWeb -bool YES`).
     static var webKey: String { "terminalsPageWeb" }
