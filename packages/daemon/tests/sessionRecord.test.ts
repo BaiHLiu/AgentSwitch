@@ -191,6 +191,23 @@ describe("a Claude Code session's record", () => {
   });
 });
 
+// 2026-10-15: two agents talking through a script (scripts/room_trial.ts) — a message pasted into Claude Code was
+// missing from its record.
+it("keeps a message that was pasted whole into Claude Code: the wrapping off, what was pasted shown", () => {
+  const pasted = "〔讨论 · 评审〕Codex 对你说：\n三条意见：\n1. <restart> 做不到";
+  const path = claudeFile([
+    c.user(0, `\n\n<pasted_content id="b161">\n${pasted}\n</pasted_content id="b161">\n`),
+    c.text(5, "三条都同意。"),
+    c.user(6, `先看这个：\n<pasted_content id="c2">\n日志一行\n</pasted_content id="c2">\n然后改。`),
+    c.text(9, "好。"),
+    c.user(10, "<system-reminder>not the person's</system-reminder>"),
+  ]);
+  const items = readRecord("claude-code", path)!.items;
+  expect(items.map((it) => it.type === "user" || it.type === "answer" ? [it.type, it.text] : [it.type])).toEqual([
+    ["user", pasted], ["answer", "三条都同意。"], ["user", "先看这个：\n日志一行\n然后改。"], ["answer", "好。"],
+  ]);
+});
+
 describe("what a session changed", () => {
   it("one run of work by its id, and the last turn without one: file by file, hunks in the order they were made", () => {
     const path = claudeFile([...turn, c.user(100, "再把说明也改了"), c.tool(101, "t9", "Edit", { file_path: `${REPO}/README.md` }),

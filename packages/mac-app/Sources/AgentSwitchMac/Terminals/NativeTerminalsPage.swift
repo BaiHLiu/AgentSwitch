@@ -70,6 +70,7 @@ final class NativeTerminalsPage: NSObject, TerminalsPage {
     /// A node is no longer used: what its page remembered goes with it.
     static func forget(node: String) {
         UserDefaults.standard.removePersistentDomain(forName: store(node: node))
+        UserDefaults.standard.removeObject(forKey: EditorLink.sshHostKey(node: node))
     }
 
     // MARK: what the window asks

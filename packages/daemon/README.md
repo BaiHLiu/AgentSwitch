@@ -293,6 +293,13 @@ terminal is described in `$AGENTSWITCH_HOME/terminals/<id>/meta.json`, and a dae
 sessions and profile forwarders as their programs knew them. Without a holder (an unbuilt checkout, a socket path over
 100 bytes) terminals use node-pty in-process, as before.
 
+`npx tsx scripts/room_trial.ts <trial.json> <out dir>` tries docs/talk-v0.md with real agents (not a test: the real
+models, in the running service): it starts two terminals (`manual`), says the opening to the first and hands each
+answer to the other, headed `〔讨论 · <room>〕<name> 对你说：`, until one writes `[达成一致]`. It types only when the
+service would type a command of its own — idle, nothing waiting for you, no list on the screen, the input box there
+and empty (`inputEmpty` and `choicesOnScreen` on the screen rebuilt from the terminal's stream) — and never answers
+a question. It writes each message and each screen; `use`/`resume` pick a trial up again in its terminals.
+
 ## Shared browser
 
 `src/browser/` (docs/browser-v0.md §5): one Google Chrome the daemon holds, started on the first tab and stopped after

@@ -2,7 +2,7 @@
  *  lines carry `cwd`, `gitBranch` and `timestamp`. Sub-agent lines (`isSidechain`) are left out. */
 
 import { basename } from "node:path";
-import { headLines, isTypedText, obj, str, tailLines, time, type Json } from "./jsonl.js";
+import { headLines, isTypedText, obj, str, tailLines, time, unwrapPastes, type Json } from "./jsonl.js";
 import { currentFolder, movedFolder } from "./moved.js";
 import { clipText, MESSAGE_CHARS, type SessionMessage, type SessionMode } from "./types.js";
 
@@ -24,7 +24,7 @@ function content(line: Json): unknown[] {
 
 function userText(line: Json): string | null {
   if (line.type !== "user" || line.isMeta || line.isSidechain) return null;
-  const text = content(line).map((p) => (obj(p).type === "text" ? str(obj(p).text) : "")).join("\n").trim();
+  const text = unwrapPastes(content(line).map((p) => (obj(p).type === "text" ? str(obj(p).text) : "")).join("\n")).trim();
   return isTypedText(text) ? text : null;
 }
 
