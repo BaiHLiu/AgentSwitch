@@ -79,6 +79,7 @@ Besides everything the daemon's CLI has (`task`, `tasks`, `watch`, `approve`, `p
 | `agentswitch node run` | the keeper in the foreground (what the service runs; for a container or tmux) |
 | `agentswitch service install \| uninstall \| status \| start \| stop \| restart \| logs` | the systemd user service |
 | `agentswitch doctor` | runtime, service, agents and their sign-ins, tools |
+| `agentswitch profiles` | the agents' profiles, as the Mac's Settings › Agents: `new <agent> "<name>"` (an account; `--api [--base-url u] [--model m]` pays by a key), `api <agent> <profile>` (address, model, `--key` a new key), `color`, `rm`. A key is asked for with nothing echoed (or piped in) and sealed by this node's gate for the address's site; only the ciphertext reaches the service |
 | `agentswitch console [--open]` | a one-time link into the web console on this machine |
 | `agentswitch engine update --camoufox latest` | the shared browser's engine (needs `unzip` and Firefox's libraries) |
 
