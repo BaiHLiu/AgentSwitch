@@ -33,26 +33,48 @@ export type ApiKeysOptions = {
   readonly resolve?: KeyResolver | undefined;
   /** The models the address offers for this key (`listModels` by default); null when it would not say. */
   readonly models?: (agent: ProfileAgent, baseUrl: string | undefined, key: string) => Promise<readonly string[] | null>;
+  /** What the address says when asked for its models (`probeModels` by default). */
+  readonly probe?: (agent: ProfileAgent, baseUrl: string | undefined, key: string) => Promise<ModelProbe>;
 };
 
 const MODELS_TIMEOUT_MS = 8_000;
 
+/** What an address said when asked for its models with a key: the models; that it refused the key (401, 403); that it
+ *  has no list (404, or an answer without one); another status; or that it could not be reached at all. */
+export type ModelProbe =
+  | { readonly models: readonly string[] }
+  | { readonly refused: number }
+  | { readonly unlisted: true }
+  | { readonly status: number }
+  | { readonly unreachable: string };
+
 /** The models an address lists for a key — Anthropic's `GET /v1/models` (`x-api-key` and a bearer, as Claude Code sends
- *  the key), OpenAI's `GET <base>/models` — or null when it lists none (a relay without the route, an address that is
- *  down): then a model is not checked. */
-export async function listModels(agent: ProfileAgent, baseUrl: string | undefined, key: string, fetchImpl: typeof fetch = fetch): Promise<readonly string[] | null> {
+ *  the key), OpenAI's `GET <base>/models` — or what it said instead (the settings screen's model list and its
+ *  connection test, `POST /profiles/models`). */
+export async function probeModels(agent: ProfileAgent, baseUrl: string | undefined, key: string, fetchImpl: typeof fetch = fetch): Promise<ModelProbe> {
   const base = (baseUrl ?? API_HOME[agent] ?? "").replace(/\/+$/, "");
-  if (!base) return null;
+  if (!base) return { unlisted: true };
   const url = agent === "claude-code" ? `${base}/v1/models?limit=1000` : `${base}/models`;
   const headers: Record<string, string> = agent === "claude-code" ? { "x-api-key": key, authorization: `Bearer ${key}`, "anthropic-version": "2023-06-01" } : { authorization: `Bearer ${key}` };
+  let res: Response;
+  try { res = await fetchImpl(url, { headers, signal: AbortSignal.timeout(MODELS_TIMEOUT_MS) }); }
+  catch (err) { return { unreachable: (err as Error).message }; }
+  if (res.status === 401 || res.status === 403) return { refused: res.status };
+  if (res.status === 404) return { unlisted: true };
+  if (!res.ok) return { status: res.status };
   try {
-    const res = await fetchImpl(url, { headers, signal: AbortSignal.timeout(MODELS_TIMEOUT_MS) });
-    if (!res.ok) return null;
     const data = ((await res.json()) as { data?: unknown }).data;
-    if (!Array.isArray(data)) return null;
+    if (!Array.isArray(data)) return { unlisted: true };
     const ids = data.map((m) => (m && typeof m === "object" ? (m as { id?: unknown }).id : null)).filter((id): id is string => typeof id === "string");
-    return ids.length ? ids : null;
-  } catch { return null; }
+    return ids.length ? { models: ids } : { unlisted: true };
+  } catch { return { unlisted: true }; }
+}
+
+/** The models an address lists for a key, or null when it lists none (a relay without the route, an address that is
+ *  down): then a model is not checked. */
+export async function listModels(agent: ProfileAgent, baseUrl: string | undefined, key: string, fetchImpl: typeof fetch = fetch): Promise<readonly string[] | null> {
+  const said = await probeModels(agent, baseUrl, key, fetchImpl);
+  return "models" in said ? said.models : null;
 }
 
 /** What to say of `model` when `offered` does not list it: the one it was likely meant to be, and some others. */
@@ -107,6 +129,22 @@ export class ApiKeys {
     const plain = await this.open(agent, key, next.baseUrl);
     if (!force) await this.offered(agent, next.baseUrl, plain, next.model);
     this.o.store.setApi(agent, id, { key, baseUrl: next.baseUrl, model: next.model });
+  }
+
+  /** What the address says when asked for its models with a key: `key` a ciphertext just sealed for it (a profile not
+   *  made yet), else the key profile `profile` keeps — which opens only while the address is on the site it was sealed
+   *  for. Nothing is kept. */
+  async models(agent: ProfileAgent, ask: { readonly key?: string | undefined; readonly profile?: string | undefined; readonly baseUrl?: string | undefined }): Promise<ModelProbe> {
+    let sealed = ask.key;
+    if (!sealed && ask.profile) {
+      const kept = this.o.store.apiOf(agent, ask.profile);
+      if (!kept) throw new ApiKeyError("这个配置没有 API key。");
+      if (apiSite(agent, ask.baseUrl) !== apiSite(agent, kept.baseUrl)) throw new ApiKeyError("地址换到了另一个站点，原来的 API key 是为原站点加密的，请一并填入新的。");
+      sealed = kept.key;
+    }
+    if (!sealed) throw new ApiKeyError("没有 API key。");
+    const plain = await this.open(agent, sealed, ask.baseUrl);
+    return (this.o.probe ?? probeModels)(agent, ask.baseUrl, plain);
   }
 
   /** The key itself, for the agent of a terminal under `id` to send. */

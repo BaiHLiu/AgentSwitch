@@ -15,7 +15,7 @@ import { ExitError, ExitPool } from "../src/browser/exits.js";
 import type { ApiDeps } from "../src/api/shared.js";
 import { markRemote } from "../src/core/caller.js";
 import { DEFAULT_PROFILE, ProfileError, ProfileStore } from "../src/profiles/store.js";
-import { ApiKeyError, ApiKeys, listModels, unknownModel } from "../src/profiles/apiKeys.js";
+import { ApiKeyError, ApiKeys, listModels, probeModels, unknownModel } from "../src/profiles/apiKeys.js";
 import { mountSessions } from "../src/api/sessions.js";
 import { mountTerminals } from "../src/api/terminals.js";
 import { TerminalHost, type LaunchRequest } from "../src/terminals/host.js";
@@ -634,6 +634,42 @@ describe("a profile that pays by a key (§3.6)", () => {
     expect(await listModels("claude-code", undefined, "k", down)).toBeNull();
     expect(unknownModel("claude-opus-5.5", ["claude-opus-5-5"])).toContain("是不是 claude-opus-5-5");
     expect(unknownModel("totally-else", ["claude-opus-5-5"])).not.toContain("是不是");
+  });
+
+  it("says why an address gave no models: the key refused, no list, another status, not reached", async () => {
+    const answer = (status: number, body = "") => (async () => new Response(body, { status })) as unknown as typeof fetch;
+    expect(await probeModels("claude-code", undefined, "k", answer(200, JSON.stringify({ data: [{ id: "m1" }] })))).toEqual({ models: ["m1"] });
+    expect(await probeModels("claude-code", undefined, "k", answer(401))).toEqual({ refused: 401 });
+    expect(await probeModels("codex", undefined, "k", answer(403))).toEqual({ refused: 403 });
+    expect(await probeModels("codex", undefined, "k", answer(404))).toEqual({ unlisted: true });
+    expect(await probeModels("codex", undefined, "k", answer(200, "{}"))).toEqual({ unlisted: true });
+    expect(await probeModels("codex", undefined, "k", answer(502))).toEqual({ status: 502 });
+    const down = (async () => { throw new Error("connect ECONNREFUSED"); }) as unknown as typeof fetch;
+    expect(await probeModels("codex", undefined, "k", down)).toEqual({ unreachable: "connect ECONNREFUSED" });
+  });
+
+  it("lists an address's models for a key just sealed or one a profile keeps, on this node only (POST /profiles/models)", async () => {
+    const { store } = world();
+    const asked: { agent: string; baseUrl: string | undefined; key: string }[] = [];
+    const keys = new ApiKeys({ store, models: NO_LIST, probe: async (agent, baseUrl, key) => { asked.push({ agent, baseUrl, key }); return { models: ["m1", "m2"] }; },
+      resolve: gate({ [SEALED]: { site: "https://api.anthropic.com/", value: "sk-ant-api03-made-up" }, [OTHER]: { site: "https://relay.example/", value: "sk-relay-made-up" } }) });
+    const own = await keys.create("claude-code", "Key", { key: SEALED });
+    const app = new Hono<{ Bindings: Record<string, unknown> }>();
+    mountProfiles(app, { profiles: store, apiKeys: keys } as unknown as ApiDeps);
+    const post = async (body: unknown, env?: Record<string, unknown>) => {
+      const res = await app.request("/profiles/models", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }, env);
+      return { status: res.status, json: (await res.json()) as Record<string, unknown> };
+    };
+    expect(await post({ agent: "claude-code", baseUrl: "https://relay.example/v1/", key: OTHER })).toEqual({ status: 200, json: { models: ["m1", "m2"] } });
+    expect(await post({ agent: "claude-code", profile: own.id })).toEqual({ status: 200, json: { models: ["m1", "m2"] } });
+    expect(asked).toEqual([{ agent: "claude-code", baseUrl: "https://relay.example/v1", key: "sk-relay-made-up" }, { agent: "claude-code", baseUrl: undefined, key: "sk-ant-api03-made-up" }]);
+    // The key a profile keeps opens for its own site only; a key for another site is not opened.
+    expect((await post({ agent: "claude-code", profile: own.id, baseUrl: "https://relay.example" })).json.error).toMatch(/另一个站点/);
+    expect((await post({ agent: "claude-code", key: SEALED, baseUrl: "https://relay.example" })).status).toBe(400);
+    expect((await post({ agent: "claude-code", baseUrl: "ftp://x", key: SEALED })).status).toBe(400);
+    expect((await post({ agent: "claude-code" })).status).toBe(400);
+    expect((await post({ agent: "claude-code", key: SEALED }, markRemote({}, { deviceId: "phone" }))).status).toBe(403);
+    expect(JSON.stringify(store.all())).not.toContain("m1");
   });
 
   it("starts the agent with a command for the key and the address: nothing of the key in its arguments, environment or files", () => {

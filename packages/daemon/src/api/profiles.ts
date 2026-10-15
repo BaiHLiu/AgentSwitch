@@ -7,7 +7,7 @@ import { z } from "zod";
 import { checkedProxy, ExitError, ExitPool } from "../browser/exits.js";
 import { proxyPlace } from "../browser/identity.js";
 import { remoteCaller } from "../core/caller.js";
-import { PROFILE_AGENTS, PROFILE_COLORS, ProfileError, type ProfileAgent, type ProfileProxy } from "../profiles/store.js";
+import { apiAddress, PROFILE_AGENTS, PROFILE_COLORS, ProfileError, type ProfileAgent, type ProfileProxy } from "../profiles/store.js";
 import { SessionKeyError } from "../browser/sessionKey.js";
 import { ApiKeyError } from "../profiles/apiKeys.js";
 import { parseBody, type ApiDeps } from "./shared.js";
@@ -55,6 +55,24 @@ export function mountProfiles(app: Hono<any>, deps: ApiDeps): void {
       const profile = store.create(body.data.agent, body.data.name, body.data.kind);
       return c.json(made(profile.id), 201);
     } catch (err) {
+      if (err instanceof ApiKeyError) return c.json({ error: err.message }, 400);
+      const f = failed(err); return c.json({ error: f.error }, f.status);
+    }
+  });
+
+  // The models an address offers for a key, or what it said instead (docs/tui-v0.md §3): the settings screen's model
+  // list and its connection test. The key is a ciphertext just sealed for the address, or the one a profile keeps;
+  // nothing is kept. On this node only, as making and changing a profile is.
+  app.post("/profiles/models", async (c) => {
+    if (remoteCaller(c.env)) return c.json({ error: "a profile's models are asked for on the node itself" }, 403);
+    const body = await parseBody(c, z.object({ agent: Agent, baseUrl: z.string().max(300).nullable().optional(), key: z.string().max(4000).optional(), profile: z.string().min(1).max(40).optional() }));
+    if (!body.ok) return c.json({ error: body.error }, 400);
+    if (!deps.apiKeys) return c.json({ error: "this service cannot keep an API key" }, 503);
+    const typed = body.data.baseUrl?.trim();
+    const baseUrl = typed ? apiAddress(typed) : undefined;
+    if (baseUrl === null) return c.json({ error: "地址不是一个 http(s) 地址。" }, 400);
+    try { return c.json(await deps.apiKeys.models(body.data.agent, { key: body.data.key?.trim() || undefined, profile: body.data.profile, baseUrl })); }
+    catch (err) {
       if (err instanceof ApiKeyError) return c.json({ error: err.message }, 400);
       const f = failed(err); return c.json({ error: f.error }, f.status);
     }

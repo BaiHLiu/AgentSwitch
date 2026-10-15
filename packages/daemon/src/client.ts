@@ -3,6 +3,8 @@
 import type { EngineStatus, EngineUpdateRequest } from "./browser/engine/kit.js";
 import type { Approval, Task, TaskEvent } from "./engine/types.js";
 import type { AgentProfiles, Profile, ProfileAgent, ProfileKind } from "./profiles/store.js";
+import type { ModelProbe } from "./profiles/apiKeys.js";
+import type { ModelSettings } from "./router/modelOverlay.js";
 import type { Thread, ThreadState } from "./threads/types.js";
 
 /** Rows the CLI lists by default. */
@@ -32,7 +34,10 @@ export class Client {
   private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
     const res = await this.fetchImpl(`${this.base}${path}`, { method, headers: { "content-type": "application/json", ...this.auth() }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
     const text = await res.text();
-    const data = text ? (JSON.parse(text) as T & { error?: string }) : ({} as T & { error?: string });
+    // A service older than the call answers a route it does not have in plain text (`404 Not Found`).
+    let data: T & { error?: string };
+    try { data = text ? (JSON.parse(text) as T & { error?: string }) : ({} as T & { error?: string }); }
+    catch { throw new Error(res.ok ? `${method} ${path}: not JSON` : `HTTP ${res.status}${text.trim() ? `: ${text.trim().slice(0, 200)}` : ""}`); }
     if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
     return data;
   }
@@ -52,6 +57,8 @@ export class Client {
   revokeDevice(id: string) { return this.call<{ ok: true }>("DELETE", `/devices/${encodeURIComponent(id)}`); }
   /** docs/profiles-v0.md: every agent's profiles; one made (an API key a ciphertext, §3.6), changed, removed. */
   profiles() { return this.call<{ agents: Record<ProfileAgent, AgentProfiles> }>("GET", "/profiles"); }
+  /** The models an address offers for a key (a ciphertext just sealed for it, or the one `profile` keeps), or what it said instead. */
+  profileModels(agent: ProfileAgent, ask: { baseUrl?: string; key?: string; profile?: string }) { return this.call<ModelProbe>("POST", "/profiles/models", { agent, ...ask }); }
   createProfile(agent: ProfileAgent, name: string, kind: ProfileKind, api?: { key: string; baseUrl?: string; model?: string; force?: boolean }) {
     return this.call<{ profile: Profile; agents: Record<ProfileAgent, AgentProfiles> }>("POST", "/profiles", { agent, name, kind, ...(api ? { api } : {}) });
   }
@@ -59,6 +66,15 @@ export class Client {
     return this.call<{ agents: Record<ProfileAgent, AgentProfiles> }>("PUT", `/profiles/${agent}/${encodeURIComponent(id)}/api`, api);
   }
   setProfileColor(agent: ProfileAgent, id: string, color: string) { return this.call<{ agents: Record<ProfileAgent, AgentProfiles> }>("PUT", `/profiles/${agent}/${encodeURIComponent(id)}/color`, { color }); }
+  /** A profile's own proxy (§4: its password a ciphertext sealed for the proxy's host:port; `keepPassword` keeps the one
+   *  kept) set or, with `server` null, taken away; checked at once, `problem` saying when it let nothing out. */
+  setProfileProxy(agent: ProfileAgent, id: string, proxy: { server: string | null; username?: string; password?: string; keepPassword?: boolean }) {
+    return this.call<{ agents: Record<ProfileAgent, AgentProfiles>; problem?: string }>("PUT", `/profiles/${agent}/${encodeURIComponent(id)}/proxy`, proxy);
+  }
+  checkProfile(agent: ProfileAgent, id: string) { return this.call<{ agents: Record<ProfileAgent, AgentProfiles>; problem?: string }>("POST", `/profiles/${agent}/${encodeURIComponent(id)}/check`, {}); }
+  /** A claude.ai session key (§3.4), a ciphertext sealed for claude.ai; null forgets it. */
+  setProfileSessionKey(agent: ProfileAgent, id: string, key: string | null) { return this.call<{ agents: Record<ProfileAgent, AgentProfiles> }>("PUT", `/profiles/${agent}/${encodeURIComponent(id)}/session-key`, { key }); }
+  setProfileTelemetry(agent: ProfileAgent, id: string, on: boolean) { return this.call<{ agents: Record<ProfileAgent, AgentProfiles> }>("PUT", `/profiles/${agent}/${encodeURIComponent(id)}/telemetry`, { on }); }
   removeProfile(agent: ProfileAgent, id: string) { return this.call<{ agents: Record<ProfileAgent, AgentProfiles> }>("DELETE", `/profiles/${agent}/${encodeURIComponent(id)}`); }
   /** docs/browser-v0.md §7: the browser engine as installed; `check` asks what could be. */
   browserEngine(opts: { check?: boolean; prerelease?: boolean } = {}) {
@@ -79,8 +95,16 @@ export class Client {
   tasks(limit = CLIENT_LIST_LIMIT) { return this.call<Task[]>("GET", `/tasks?limit=${limit}`); }
   task(id: string) { return this.call<Task & { approvals: Approval[] }>("GET", `/tasks/${id}`); }
   answer(taskId: string, approvalId: string, text: string) { return this.call<{ ok: true }>("POST", `/tasks/${taskId}/answer`, { approval_id: approvalId, text }); }
+  /** The dispatch model and the default executor and model as they will be after the next start (app-v0 §2). */
+  modelSettings() { return this.call<ModelSettings & { restartRequired: boolean }>("GET", "/settings/models"); }
+  saveModelSettings(update: { router?: { model: string }; default?: { harness: string; model: string } }) { return this.call<{ restartRequired: boolean }>("PUT", "/settings/models", update); }
+  workdir() { return this.call<{ path: string; default: string; problem: string | null }>("GET", "/settings/workdir"); }
+  setWorkdir(path: string) { return this.call<{ path: string; default: string; problem: string | null }>("PUT", "/settings/workdir", { path }); }
+  /** What paired nodes may do here (docs/mesh-v0.md): type into this node's terminals. */
+  mesh() { return this.call<{ keyboard: boolean }>("GET", "/settings/mesh"); }
+  setMesh(mesh: { keyboard: boolean }) { return this.call<{ keyboard: boolean }>("PUT", "/settings/mesh", mesh); }
   policy() { return this.call<{ policy: { mode: string; human: string[] }; categories: { id: string; title: string }[] }>("GET", "/approvals/policy"); }
-  setPolicy(policy: { mode: "manual" | "auto" | "scoped"; human?: string[] }) { return this.call<{ policy: unknown }>("PUT", "/approvals/policy", policy); }
+  setPolicy(policy: { mode: "manual" | "auto" | "scoped" | "skip"; human?: string[] }) { return this.call<{ policy: unknown }>("PUT", "/approvals/policy", policy); }
   approve(taskId: string, approvalId: string, decision: "allow" | "deny") { return this.call<{ ok: true }>("POST", `/tasks/${taskId}/approve`, { approval_id: approvalId, decision }); }
   cancel(id: string) { return this.call<Task>("POST", `/tasks/${id}/cancel`); }
   deleteTask(id: string) { return this.call<{ ok: true }>("DELETE", `/tasks/${id}`); }
