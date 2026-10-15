@@ -10,6 +10,7 @@ struct NodesView: View {
     @Environment(SettingsNavigation.self) private var navigation
     @State private var linking = false
     @State private var removing: NodeRow?
+    @State private var askingTools = false
 
     private var store: NodesStore { model.nodes }
     private var rows: [NodeRow] { NodeRows.build(nodes: store.nodes, devices: model.devices) }
@@ -28,10 +29,16 @@ struct NodesView: View {
                 // Changing them is a step past reading them: off while reading is (docs/files-v0.md §12.5).
                 Toggle("Paired Nodes May Change Files", isOn: Binding(get: { (store.mesh?.files ?? true) && (store.mesh?.changes ?? true) }, set: { on in Task { await store.setChanges(on, model) } }))
                     .disabled(store.mesh == nil || !(store.mesh?.files ?? true))
+                // yazi beside a terminal (docs/yazi-v0.md §3); a service that does not know the switch says nothing of it: no row.
+                if let tools = store.mesh?.tools {
+                    Toggle("Paired Nodes May Open yazi", isOn: Binding(get: { tools }, set: { on in
+                        if on { askingTools = true } else { Task { await store.setTools(false, model) } }
+                    }))
+                }
             } header: {
                 SectionLabel("This Mac")
             } footer: {
-                Footer("Allow Pairing：手机和其他节点能否连接这台 Mac。Paired Nodes May Type：其他节点能否用键盘直接在这台 Mac 的终端里输入；关闭后它们只能使用回复框和指定按键。Paired Nodes May Read Files：手机和其他节点能否在文件栏中浏览这台 Mac 的文件，各自的范围在下面每一行的 Files 中设置。Paired Nodes May Change Files：它们能否在读得到的范围内新建、改名、移到废纸篓，以及从手机传文件进来；AgentSwitch 自己的文件夹不会被改动。")
+                Footer("Allow Pairing：手机和其他节点能否连接这台 Mac。Paired Nodes May Type：其他节点能否用键盘直接在这台 Mac 的终端里输入；关闭后它们只能使用回复框和指定按键。Paired Nodes May Read Files：手机和其他节点能否在文件栏中浏览这台 Mac 的文件，各自的范围在下面每一行的 Files 中设置。Paired Nodes May Change Files：它们能否在读得到的范围内新建、改名、移到废纸篓，以及从手机传文件进来；AgentSwitch 自己的文件夹不会被改动。Paired Nodes May Open yazi：其他节点能否在这台 Mac 的终端旁边打开 yazi；yazi 能执行 shell 命令且不经审批，默认关闭；手机始终不能。")
             }
             Section {
                 if rows.isEmpty {
@@ -74,6 +81,11 @@ struct NodesView: View {
             while !Task.isCancelled { try? await Task.sleep(for: .seconds(3)); await store.refreshIfDue(model) }
         }
         .sheet(isPresented: $linking) { PairWithLinkSheet().environment(model) }
+        .confirmationDialog("允许配对的节点打开 yazi？", isPresented: $askingTools) {
+            Button("Turn On", role: .destructive) { Task { await store.setTools(true, model) } }
+        } message: {
+            Text("配对的节点将能在这台 Mac 的终端旁边打开 yazi，并用它执行 shell 命令，不经过任何人审批。")
+        }
         .confirmationDialog("移除「\(removing?.name ?? "")」？", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button("Remove", role: .destructive) { if let row = removing { Task { await remove(row) } } }
         } message: {

@@ -427,6 +427,7 @@ private struct TerminalRow: View {
             Button("Open in New Window") { model.onDetach(terminal.id) }
         }
         Button("Open in \(CodeEditor.load(.standard).short)") { model.openInEditor(terminal) }
+        if !terminal.isTool, terminal.running { Button("Open yazi Beside") { model.openYazi(terminal) } }
         Divider()
         Button("Close", role: .destructive) { model.close(terminal) }
             .keyboardShortcut("w", modifiers: .command)
