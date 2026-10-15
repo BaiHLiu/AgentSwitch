@@ -7,7 +7,7 @@
 
 import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { isTypedText, obj, str, time, type Json } from "./jsonl.js";
+import { isTypedText, obj, str, time, unwrapPastes, type Json } from "./jsonl.js";
 import type { SessionMessage } from "./types.js";
 
 export type StepKind = "read" | "search" | "list" | "run" | "edit" | "write" | "web" | "agent" | "todo" | "think" | "tool";
@@ -303,7 +303,7 @@ function claudeBuild(lines: readonly Line[]): Builder {
     const ts = time(line.timestamp);
     const cwd = str(line.cwd);
     if (line.type === "queue-operation") {
-      const text = str(line.content);
+      const text = unwrapPastes(str(line.content));
       if (line.operation === "enqueue") { if (isTypedText(text)) queue.push({ at, ts, text }); }
       else if (line.operation === "dequeue") queue.shift();
       else if (line.operation === "remove") { const i = queue.findIndex((q) => q.text === text); queue.splice(i < 0 ? 0 : i, 1); }
@@ -325,7 +325,7 @@ function claudeBuild(lines: readonly Line[]): Builder {
       const a = obj(line.attachment);
       if (a.type !== "queued_command" || a.commandMode !== "prompt" || obj(a.origin).kind !== "human") continue;
       const ps = Array.isArray(a.prompt) ? a.prompt.map(obj) : [{ type: "text", text: str(a.prompt) }];
-      const text = ps.map((p) => (p.type === "text" ? str(p.text) : "")).join("\n").trim();
+      const text = unwrapPastes(ps.map((p) => (p.type === "text" ? str(p.text) : "")).join("\n")).trim();
       const images = ps.filter((p) => p.type === "image").length;
       if (isTypedText(text) || images) b.user(at, ts, text, images);
       continue;
@@ -344,7 +344,7 @@ function claudeBuild(lines: readonly Line[]): Builder {
         b.touch(ts);
       }
       if (line.isMeta || line.isCompactSummary || line.isVisibleInTranscriptOnly) continue;
-      const text = ps.map((p) => (p.type === "text" ? str(p.text) : "")).join("\n").trim();
+      const text = unwrapPastes(ps.map((p) => (p.type === "text" ? str(p.text) : "")).join("\n")).trim();
       if (text.startsWith("[Request interrupted")) { b.note(at, ts, "Interrupted"); continue; }
       const images = ps.filter((p) => p.type === "image").length;
       if (isTypedText(text) || (images && !text)) b.user(at, ts, text, images);
