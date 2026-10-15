@@ -41,7 +41,7 @@ struct NodesView: View {
             } header: {
                 SectionLabel("Nodes")
             } footer: {
-                Footer("每一行是一个已配对的节点或手机，两个方向各有一个开关。关闭立即生效；重新打开需要再次配对该方向。")
+                Footer("每一行是一个已配对的节点或手机，两个方向各有一个开关。关闭立即生效；重新打开需要再次配对该方向。SSH Host：这台 Mac 用 ssh 连接该节点时用的主机名（例如 ~/.ssh/config 里的 Host），终端的 Open in VS Code 通过它用 Remote - SSH 打开文件夹；只保存在这台 Mac 上。")
             }
             Section {
                 HStack(spacing: 8) {
@@ -128,6 +128,7 @@ private struct NodeRowView: View {
                 direction("This Mac Uses It", on: row.uses, set: setUses)
             }
             direction("It Uses This Mac", on: row.usedBy, set: setUsedBy)
+            if let node = row.node { SSHHostField(node: node.id) }
         }
         .padding(.vertical, 2)
     }
@@ -148,6 +149,27 @@ private struct NodeRowView: View {
         case .linux: "server.rack"
         case .mac: "desktopcomputer"
         }
+    }
+}
+
+/// `SSH Host                                  [dellarch      ]`: what this Mac's ssh knows the node by, for opening a
+/// terminal's folder in the code editor over SSH (docs/terminal-v0.md §1 Mac "在编辑器中打开"). Kept on this Mac alone.
+private struct SSHHostField: View {
+    @AppStorage private var host: String
+
+    init(node: String) { _host = AppStorage(wrappedValue: "", EditorLink.sshHostKey(node: node)) }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("SSH Host").font(.callout).foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            if !host.isEmpty, !EditorLink.validHost(host.trimmingCharacters(in: .whitespaces)) {
+                Text("Invalid").font(.caption).foregroundStyle(Color.attention)
+            }
+            TextField("SSH Host", text: $host, prompt: Text("Host in ~/.ssh/config"))
+                .labelsHidden().textFieldStyle(.roundedBorder).font(.callout.monospaced()).frame(width: 180)
+        }
+        .padding(.leading, 34)
     }
 }
 
