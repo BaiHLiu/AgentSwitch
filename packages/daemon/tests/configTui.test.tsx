@@ -102,15 +102,20 @@ function open(deps: ConfigDeps, page?: PageId, locale: "en" | "zh-Hans" | "ja" =
   const r = render(<ConfigApp deps={deps} locale={locale} rows={40} {...(page ? { page } : {})} />);
   shown.push(r);
   const frame = () => r.lastFrame() ?? "";
-  const until = async (seen: string | RegExp, ms = 2000) => {
+  // Generous: CI's runners draw a good deal slower than a workstation.
+  const until = async (seen: string | RegExp, ms = 6000) => {
     const end = Date.now() + ms;
     while (!(typeof seen === "string" ? frame().includes(seen) : seen.test(frame()))) {
       if (Date.now() > end) throw new Error(`never saw ${seen} in:\n${frame()}`);
       await new Promise((res) => setTimeout(res, 10));
     }
   };
-  // One key at a time, each given its turn (the parser takes a lone Esc after a moment).
-  const press = async (...keys: string[]) => { for (const k of keys) { r.stdin.write(k); await new Promise((res) => setTimeout(res, k === KEY.esc ? 100 : 60)); } };
+  // One key at a time, each given its turn (the parser takes a lone Esc after a moment). Words typed get longer: the
+  // box that takes them filters as it goes, and a key that follows too soon (Enter) can reach it before the words do
+  // (seen on a CI runner: the model typed was not the one picked).
+  const press = async (...keys: string[]) => {
+    for (const k of keys) { r.stdin.write(k); await new Promise((res) => setTimeout(res, k === KEY.esc ? 100 : k.length > 1 && !k.startsWith("\u001b") ? 250 : 60)); }
+  };
   return { frame, until, press };
 }
 
@@ -166,7 +171,9 @@ describe("agentswitch config", () => {
     await ui.until("Claude Code › Relay");
     await ui.press(KEY.down, KEY.down, KEY.down, KEY.enter);     // Model
     await ui.until("claude-opus-5-5");
-    await ui.press("claude-opus-5.5", KEY.enter);
+    await ui.press("claude-opus-5.5");
+    await ui.until("Use “claude-opus-5.5”");
+    await ui.press(KEY.enter);
     await ui.until("does not list claude-opus-5.5");
     await ui.press("y");
     await ui.until("Saved.");
