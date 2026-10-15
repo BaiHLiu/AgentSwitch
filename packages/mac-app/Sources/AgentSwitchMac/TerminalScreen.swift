@@ -678,6 +678,11 @@ final class TerminalScreenController: NSObject {
         }
     }
 
+    #if DEBUG
+    /// RoomPreview: the user's look put on a screen that has no service to ask (`loadStyle`).
+    func probeStyle(_ style: TerminalStyle) { apply(style) }
+    #endif
+
     private func apply(_ style: TerminalStyle) {
         self.style = style
         view.font = Self.font(style.families, size: CGFloat(style.fontSize))

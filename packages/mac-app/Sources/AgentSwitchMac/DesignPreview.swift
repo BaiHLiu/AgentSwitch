@@ -90,6 +90,10 @@ enum DesignPreview {
                     FileHandle.standardError.write(Data("design preview (the rail put away) written to \(directory.path)\n".utf8))
                     exit(0)
                 }
+                if UserDefaults.standard.string(forKey: "designPreviewOnly") == "room" {
+                    try await RoomPreview.run(into: directory)
+                    exit(0)
+                }
                 if UserDefaults.standard.string(forKey: "designPreviewOnly") == "prose-select" {
                     try await ProseSelectProbe.run(into: directory)
                     exit(0)
