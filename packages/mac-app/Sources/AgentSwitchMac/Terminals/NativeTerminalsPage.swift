@@ -86,6 +86,7 @@ final class NativeTerminalsPage: NSObject, TerminalsPage {
     func split(_ side: String) { model.split(side == "down" ? .bottom : .right) }
     func newTerminal() { model.showCreate() }
     func toggleView() { model.toggleSimple() }
+    func openInEditor() { if let terminal = model.current { model.openInEditor(terminal) } }
     func setDetached(_ ids: Set<String>) { model.setDetached(ids) }
     func detachShown() { if let id = model.current?.id { onDetach(id) } }
 
