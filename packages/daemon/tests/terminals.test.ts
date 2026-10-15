@@ -1581,7 +1581,7 @@ describe("terminals over HTTP", () => {
     await until(() => text(events).includes("got: keys from afar"));
     // Set on the node itself: the local listener's route, which the remote list does not name.
     const set = await daemon.app.request("/settings/mesh", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ keyboard: false }) });
-    expect(await set.json()).toEqual({ keyboard: false });
+    expect(await set.json()).toEqual({ keyboard: false, files: false });
     expect(remoteAllowed("PUT", "/settings/mesh")).toBe(false);
     const refused = await req(`/terminals/${id}/write`, { data: "x" });
     expect(refused.status).toBe(403);

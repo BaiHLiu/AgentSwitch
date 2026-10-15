@@ -100,6 +100,16 @@ function LocalNode({ deps, active, leave, height, chooseLanguage }: PageProps) {
         if (ok) { await mesh.reload(); ui.say(`${t.node.keyboard}: ${onOff(next.keyboard)}`); }
       } }
     : { kind: "note", text: mesh.error ?? `${t.common.loading}…`, tone: mesh.error ? "error" : "dim" });
+  // Tool terminals for paired nodes (docs/yazi-v0.md §3): asked before it goes on, yazi runs shell commands.
+  if (mesh.data && mesh.data.files !== undefined) {
+    const files = mesh.data.files;
+    rows.push({ kind: "item", id: "files", label: t.node.files, value: onOff(files), tone: files ? "warn" : undefined, press: async () => {
+      if (!files && !(await ui.confirm({ text: t.node.filesConfirm, yes: t.node.filesYes, danger: true }))) return;
+      const next = { keyboard: mesh.data!.keyboard, files: !files };
+      const ok = await ui.run(t.common.saving, async () => { await deps.client.setMesh(next); return true; });
+      if (ok) { await mesh.reload(); ui.say(`${t.node.files}: ${onOff(next.files)}`); }
+    } });
+  }
   rows.push(workdir.data
     ? { kind: "item", id: "workdir", label: t.node.workFolder, value: workdir.data.path, press: async () => {
         const typed = await ui.ask({ title: t.node.workFolder, hint: t.node.workFolderHint, initial: workdir.data!.path, check: (v) => (v.trim() ? null : t.node.workFolderHint) });

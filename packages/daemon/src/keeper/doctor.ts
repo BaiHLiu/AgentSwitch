@@ -77,6 +77,9 @@ export async function doctor(env: NodeJS.ProcessEnv = process.env, print: (line:
   for (const [name, why] of [["git", "the folders' git state"], ["unzip", "installing the browser engine"], ["lsof", "the browser's list of local servers; sessions open elsewhere"], ["openssl", "the remote listener's certificate"]] as const) {
     say(which(name, path) ? "ok" : "warn", name, which(name, path) ? why : `missing: ${why}`);
   }
+  // Optional (docs/yazi-v0.md): Files beside a terminal.
+  const yazi = which("yazi", path);
+  say(yazi ? "ok" : "warn", "yazi", yazi ? "Files beside a terminal" : "missing (optional): Files beside a terminal need yazi (pacman -S yazi, apt install yazi, brew install yazi)");
   const chrome = ["google-chrome-stable", "google-chrome", "chromium", "chromium-browser"].map((n) => which(n, path)).find(Boolean);
   say(chrome ? "ok" : "warn", "chrome", chrome ?? "none: Dispatch's browser tasks (Playwright MCP) need Google Chrome");
   return bad ? 1 : 0;

@@ -38,7 +38,8 @@ const FILE_STALL_MS = 15_000;
 const FILE_LONGEST_MS = 15 * 60_000;
 
 const AddBody = z.object({ link: z.string().min(1).max(8192), back: z.boolean().optional() });
-const MeshBody = z.object({ keyboard: z.boolean() });
+/** A screen that knows only `keyboard` (an older Mac) leaves `files` as it was. */
+const MeshBody = z.object({ keyboard: z.boolean(), files: z.boolean().optional() });
 
 export type NodesApiDeps = { readonly nodes: Nodes; readonly home: string };
 
@@ -69,8 +70,9 @@ export function mountNodes<A extends Hono>(app: A, deps: NodesApiDeps): A {
   app.put("/settings/mesh", async (c) => {
     const body = MeshBody.safeParse(await c.req.json().catch(() => ({})));
     if (!body.success) return c.json({ error: issues(body.error) }, 400);
-    saveMesh(home, body.data);
-    return c.json(body.data);
+    const next = { keyboard: body.data.keyboard, files: body.data.files ?? loadMesh(home).files };
+    saveMesh(home, next);
+    return c.json(next);
   });
 
   app.all("/nodes/:id/*", async (c) => {

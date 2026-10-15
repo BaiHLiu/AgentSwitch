@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { withoutCredentialRepair } from "../executors/gate.js";
 import { protectedDeny } from "../executors/opencodeShared.js";
 import { rootSpellings, type ProtectedPaths } from "../executors/protected.js";
-import type { Companion, LaunchPlan, LaunchRequest, Launcher, TerminalHarness } from "./host.js";
+import type { Companion, LaunchPlan, LaunchRequest, Launcher, TerminalHarness, TerminalHostOptions, TerminalTool } from "./host.js";
 import type { Holding } from "./held.js";
 
 /** The hook command's script next to this module: hookClient.js in dist/, hookClient.ts under tsx (node strips its types). */
@@ -224,6 +224,22 @@ export function claudeHookSettings(command: string, prot?: ProtectedPaths): Reco
       PostModelSwitch: hook(QUICK_HOOK_TIMEOUT_S),
       PermissionRequest: hook(PERMISSION_HOOK_TIMEOUT_S),
     },
+  };
+}
+
+/** A tool terminal's program (docs/yazi-v0.md): the tool opened on the folder, with the service's environment and the
+ *  terminal's id. No hook, no proxy, no profile, no browser: it is not an agent. */
+export function toolLauncher(opts: { readonly binaries: Partial<Record<TerminalTool, string>>; readonly env?: NodeJS.ProcessEnv }): NonNullable<TerminalHostOptions["toolLauncher"]> {
+  return ({ id, tool, cwd }) => {
+    const file = opts.binaries[tool];
+    if (!file) throw new Error(`${tool} is not installed on this node`);
+    const env: Record<string, string> = {
+      ...withoutParentSession(withoutCredentialRepair(opts.env ?? process.env)),
+      TERM: "xterm-256color",
+      COLORTERM: "truecolor",
+      AGENTSWITCH_TERMINAL_ID: id,
+    };
+    return { file, args: [cwd], env, hooks: false };
   };
 }
 

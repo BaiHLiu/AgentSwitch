@@ -86,6 +86,7 @@ export const zhHans: Messages = {
     portRange: "端口须在 1024 到 65535 之间。",
     portDistinct: "各端口不能相同。",
     unsaved: "有改动：Save & Restart 后生效。",
+    filesConfirm: "配对的节点将能在这台节点的终端旁边打开 yazi，并用它执行 shell 命令，不经过任何人审批。确定打开？",
     workFolderHint: "未指定文件夹时任务在这里运行。须为绝对路径，不存在时自动创建。",
   },
   context: {

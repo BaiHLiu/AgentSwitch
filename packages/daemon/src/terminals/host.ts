@@ -17,6 +17,14 @@ import { screenView } from "./screenView.js";
 
 export const TERMINAL_HARNESSES = ["claude-code", "codex", "opencode", "pi"] as const;
 export type TerminalHarness = (typeof TERMINAL_HARNESSES)[number];
+/** Programs a terminal runs beside an agent's (docs/yazi-v0.md): a tool terminal, opened from its agent terminal, in
+ *  that terminal's folder. It has no record, no hooks, no profile and no permission requests; it goes when its program
+ *  ends and when its agent terminal is closed. */
+export const TERMINAL_TOOLS = ["yazi"] as const;
+export type TerminalTool = (typeof TERMINAL_TOOLS)[number];
+/** What a terminal runs: an agent, or a tool beside one. */
+export type TerminalProgram = TerminalHarness | TerminalTool;
+export const isTool = (program: string): program is TerminalTool => (TERMINAL_TOOLS as readonly string[]).includes(program);
 /** How the agent asks before acting: every time, its own automatic mode, or not at all (bypass). The protected paths
  *  stay closed in every mode (the PreToolUse floor). */
 export const PERMISSION_MODES = ["manual", "auto", "bypass"] as const;
@@ -45,7 +53,9 @@ export type PermissionReply = { readonly decision: PermissionDecision; readonly 
 
 export type TerminalInfo = {
   readonly id: string;
-  readonly harness: TerminalHarness;
+  readonly harness: TerminalProgram;
+  /** A tool terminal's agent terminal, the one it was opened beside (docs/yazi-v0.md); null: an agent's own. */
+  readonly parent: string | null;
   readonly cwd: string;
   /** Where the agent works now: the `cwd` its hook calls carry (it changes as the agent `cd`s), else `cwd`. */
   readonly workdir: string;
@@ -257,6 +267,9 @@ export type HookAnswer = Record<string, unknown> | null;
 
 export type TerminalHostOptions = {
   readonly launcher: Launcher;
+  /** A tool terminal's program (docs/yazi-v0.md): how `tool` is started in `cwd`; it throws when the tool is not
+   *  installed. Absent: no tool terminals. */
+  readonly toolLauncher?: (req: { readonly id: string; readonly tool: TerminalTool; readonly cwd: string }) => LaunchPlan;
   /** Output kept per terminal for reconnecting screens (default 2 MB); older output is only in the snapshot. */
   readonly bufferBytes?: number;
   /** Lines of scrollback in the headless terminal (default 5000) and in a snapshot (default 1000). */
@@ -325,7 +338,9 @@ type Pty = {
 export type KeptTerminal = {
   readonly v: 1;
   readonly id: string;
-  readonly harness: TerminalHarness;
+  readonly harness: TerminalProgram;
+  /** A tool terminal's agent terminal (absent in what an older daemon wrote: an agent's own). */
+  readonly parent?: string | null;
   readonly cwd: string;
   readonly model: string | null;
   readonly mode: PermissionMode;
@@ -403,7 +418,7 @@ const TITLE_GLYPHS = /^[\s✳✶✷✸✹✺✻✼✽✢✣✤✥*·•●○◐
 /** Codex puts this in front of its title while something waits for you (`!` and `.` alternating): left out of the name,
  *  which would otherwise blink. Status comes from its notifications instead (OSC 9, launch.ts CODEX_ATTENTION). */
 const ACTION_REQUIRED = /^\[ [!.] \] Action Required(?:\s*\|\s*)?/;
-const AGENT_LABELS: Record<TerminalHarness, string> = { "claude-code": "Claude Code", codex: "Codex", opencode: "OpenCode", pi: "pi" };
+const AGENT_LABELS: Record<TerminalProgram, string> = { "claude-code": "Claude Code", codex: "Codex", opencode: "OpenCode", pi: "pi", yazi: "yazi" };
 
 /** The title without the agent's status glyphs and markers. */
 export function cleanTitle(raw: string): string {
@@ -412,7 +427,7 @@ export function cleanTitle(raw: string): string {
 
 
 /** A title worth showing: not the agent's own name, a bare program name or a shell's `user@host: dir`. */
-export function meaningfulTitle(title: string, harness: TerminalHarness): string | null {
+export function meaningfulTitle(title: string, harness: TerminalProgram): string | null {
   const t = cleanTitle(title);
   if (!t) return null;
   const low = t.toLowerCase();
@@ -422,7 +437,7 @@ export function meaningfulTitle(title: string, harness: TerminalHarness): string
 }
 
 /** The name the screens show (see TerminalInfo.name); `given` is the title of the session a terminal continues. */
-export function terminalName(custom: string | null, title: string, harness: TerminalHarness, cwd: string, given: string | null = null): string {
+export function terminalName(custom: string | null, title: string, harness: TerminalProgram, cwd: string, given: string | null = null): string {
   return custom ?? meaningfulTitle(title, harness) ?? given ?? (basename(cwd) || AGENT_LABELS[harness]);
 }
 const MAX_SUMMARY = 400;
@@ -862,7 +877,10 @@ class Session {
   kitty: number[] = [];
   heldTimer: NodeJS.Timeout | null = null;
 
-  constructor(readonly id: string, readonly harness: TerminalHarness, readonly cwd: string, readonly model: string | null, readonly mode: PermissionMode, readonly hookToken: string,
+  /** A tool terminal's agent terminal (docs/yazi-v0.md); null: an agent's own. */
+  parent: string | null = null;
+
+  constructor(readonly id: string, readonly harness: TerminalProgram, readonly cwd: string, readonly model: string | null, readonly mode: PermissionMode, readonly hookToken: string,
     readonly createdAt: number, public cols: number, public rows: number, scrollback: number) {
     this.term = new headless.Terminal({ cols, rows, scrollback, allowProposedApi: true });
     this.ser = new serialize.SerializeAddon();
@@ -903,7 +921,7 @@ export class TerminalHost {
   private readonly workListeners = new Set<(cwd: string) => void>();
   /** Each program's own commands, by its kind and path, as read off a terminal running it. */
   private readonly learned = new Map<string, readonly ListedCommand[]>();
-  private readonly o: Required<Omit<TerminalHostOptions, "launcher" | "now" | "floor" | "onExit" | "onRemove" | "onSession" | "deviceOf" | "hold">> & { now: () => number };
+  private readonly o: Required<Omit<TerminalHostOptions, "launcher" | "toolLauncher" | "now" | "floor" | "onExit" | "onRemove" | "onSession" | "deviceOf" | "hold">> & { now: () => number };
   private helperChecked = false;
 
   constructor(private readonly opts: TerminalHostOptions) {
@@ -946,7 +964,7 @@ export class TerminalHost {
     s.resumedFrom = req.resume ?? null;
     s.forked = Boolean(req.resume && req.fork && req.harness !== "opencode");
     // Continued in place, the agent writes the session it was given (its hooks say the same once they run).
-    if (req.resume && !s.forked) { s.agentSessionId = req.resume; this.opts.onSession?.(s.harness, req.resume, s.profile?.id ?? null); }
+    if (req.resume && !s.forked) { s.agentSessionId = req.resume; this.opts.onSession?.(req.harness, req.resume, s.profile?.id ?? null); }
     s.givenName = req.name?.replace(/\s+/g, " ").trim().slice(0, MAX_NAME) || null;
     // Codex's notifications (OSC 9) are only those for what waits for you (launch.ts CODEX_ATTENTION).
     if (req.harness === "codex") s.term.parser.registerOscHandler(9, () => { s.attention = true; this.setStatus(s, "waiting"); return true; });
@@ -1000,6 +1018,55 @@ export class TerminalHost {
     return this.info(s);
   }
 
+  /** Tool `tool` beside agent terminal `parentId` (docs/yazi-v0.md), in the folder its agent works in now: the one
+   *  already open there when there is one. Its own size until a screen gives it one. */
+  async spawnTool(parentId: string, tool: TerminalTool, size: { cols?: number; rows?: number } = {}): Promise<TerminalInfo> {
+    const parent = this.need(parentId);
+    if (isTool(parent.harness)) throw new TerminalError("invalid", `terminal ${parentId} is a tool terminal itself`);
+    const open = [...this.sessions.values()].find((x) => x.parent === parentId && x.harness === tool && x.status !== "exited");
+    if (open) return this.info(open);
+    if (!this.opts.toolLauncher) throw new TerminalError("unavailable", "tool terminals are not offered here");
+    if (!this.helperChecked) { ensureSpawnHelper(); this.helperChecked = true; }
+    const id = randomUUID().slice(0, 8);
+    const cwd = parent.agentCwd && existsSync(parent.agentCwd) ? parent.agentCwd : parent.cwd;
+    let plan: LaunchPlan;
+    try { plan = this.opts.toolLauncher({ id, tool, cwd }); }
+    catch (err) { throw new TerminalError("unavailable", (err as Error).message); }
+    // Its hook token lets nothing in: a tool has no hooks, and asks for no key (`profileOf`).
+    const s = new Session(id, tool, cwd, null, "manual", randomBytes(24).toString("base64url"), this.o.now(), size.cols ?? parent.cols, size.rows ?? parent.rows, this.o.scrollback);
+    s.parent = parentId;
+    s.program = plan.file;
+    s.term.onTitleChange((t) => {
+      const title = cleanTitle(t);
+      if (title === s.title) return;
+      const before = this.nameOf(s);
+      s.title = title;
+      const after = this.nameOf(s);
+      if (after !== before) s.emit({ type: "name", name: after });
+    });
+    this.sessions.set(id, s);
+    let proc: Pty;
+    try {
+      proc = await this.startProgram(s, plan.file, plan.args, plan.env);
+    } catch (err) {
+      this.sessions.delete(id);
+      s.term.dispose();
+      throw new TerminalError("unavailable", `could not start ${tool}: ${(err as Error).message}`);
+    }
+    if (this.sessions.get(id) !== s) {   // deleted while it started (its agent terminal was closed)
+      proc.kill("SIGHUP");
+      throw new TerminalError("not_found", `terminal ${id} was deleted while it started`);
+    }
+    this.wire(s, proc);
+    // yazi asks the terminal what it is as it starts (DA1 last, `CSI c`) and takes no key until it is answered. It
+    // asks at once, before any screen is there, and a snapshot does not carry the question: the service's own
+    // terminal answers what it can (DA1, the cursor's place). A screen that answers too is harmless — yazi drops a
+    // second DA1 reply.
+    s.term.onData((reply) => { if (s.proc && s.status !== "exited") try { s.proc.write(reply); } catch { /* ended meanwhile */ } });
+    this.persist(s);
+    return this.info(s);
+  }
+
   /** The program on a pty: a holder's when terminals are held (falling back to node-pty when the holder will not
    *  start, with a line in the log), else node-pty's in this process. */
   private async startProgram(s: Session, file: string, args: readonly string[], env: Record<string, string>): Promise<Pty> {
@@ -1043,6 +1110,7 @@ export class TerminalHost {
       cols: s.cols, rows: s.rows, hooks: s.hooks, program: s.program, effort: s.effort, customName: s.customName, givenName: s.givenName,
       resumedFrom: s.resumedFrom, forked: s.forked, agentSessionId: s.agentSessionId, ownSessionId: s.ownSessionId, sessionByHook: s.sessionByHook,
       profile: s.profile, browserKey: s.browserKey, given: s.given, hold: s.hold, companion: s.companion?.keep?.() ?? null,
+      ...(s.parent ? { parent: s.parent } : {}),
     };
     const file = join(hold.dir, s.id, "meta.json");
     try {
@@ -1079,6 +1147,8 @@ export class TerminalHost {
         rmSync(file, { force: true });
       }
     }
+    // A tool terminal whose agent terminal was not taken up again has nothing to stand beside.
+    for (const s of [...this.sessions.values()]) if (s.parent && !this.sessions.has(s.parent) && this.sessions.has(s.id)) this.remove(s.id);
     return taken;
   }
 
@@ -1101,8 +1171,10 @@ export class TerminalHost {
       const after = this.nameOf(s);
       if (after !== before) s.emit({ type: "name", name: after });
     });
-    if (kept.agentSessionId) { s.agentSessionId = kept.agentSessionId; this.opts.onSession?.(s.harness, kept.agentSessionId, s.profile?.id ?? null); }
-    if (kept.companion && hold.companion) s.companion = hold.companion(kept.harness, kept.companion, kept);
+    s.parent = kept.parent ?? null;
+    const agent = isTool(kept.harness) ? null : kept.harness;
+    if (agent && kept.agentSessionId) { s.agentSessionId = kept.agentSessionId; this.opts.onSession?.(agent, kept.agentSessionId, s.profile?.id ?? null); }
+    if (agent && kept.companion && hold.companion) s.companion = hold.companion(agent, kept.companion, kept);
     this.sessions.set(kept.id, s);
     this.wire(s, held);
     // The holder sends what it kept; once that is in, the program draws its screen whole again.
@@ -1391,7 +1463,7 @@ export class TerminalHost {
    *  null: the Mac's own. */
   profileOf(id: string, token: string): { readonly harness: TerminalHarness; readonly profile: string | null } {
     const s = this.sessions.get(id);
-    if (!s || !same(token, s.hookToken)) throw new TerminalError("forbidden", "unknown terminal or hook token");
+    if (!s || !same(token, s.hookToken) || isTool(s.harness)) throw new TerminalError("forbidden", "unknown terminal or hook token");
     return { harness: s.harness, profile: s.profile?.id ?? null };
   }
 
@@ -1538,6 +1610,7 @@ export class TerminalHost {
   /** The agent says which session it writes. A new terminal's or a fork's first one is its own; a later one (`/resume`
    *  typed inside it) is followed, never owned, so closing the terminal cannot delete a record it did not start. */
   private reported(s: Session, sessionId: string): void {
+    if (isTool(s.harness)) return;
     // A profile that had never run had no device of its own when the terminal started; it has one by now.
     s.device ??= this.device(s);
     if (s.agentSessionId !== sessionId) {
@@ -1600,9 +1673,10 @@ export class TerminalHost {
     });
   }
 
-  /** Ends the program if it still runs and forgets the terminal. */
+  /** Ends the program if it still runs and forgets the terminal, with the tool terminals opened beside it. */
   remove(id: string): TerminalInfo {
     const s = this.need(id);
+    for (const tool of [...this.sessions.values()]) if (tool.parent === id) this.remove(tool.id);
     const info = this.info(s);
     this.kill(id);
     s.companion?.stop();
@@ -1629,6 +1703,7 @@ export class TerminalHost {
    *  (`restore`), its companion's server too; every other terminal ends. */
   closeAll(): void {
     for (const [id, s] of [...this.sessions]) {
+      if (!this.sessions.has(id)) continue;   // a tool terminal that went with its agent terminal
       if (s.proc?.detach && s.status !== "exited") {
         this.persist(s);
         s.companion?.detach?.();
@@ -1709,6 +1784,8 @@ export class TerminalHost {
     s.emit({ type: "exit", code });
     this.unpersist(s);
     this.ended(s.id, false);
+    // A tool that quits is done with (docs/yazi-v0.md §2): its terminal goes, its screens are told.
+    if (isTool(s.harness) && this.sessions.get(s.id) === s) this.remove(s.id);
   }
 
   /** A turn ended: from work (a repeated Stop, a start-up idle is none), or `always` (the program exited on an error). */
@@ -2064,12 +2141,13 @@ export class TerminalHost {
   }
 
   private device(s: Session): string | null {
+    if (isTool(s.harness)) return null;
     try { return this.opts.deviceOf?.(s.harness, s.profile?.id ?? null) ?? null; } catch { return null; }
   }
 
   private info(s: Session): TerminalInfo {
     return {
-      id: s.id, harness: s.harness, cwd: s.cwd, workdir: s.agentCwd ?? s.cwd, model: s.model, modelNow: s.modelNow, modeNow: s.modeNow, suggestion: s.suggestion, sets: DIRECT.has(s.harness) || !!s.companion?.setModel, daybreak: s.daybreak, effort: s.effort, mode: s.mode, name: this.nameOf(s), customName: s.customName !== null, title: s.title,
+      id: s.id, harness: s.harness, parent: s.parent, cwd: s.cwd, workdir: s.agentCwd ?? s.cwd, model: s.model, modelNow: s.modelNow, modeNow: s.modeNow, suggestion: s.suggestion, sets: DIRECT.has(s.harness) || !!s.companion?.setModel, daybreak: s.daybreak, effort: s.effort, mode: s.mode, name: this.nameOf(s), customName: s.customName !== null, title: s.title,
       status: s.status, pid: s.proc?.pid ?? null,
       cols: s.cols, rows: s.rows, createdAt: s.createdAt, lastOutputAt: s.lastOutputAt, exitCode: s.exitCode,
       agentSessionId: s.agentSessionId, resumedFrom: s.resumedFrom, forked: s.forked, hooks: s.hooks, permissions: [...s.pending.values()].map((p) => p.ask),

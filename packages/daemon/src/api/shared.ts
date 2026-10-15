@@ -85,6 +85,8 @@ export type ApiDeps = {
   readonly assistant?: Assistant;
   /** Whether a paired node may send keystrokes as they are (docs/mesh-v0.md §10); absent = no. */
   readonly remoteKeyboard?: () => boolean;
+  /** Paired nodes may open and use tool terminals here (mesh.json `files`, docs/yazi-v0.md §3). */
+  readonly remoteFiles?: () => boolean;
 };
 
 /** A request body's issues; an issue on the body itself reads "body: ...". */
