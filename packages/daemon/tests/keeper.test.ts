@@ -1,13 +1,14 @@
 /** The keeper of a node without the Mac app (docs/mesh-v0.md §4.2): what it starts with what, how it waits between
  *  starts, how it tells the gate from another listener, the systemd unit and the terminal QR code. */
 
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { backoff, BACKOFF_MAX_MS, Child, startTime } from "../src/keeper/child.js";
-import { DEFAULT_PORTS, mergedPath, plan, portsOf, readSettings, writeSettings, type Layout } from "../src/keeper/plan.js";
+import { DEFAULT_PORTS, loginShellPath, mergedPath, plan, portsOf, readSettings, writeSettings, type Layout } from "../src/keeper/plan.js";
 import { qrLines, qrModules } from "../src/keeper/qr.js";
 import { probeGate } from "../src/keeper/run.js";
 import { keeperCommand, unitText } from "../src/keeper/systemd.js";
@@ -70,6 +71,20 @@ describe("what the keeper starts, with what", () => {
     expect(() => portsOf({ ports: { remote: 80 } })).toThrow(/1024/);
     writeFileSync(join(home, "node.json"), "[]");
     expect(() => readSettings(home)).toThrow(/object/);
+  });
+});
+
+describe("asking the login shell for its PATH", () => {
+  it("runs it in a session of its own, so an interactive shell cannot take the terminal from whoever asked", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentswitch-shell-"));
+    const shell = join(dir, "fake-shell");
+    // A shell that notes its session and runs the command it is given as `-lic <command>`.
+    writeFileSync(shell, `#!/bin/sh\nps -o sid= -p $$ | tr -d ' ' > "${dir}/sid"\nPATH=/from/login:$PATH\nexport PATH\neval "$2"\n`);
+    chmodSync(shell, 0o755);
+    const path = await loginShellPath({ SHELL: shell, HOME: dir, USER: "u" });
+    expect(path?.startsWith("/from/login:")).toBe(true);
+    const ours = execFileSync("ps", ["-o", "sid=", "-p", String(process.pid)]).toString().trim();
+    expect(readFileSync(join(dir, "sid"), "utf8").trim()).not.toBe(ours);
   });
 });
 
