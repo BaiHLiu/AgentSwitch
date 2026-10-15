@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Starts a runtime built by build-runtime.sh the way a node runs it — `agentswitch node run`, the keeper: the gate's
 # keypair, the gate, the daemon — in a throw-away home on ports of its own, waits for the daemon to answer, asks
-# `doctor` and stops it. The node in use on this machine (its home, its ports, its service) is not touched. CI runs
+# `doctor`, draws `agentswitch config`'s first screen in a pseudo-terminal, and stops it. The node in use on this machine (its home, its ports, its service) is not touched. CI runs
 # this on every runtime it builds (.github/workflows/ci.yml).
 #
 #   scripts/smoke.sh <runtime>     build-runtime.sh's <out>, or ~/.local/share/agentswitch/runtime/current
@@ -65,5 +65,16 @@ if [ -n "$missing" ]; then
   echo "--- keeper log" >&2
   cat "$work/keeper.log" >&2
   exit 1
+fi
+# `agentswitch config` (docs/tui-v0.md) on a terminal of its own (`script`): its screen drawn from this node's
+# profiles — the runtime's ink, react and yoga load — and Q leaves it.
+if command -v script >/dev/null; then
+  screen="$( (sleep 4; printf q) | timeout 30 script -qfec "'$R/node/bin/node' --no-warnings=ExperimentalWarning '$R/daemon/dist/cli.js' config --lang en" /dev/null 2>&1 || true)"
+  if ! echo "$screen" | grep -q 'Default only, for now'; then
+    echo "error: agentswitch config did not draw its first screen:" >&2
+    echo "$screen" | tail -20 >&2
+    exit 1
+  fi
+  echo "✓ config draws its screen"
 fi
 echo "smoke ok"

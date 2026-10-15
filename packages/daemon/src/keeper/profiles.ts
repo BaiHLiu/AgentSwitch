@@ -222,10 +222,11 @@ const run: Run = (cmd, args, opts) => new Promise((resolve, reject) => {
   child.stdin.end(opts.input);
 });
 
-/** `value` sealed by the gate at `gate` for `host`, as the Mac seals a profile's key (AgentsView, GateSealRequest): a
- *  secret for that one host, for `http` and `fill`. The value goes on stdin, never into argv. */
-export async function sealWithGate(gate: { bin: string; home: string }, host: string, value: string, exec: Run = run): Promise<string> {
-  const entry = [{ label: "profile/api-key", hosts: [host], uses: ["http", "fill"], kind: "secret", value }];
+/** `value` sealed by the gate at `gate` for `host`, as the Mac seals a profile's key, its proxy's password and its
+ *  session key (AgentsView, GateSealRequest): a secret for that one host, for `http` and `fill`, under `label`. The
+ *  value goes on stdin, never into argv. */
+export async function sealWithGate(gate: { bin: string; home: string }, host: string, value: string, exec: Run = run, label = "profile/api-key"): Promise<string> {
+  const entry = [{ label, hosts: [host], uses: ["http", "fill"], kind: "secret", value }];
   const r = await exec(gate.bin, ["enc", "--batch"], { env: { ...process.env, SECRET_GATE_HOME: gate.home }, input: JSON.stringify(entry) });
   // Exit 1 is a refusal of the entry, its reason in the output.
   if (r.code !== 0 && r.code !== 1) throw new Error(`secret-gate: ${r.stderr.trim() || `exit ${r.code}`}`);

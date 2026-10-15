@@ -49,7 +49,12 @@ const ALLOWED: Readonly<Record<string, readonly string[]>> = {
    *  it starts the daemon as a process, so it imports none of it but the checks it reuses, and the profiles' shapes and
    *  rules for `agentswitch profiles`. Only the CLI imports it. */
   keeper: [...UPPER, "terminals", "profiles"],
-  [ROOT]: [...UPPER, "threads", "router", "executors", "engine", "assistant", "terminals", "browser", "profiles", "clash", "api", "remote", "nodes", "keeper"],
+  /** tui-v0 §5: the languages AgentSwitch's own words come in; a leaf. */
+  i18n: [],
+  /** tui-v0: `agentswitch config`, one more face of the HTTP API (given its client by the CLI), node.json through the
+   *  keeper's own reading and writing of it. Only the CLI imports it. */
+  tui: [...UPPER, "profiles", "keeper", "i18n"],
+  [ROOT]: [...UPPER, "threads", "router", "executors", "engine", "assistant", "terminals", "browser", "profiles", "clash", "api", "remote", "nodes", "keeper", "i18n", "tui"],
 };
 
 const SPECIFIER = /(?:\bfrom\s*|\bimport\s*\(\s*|^\s*import\s+)(["'])(\.{1,2}\/[^"']+)\1/gm;
@@ -67,7 +72,7 @@ function layerOf(file: string): string {
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
-    return statSync(path).isDirectory() ? sourceFiles(path) : path.endsWith(".ts") ? [path] : [];
+    return statSync(path).isDirectory() ? sourceFiles(path) : /\.tsx?$/.test(path) ? [path] : [];
   });
 }
 

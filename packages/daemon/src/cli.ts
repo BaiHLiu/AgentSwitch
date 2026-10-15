@@ -31,6 +31,9 @@
  *                               [--base-url u] [--model m] [--key]` (a key asked for, never echoed, sealed by this
  *                               node's gate), `color`, `rm`; with --on, listing only (keeper/profiles.ts)
  *   console [--open]            a one-time link that signs a browser on this machine into the web console
+ *   config [agents | models | permissions | node] [--lang <en|zh-Hans|zh-Hant|ja|es>]   this node's settings on a
+ *                               full screen (docs/tui-v0.md): profiles and their keys, models, approvals, the node's
+ *                               own; with --on another node's, read only (tui/)
  */
 
 import { readLocalToken } from "./api/localAuth.js";
@@ -58,6 +61,7 @@ import { qrLines } from "./keeper/qr.js";
 import { homes, runningKeeper, runNode } from "./keeper/run.js";
 import { service } from "./keeper/systemd.js";
 import { profilesCommand, readKey, sealWithGate } from "./keeper/profiles.js";
+import { localeOf, messages, pickLocale } from "./i18n/index.js";
 
 const cfg = defaultConfig();
 // A node without the Mac app keeps its ports in node.json (keeper/plan.ts); the commands find its service there too.
@@ -109,6 +113,8 @@ const { values, positionals } = parseArgs({
     model: { type: "string" },
     key: { type: "boolean", default: false },
     force: { type: "boolean", default: false },
+    // config (tui/)
+    lang: { type: "string" },
     // Added by `secret-gate browser` for a Playwright MCP of its own; the bridge has no files of its own to put there.
     "output-dir": { type: "string" },
   },
@@ -177,7 +183,7 @@ async function watchInteractive(id: string): Promise<void> {
   }
 }
 
-const USAGE = "usage: serve | engine | task | tasks | show | watch | approve | cancel | handoff | threads | thread | archive | reopen | rmthread | approvals | quota | preview | log | mcp | skills | health | context init | route | reroute | browser-mcp | pair | devices | nodes [add|remove] | node [run|name|restart] | service | doctor | profiles [new|api|color|rm] | console; --on <node>";
+const USAGE = "usage: serve | engine | task | tasks | show | watch | approve | cancel | handoff | threads | thread | archive | reopen | rmthread | approvals | quota | preview | log | mcp | skills | health | context init | route | reroute | browser-mcp | pair | devices | nodes [add|remove] | node [run|name|restart] | service | doctor | profiles [new|api|color|rm] | config [page] [--lang l] | console; --on <node>";
 
 const ago = (ts: number | null): string => {
   if (ts === null) return "never";
@@ -224,7 +230,7 @@ async function main(): Promise<number> {
     case "answer": { if (!a1 || !a2 || !positionals[3]) throw new Error('answer <task> <approval> "<text>"'); out(await client.answer(a1, a2, positionals[3])); return 0; }
     case "policy": {
       if (!a1) { out(await client.policy()); return 0; }
-      if (a1 !== "manual" && a1 !== "auto" && a1 !== "scoped") throw new Error("policy [manual|auto|scoped] [cat,cat,…]");
+      if (a1 !== "manual" && a1 !== "auto" && a1 !== "scoped" && a1 !== "skip") throw new Error("policy [manual|auto|scoped|skip] [cat,cat,…]");
       out(await client.setPolicy({ mode: a1, ...(a2 ? { human: a2.split(",") } : {}) })); return 0;
     }
     case "handoff": {
@@ -371,6 +377,27 @@ async function main(): Promise<number> {
           return sealWithGate(gate, host, value);
         },
       });
+    }
+    case "config": {
+      const { home, runDir } = homes();
+      const kept = (() => { try { return readSettings(home).language; } catch { return undefined; } })();
+      if (values.lang && !localeOf(values.lang)) throw new Error(messages(pickLocale({ kept })).common.unknownLanguage(values.lang));
+      const locale = pickLocale({ asked: values.lang, kept });
+      if (!process.stdin.isTTY || !process.stdout.isTTY) { console.error(messages(locale).common.needsTerminal); return 2; }
+      const gate = { bin: layout().gate, home: homes().gateHome };
+      const { runConfig } = await import("./tui/run.js");
+      return runConfig({
+        client, remote: values.on ?? null,
+        seal: (label, host, value) => {
+          if (!existsSync(gate.bin)) throw new Error(`no secret-gate at ${gate.bin}: what is typed is sealed by this node's gate`);
+          return sealWithGate(gate, host, value, undefined, label);
+        },
+        node: {
+          read: () => readSettings(home),
+          write: (next) => writeSettings(home, next),
+          restart: () => { const pid = runningKeeper(runDir); if (!pid) return false; process.kill(pid, "SIGHUP"); return true; },
+        },
+      }, locale, a1);
     }
     case "console": {
       const { path } = await here.consoleLink();
