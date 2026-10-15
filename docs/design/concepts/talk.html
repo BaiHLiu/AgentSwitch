@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentSwitch · Rooms</title>
+<style id="gcss"></style>
+<style>
+/* Agents talking to each other in AgentSwitch (2026-10-15, user: 我想写一个 多agent交流机制，要求是各个agent通用、只在
+   agentswitch里可以用、删掉agentswitch不留下多余的插件、mcp等垃圾、可以可视化). A demo for review with docs/talk-v0.md,
+   not a spec: the main window's Rooms page in its two views, what a terminal shows of a room, making a room, a room
+   that stopped for you, and the phone. The choices still open (talk-v0 §8) are the switches at the top. */
+:root {
+  --bg: #000; --panel: #0b0b0b; --raise: #151515; --hover: #121212;
+  --ink: #e9e6df; --ink2: #8d8a84; --ink3: #4d4b48; --ink4: #262524;
+  --signal: #ff2e88; --cyan: #2ee6ff; --green: #9be22d; --amber: #ffb000; --red: #ff4a3d;
+  --violet: #b18cff; --mint: #7fe3c0; --sand: #e2c48d;
+  --mono: "MesloLGS NF", "SF Mono", ui-monospace, Menlo, "PingFang SC", monospace;
+  --ui: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+  color-scheme: dark;
+}
+.light {
+  --bg: #f4f1ea; --panel: #ece8df; --raise: #e4dfd4; --hover: #e9e5dc;
+  --ink: #16140f; --ink2: #6b675f; --ink3: #a6a196; --ink4: #d6d1c6;
+  --signal: #e0106f; --cyan: #0096b3; --green: #3d8a00; --amber: #b87400; --red: #c9281b;
+  --violet: #7a4fe0; --mint: #1f9a75; --sand: #9a7b3f;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: #1b1b1d; color: #d8d4cc; font: 13px var(--ui); }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+button:focus { outline: none; }
+.top { max-width: 1240px; margin: 0 auto; padding: 18px 16px 4px; }
+h1 { font: 700 15px var(--mono); margin: 0 0 8px; color: #e9e6df; }
+.lede { color: #a9a6a0; font-size: 12.5px; line-height: 1.75; margin: 0 0 10px; max-width: 112ch; }
+.lede code { font: 12px var(--mono); color: #d8d4cc; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; font: 12px var(--mono); color: #8f8b84; }
+.tools > span { display: inline-flex; gap: 8px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid #3a3a3e; }
+.seg button { color: #b5b1aa; font: 12px var(--mono); padding: 4px 10px; }
+.seg button.on { background: #e9e6df; color: #111; }
+.sec { max-width: 1240px; margin: 34px auto 12px; padding: 0 16px; font: 11px var(--mono); letter-spacing: .14em; color: #77746e; }
+.stage { max-width: 1240px; margin: 0 auto; padding: 0 16px; overflow-x: auto; }
+.cap { max-width: 1240px; margin: 10px auto 0; padding: 0 16px; color: #8f8b84; font-size: 12px; line-height: 1.75; }
+.cap b { color: #d8d4cc; font-weight: 600; }
+.cap code { font: 11.5px var(--mono); color: #c9c5bd; }
+.ctl { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
+.ctl button { border: 1px solid #3a3a3e; color: #b5b1aa; font: 12px var(--mono); padding: 3px 10px; }
+.ctl button.on { background: #e9e6df; color: #111; }
+
+.px { display: block; image-rendering: pixelated; }
+.sq { width: 8px; height: 8px; display: inline-block; flex: none; }
+.dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex: none; box-shadow: 0 0 5px currentColor; background: currentColor; }
+.spin { color: var(--cyan); }
+.w { color: var(--amber); } .ok { color: var(--green); } .bad { color: var(--red); } .dim { color: var(--ink2); } .faint { color: var(--ink3); }
+@keyframes blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: .25 } }
+.blink { animation: blink 1.1s steps(1) infinite; }
+@media (prefers-reduced-motion: reduce) { .blink { animation: none; } }
+.btn { font: 12.5px var(--mono); color: var(--ink); white-space: nowrap; }
+.btn:hover { background: var(--ink); color: var(--bg); }
+.btn.pri { background: var(--ink); color: var(--bg); padding: 0 2px; }
+.btn.pri:hover { background: var(--signal); color: #000; }
+.btn.warn { color: var(--red); }
+.btn.warn:hover { background: var(--red); color: #000; }
+code.c { font: 12px var(--mono); background: color-mix(in srgb, var(--ink) 8%, transparent); padding: 0 3px; }
+
+/* ---------- the window ---------- */
+.win { width: 1200px; height: 640px; background: var(--bg); color: var(--ink); display: grid; grid-template-rows: 32px minmax(0, 1fr) 24px;
+  font: 13px var(--mono); border-radius: 10px; overflow: hidden; position: relative; box-shadow: 0 0 0 .5px rgba(255,255,255,.2), 0 26px 70px rgba(0,0,0,.6); }
+.bar { position: relative; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 20px; border-bottom: 1px solid var(--ink4); }
+.lights { display: flex; gap: 8px; margin-right: 14px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.lights i:nth-child(1) { background: #ff5f57; } .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+.bar .ttl { font: 600 13px var(--ui); display: inline-flex; align-items: center; gap: 8px; }
+.bar .ttl small { font: 11.5px var(--mono); color: var(--ink2); font-weight: 400; }
+.bar .end { margin-left: auto; display: flex; align-items: center; gap: 12px; font: 11.5px var(--mono); color: var(--ink2); }
+.views { display: inline-flex; border: 1px solid var(--ink3); }
+.views button { padding: 1px 9px; font: 11.5px var(--mono); color: var(--ink2); }
+.views button.on { background: var(--ink); color: var(--bg); }
+.body { display: grid; grid-template-columns: 44px 230px minmax(0, 1fr) 240px; min-height: 0; }
+.rail { border-right: 1px solid var(--ink4); display: flex; flex-direction: column; align-items: center; gap: 18px; padding-top: 14px; color: var(--ink2); }
+.rail .ic { position: relative; padding: 2px; }
+.rail .ic.on { color: var(--ink); }
+.rail .ic.on::before { content: ""; position: absolute; left: -15px; top: 0; bottom: 0; width: 2px; background: var(--signal); }
+.rail .ic .mk { position: absolute; right: -4px; top: -3px; width: 5px; height: 5px; }
+.rail .gap { flex: 1; }
+.list { border-right: 1px solid var(--ink4); background: var(--panel); padding: 10px 0; overflow: hidden; display: flex; flex-direction: column; }
+.list .hd { display: flex; align-items: center; padding: 0 12px 8px; color: var(--ink3); font-size: 11px; letter-spacing: .06em; }
+.list .hd button { margin-left: auto; letter-spacing: 0; }
+.room { padding: 8px 12px; border-left: 2px solid transparent; cursor: pointer; }
+.room.on { background: var(--raise); border-left-color: var(--signal); }
+.room .r1 { display: flex; align-items: center; gap: 7px; font: 600 13px var(--ui); }
+.room .r1 .st { margin-left: auto; font: 11px var(--mono); font-weight: 400; }
+.room .r2 { display: flex; align-items: center; gap: 6px; margin-top: 5px; color: var(--ink2); font-size: 11px; }
+.room.done { opacity: .5; }
+.center { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; position: relative; }
+.feed { overflow: hidden; padding: 14px 26px 8px; display: flex; flex-direction: column; gap: 10px; }
+.msg { border: 1px solid var(--ink4); background: var(--panel); padding: 8px 12px 9px; max-width: 640px; }
+.msg.you { align-self: flex-end; background: var(--raise); border-color: var(--ink3); }
+.msg.queued { border-style: dashed; background: transparent; }
+.msg.pick { outline: 1px solid var(--signal); }
+.msg .h { display: flex; align-items: center; gap: 7px; font: 11.5px var(--mono); color: var(--ink2); }
+.msg .h b { color: var(--ink); font-weight: 400; }
+.msg .h .via { border: 1px solid var(--ink3); padding: 0 4px; font-size: 10.5px; color: var(--ink2); }
+.msg .h .t { margin-left: auto; color: var(--ink3); }
+.msg .tx { margin-top: 5px; font: 13px/1.6 var(--ui); }
+.msg .ft { margin-top: 5px; font: 11px var(--mono); color: var(--ink3); display: flex; gap: 12px; }
+.sys { align-self: center; font: 11.5px var(--mono); color: var(--ink3); }
+.sys.w { color: var(--amber); }
+.stopcard { align-self: stretch; border: 1px solid var(--amber); padding: 9px 12px; display: flex; align-items: center; gap: 12px; font: 12.5px var(--ui); max-width: 640px; }
+.stopcard .sp { flex: 1; }
+.ask { align-self: stretch; border: 1px solid var(--signal); padding: 9px 12px; display: flex; align-items: center; gap: 12px; font: 12.5px var(--ui); max-width: 640px; }
+.ask .sp { flex: 1; }
+.compose { border-top: 1px solid var(--ink4); padding: 10px 26px 12px; display: flex; gap: 10px; align-items: center; }
+.compose .box { flex: 1; border: 1px solid var(--ink3); height: 34px; display: flex; align-items: center; padding: 0 10px; color: var(--ink3); font: 13px var(--ui); gap: 8px; }
+.compose .box b { color: var(--signal); font: 12px var(--mono); font-weight: 400; }
+.side { border-left: 1px solid var(--ink4); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
+.side .lb { color: var(--ink3); font-size: 11px; letter-spacing: .06em; margin: 6px 0 4px; }
+.mem { display: grid; grid-template-columns: 14px 1fr auto; gap: 2px 8px; align-items: center; padding: 6px 0; border-bottom: 1px dotted var(--ink4); }
+.mem .n { font: 600 12.5px var(--ui); display: flex; align-items: center; gap: 6px; }
+.mem .s { grid-column: 2 / 4; font-size: 11px; color: var(--ink2); }
+.mem .a { font-size: 11px; color: var(--ink2); }
+.set { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--ink2); padding: 4px 0; }
+.set b { color: var(--ink); font-weight: 400; }
+.status { border-top: 1px solid var(--ink4); display: flex; align-items: center; gap: 14px; padding: 0 12px; font: 11.5px var(--mono); color: var(--ink2); }
+.status .sp { flex: 1; }
+
+/* lanes */
+.lanes { position: relative; overflow: hidden; }
+.lanes svg { position: absolute; inset: 0; }
+.lanehead { position: absolute; top: 10px; transform: translateX(-50%); text-align: center; font: 11.5px var(--mono); white-space: nowrap; }
+.lanehead b { display: flex; align-items: center; gap: 6px; justify-content: center; font: 600 12.5px var(--ui); }
+.lanehead b .px { flex: none; margin-right: 3px; }
+.lanehead span { color: var(--ink2); }
+.tick { position: absolute; left: 10px; font: 10.5px var(--mono); color: var(--ink3); transform: translateY(-50%); }
+.picked { position: absolute; right: 14px; bottom: 12px; width: 330px; border: 1px solid var(--ink); background: var(--bg); }
+.picked .hd { background: var(--ink); color: var(--bg); padding: 3px 10px; font-size: 12px; display: flex; gap: 8px; }
+.picked .hd span:last-child { margin-left: auto; }
+.picked .bd { padding: 8px 12px 10px; font: 12.5px/1.6 var(--ui); }
+
+/* ---------- 2. in the terminal ---------- */
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; width: 1200px; }
+.pane { height: 430px; background: var(--bg); color: var(--ink); border-radius: 8px; overflow: hidden; display: grid; grid-template-rows: 30px minmax(0, 1fr) auto;
+  box-shadow: 0 0 0 .5px rgba(255,255,255,.2), 0 18px 50px rgba(0,0,0,.5); }
+.pane .ph { display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--ink4); font: 12px var(--mono); color: var(--ink2); }
+.pane .ph b { color: var(--ink); font: 600 12.5px var(--ui); }
+.rec { padding: 12px 18px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; font: 13px/1.6 var(--ui); }
+.roomcard { border: 1px solid var(--ink3); border-left: 2px solid var(--signal); padding: 7px 11px; background: var(--panel); }
+.roomcard .h { display: flex; align-items: center; gap: 7px; font: 11.5px var(--mono); color: var(--ink2); }
+.roomcard .h b { color: var(--ink); font-weight: 400; }
+.work { font: 12px var(--mono); color: var(--ink2); }
+.work .ln { display: flex; gap: 8px; padding-left: 14px; color: var(--ink); }
+.work .ln i { font-style: normal; color: var(--ink2); width: 44px; flex: none; }
+.back { font: 11px var(--mono); color: var(--ink3); }
+.reply { border-top: 1px solid var(--ink4); padding: 9px 14px; color: var(--ink3); font: 13px var(--ui); }
+.tty { background: #0b0b0b; color: #d6d3cc; padding: 12px 14px; font: 12px/1.55 var(--mono); white-space: pre-wrap; overflow: hidden; }
+.light .tty { background: #0b0b0b; color: #d6d3cc; }
+.tty .u { color: #fff; }
+.tty .d { color: #8a877f; }
+.tty .k { color: #c792ea; }
+.tty .g { color: #9be22d; }
+.rows { width: 1200px; margin-top: 14px; background: var(--panel); color: var(--ink); border-radius: 8px; padding: 6px 0; font: 13px var(--mono); }
+.rows .row { display: flex; align-items: center; gap: 10px; padding: 4px 14px; }
+.rows .row .no { color: var(--ink3); width: 22px; }
+.rows .row .t { font: 13px var(--ui); }
+.rows .row .end { margin-left: auto; display: flex; align-items: center; gap: 10px; color: var(--ink2); font-size: 12px; }
+.tag { border: 1px solid var(--ink3); padding: 0 5px; font-size: 11px; color: var(--ink2); display: inline-flex; gap: 5px; align-items: center; }
+
+/* ---------- 3. new room ---------- */
+.sheetwrap { width: 1200px; display: grid; grid-template-columns: 520px 1fr; gap: 24px; align-items: start; }
+.sheet { background: var(--bg); color: var(--ink); border: 1px solid var(--ink); position: relative; }
+.sheet::after { content: ""; position: absolute; left: 6px; top: 6px; right: -7px; bottom: -7px; z-index: -1; background: repeating-conic-gradient(var(--ink3) 0 25%, transparent 0 50%) 0 0 / 2px 2px; }
+.sheet .hd { background: var(--ink); color: var(--bg); padding: 4px 12px; font: 12px var(--mono); }
+.sheet .bd { padding: 12px 14px 14px; font: 12.5px var(--ui); }
+.sheet .fld { border: 1px solid var(--ink3); padding: 6px 9px; margin: 4px 0 12px; font: 13px var(--ui); }
+.sheet .lb { color: var(--ink3); font: 11px var(--mono); letter-spacing: .06em; }
+.pick { display: grid; grid-template-columns: 28px 14px 1fr auto; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px dotted var(--ink4); }
+.pick .note { grid-column: 3 / 5; font-size: 11px; color: var(--ink2); margin-top: -3px; }
+.pick.off { opacity: .45; }
+.cb { font: 12px var(--mono); white-space: nowrap; }
+.sheet .foot { display: flex; justify-content: flex-end; gap: 14px; margin-top: 14px; }
+.live { width: 360px; background: #000; color: #fff; border-radius: 18px; padding: 14px 16px; font: 12px var(--mono); box-shadow: 0 0 0 .5px rgba(255,255,255,.25); }
+.live .h { display: flex; align-items: center; gap: 8px; }
+.live .h b { font: 600 13px var(--ui); }
+.live .say { margin: 8px 0 10px; font: 12.5px/1.5 var(--ui); color: rgba(255,255,255,.78); }
+.live .btns { display: flex; gap: 14px; justify-content: flex-end; }
+.live .btns button:hover { background: #fff; color: #000; }
+
+/* ---------- 4. phone ---------- */
+.phone { width: 300px; height: 620px; border-radius: 40px; background: var(--bg); color: var(--ink); box-shadow: 0 0 0 9px #222, 0 0 0 10px #444, 0 26px 60px rgba(0,0,0,.6);
+  display: grid; grid-template-rows: 44px 44px minmax(0, 1fr) auto; overflow: hidden; margin: 10px 0 0 10px; }
+.phone .sb { display: flex; justify-content: space-between; padding: 14px 26px 0; font: 600 13px var(--ui); }
+.phone .nav { display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--ink4); }
+.phone .nav b { font: 600 15px var(--ui); }
+.phone .feed { padding: 10px 12px; gap: 8px; }
+.phone .msg { padding: 6px 9px 7px; }
+.phone .msg .tx { font-size: 12.5px; }
+.phone .compose { padding: 8px 12px 26px; }
+.phones { display: flex; gap: 40px; align-items: flex-start; }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <h1>Rooms · 几个 agent 在 AgentSwitch 里互相说话</h1>
+  <p class="lede">配 <code>docs/talk-v0.md</code>。你建一个讨论，把几个终端拉进去；同一个讨论里的 agent 互相说话：话由服务转交，对方空闲时作为一句新的话打进它的终端；一轮由讨论里的话引起，这一轮的回答自动带回说话的那一位；要主动找人、点名说话，用终端启动时临时挂上的 <code>room</code> 工具（<code>peers</code>、<code>send</code>、<code>read</code>）。不写任何一家 agent 的用户配置，讨论的记录只在 AgentSwitch 的库里。全是演示数据。顶上一排是还没定的几件（talk-v0 §8），切换后整页跟着变。</p>
+  <div class="tools">
+    <span>谁建讨论 <span class="seg" data-opt="who"><button data-v="you" class="on">By You</button><button data-v="ask">Agents Ask</button></span></span>
+    <span>送达 <span class="seg" data-opt="deliver"><button data-v="typed" class="on">Typed In</button><button data-v="pull">Pull Only</button></span></span>
+    <span>回答 <span class="seg" data-opt="answers"><button data-v="auto" class="on">Auto Back</button><button data-v="tool">Tool Only</button></span></span>
+    <span>停下 <span class="seg" data-opt="stop"><button data-v="4">4</button><button data-v="8" class="on">8</button><button data-v="12">12</button><button data-v="0">Never</button></span></span>
+    <span>放在 <span class="seg" data-opt="place"><button data-v="page" class="on">Own Page</button><button data-v="dispatch">In Dispatch</button></span></span>
+    <span><span class="seg" data-opt="theme"><button data-v="dark" class="on">Dark</button><button data-v="light">Light</button></span></span>
+  </div>
+</div>
+
+<div class="sec">1 · ROOMS — 主窗口：一个讨论的两种看法</div>
+<div class="stage"><div class="ctl" id="ctlWin">
+  <button data-view="chat" class="on">Chat</button><button data-view="lanes">Lanes</button><span style="width:14px"></span>
+  <button data-state="running" class="on">进行中</button><button data-state="stopped">停下等你</button>
+</div><div class="win" id="win"></div></div>
+<div class="cap" id="capWin"></div>
+
+<div class="sec">2 · IN THE TERMINAL — 终端里看到的</div>
+<div class="stage"><div id="term"></div></div>
+<div class="cap" id="capTerm"></div>
+
+<div class="sec">3 · NEW ROOM — 建讨论，和停下来等你的卡</div>
+<div class="stage" style="overflow: visible; padding-bottom: 8px"><div class="sheetwrap" id="sheet"></div></div>
+<div class="cap" id="capSheet"></div>
+
+<div class="sec">4 · PHONE — 手机上同一个讨论</div>
+<div class="stage"><div class="phones" id="phone"></div></div>
+<div class="cap" id="capPhone"></div>
+<div style="height:60px"></div>
+
+<script src="pixel.js"></script>
+<script>
+const P = window.Pixel;
+document.getElementById("gcss").textContent = P.GLITCH_CSS;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const sq = (c, { blink = false } = {}) => `<span class="sq ${blink ? "blink" : ""}" style="background:${c}"></span>`;
+const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+let frame = 0;
+const spin = () => `<span class="spin" data-spin>${SPIN[frame % SPIN.length]}</span>`;
+const agent = (a) => P.sprite(P.AGENT_PX[a], { px: 2 });
+// Inline Markdown of the demo's words: `code` only.
+const md = (s) => esc(s).replace(/`([^`]+)`/g, '<code class="c">$1</code>');
+
+const RAIL = {
+  dispatch: ["......###", ".....#...", "....#....", "###.#####", "###......", "....#....", ".....#...", "......###"],
+  terminals: ["#########", "#.......#", "#.#.....#", "#..#....#", "#.#..##.#", "#.......#", "#########"],
+  browser: [".#####.", "#..#..#", "#######", "#..#..#", "#######", "#..#..#", ".#####."],
+  rooms: ["##.....##", "##.....##", "..#...#..", "...#.#...", "....#....", "...###...", "...###..."],
+  clash: ["#.....#", "##...##", "#######", "#.#.#.#", "#######", ".#####."],
+  settings: ["#........", "#####....", "#........", "....#....", "#########", "....#....", "..#......", "#########", "..#......"],
+};
+const icon = (k) => P.sprite(RAIL[k], { px: 2 });
+const ROOMMARK = ["##...##", "##...##", "..#.#..", "...#...", "..###.."];
+const roomMark = () => P.sprite(ROOMMARK, { px: 1.5 });
+
+// ---------- the demo's people ----------
+const M = {
+  you: { name: "You", short: "You" },
+  "05": { name: "05 · Codex", a: "codex", prof: "var(--mint)", profName: "work", doing: "idle" },
+  "07": { name: "07 · Claude Code", a: "cc", prof: "var(--violet)", profName: "cwork1", doing: "working", what: "Edit e2e/login.spec.ts" },
+  "09": { name: "09 · OpenCode", a: "oc", doing: "working", what: "Run npm run lint" },
+  "11": { name: "11 · pi", a: "pi", doing: "idle" },
+};
+const who = (k, { mark = true } = {}) => {
+  const m = M[k];
+  if (k === "you" || k === "all") return `<b>${k === "all" ? "All" : "You"}</b>`;
+  return `${mark ? `<span style="color:var(--ink)">${agent(m.a)}</span>` : ""}<b>${esc(m.name)}</b>${m.prof ? `<span class="dot" style="color:${m.prof}"></span>` : ""}`;
+};
+
+const S = { who: "you", deliver: "typed", answers: "auto", stop: 8, place: "page", light: false, view: "chat", state: "running", pick: 3 };
+
+// The room's record: what was said, to whom, how (`send` by the tool; `reply` an answer that came back by itself).
+function messages() {
+  const auto = S.answers === "auto";
+  const list = [
+    { sys: "你建了讨论“登录重构”：05 · Codex、07 · Claude Code、09 · OpenCode", t: "14:02" },
+    { from: "you", to: "all", via: "you", t: "14:02", text: "05 改登录页的跳转，07 按新地址改测试，09 等他们改完看一遍。做完互相说一声。", got: "已送到 05、07、09" },
+    { from: "05", to: "07", via: "send", t: "14:09", text: "跳转改在 `src/auth/redirect.ts`，新地址是 `/signin/next`。测试里旧地址有 3 处。", got: S.deliver === "typed" ? "已送到 07" : "07 已读" },
+    { from: "07", to: "05", via: auto ? "reply" : "send", t: "14:13", text: "测试按新地址改好了，`npm test` 41 个通过。`e2e/login.spec.ts` 里还有一处旧地址，你那边要一起改吗？", got: S.deliver === "typed" ? "已送到 05" : "05 已读" },
+    { from: "05", to: "07", via: auto ? "reply" : "send", t: "14:14", text: "e2e 归你，我这边不动。", got: S.deliver === "typed" ? "已送到 07" : "07 已读" },
+    { from: "07", to: "09", via: "send", t: "14:16", queued: true, text: "改动都在 main 上了：`src/auth/redirect.ts` 和两个测试文件，帮看一遍。",
+      got: S.deliver === "typed" ? "等 09 忙完再送（它在 Run npm run lint）" : "放在讨论里，等 09 用 read 去取" },
+  ];
+  return list;
+}
+const stopped = () => S.state === "stopped" && S.stop > 0;
+const viaWord = (v) => (v === "send" ? "send" : v === "reply" ? "Reply" : "");
+
+function msgHtml(m, i, { compact = false } = {}) {
+  if (m.sys) return `<div class="sys">${esc(m.sys)}</div>`;
+  const you = m.from === "you";
+  const short = (k) => (k === "all" ? "<b>All</b>" : k === "you" ? "<b>You</b>" : `${agent(M[k].a)}<b>${k}</b>`);
+  const head = compact ? `${short(m.from)} <span>→</span> ${short(m.to)}` : you
+    ? `<b>You</b> <span>→</span> ${m.to === "all" ? "<b>All</b>" : who(m.to, { mark: false })}`
+    : `${who(m.from)} <span>→</span> ${m.to === "all" ? "<b>All</b>" : who(m.to, { mark: false })}`;
+  const via = viaWord(m.via);
+  return `<div class="msg ${you ? "you" : ""} ${m.queued ? "queued" : ""} ${!compact && S.view === "lanes" && S.pick === i ? "pick" : ""}">
+    <div class="h">${head}${via ? `<span class="via">${via}</span>` : ""}<span class="t">${m.t}</span></div>
+    <div class="tx">${md(m.text)}</div>
+    ${compact ? "" : `<div class="ft"><span>${esc(m.got)}</span></div>`}
+  </div>`;
+}
+
+function stopCard() {
+  return `<div class="stopcard">${sq("var(--amber)", { blink: true })}<span>这个讨论已经连续 ${S.stop} 轮没有你的消息，先停下了。排着的 1 条不再送。</span><span class="sp"></span>
+    <button class="btn pri">[ Continue ]</button><button class="btn warn">[ End Room ]</button></div>`;
+}
+function askCard() {
+  return `<div class="ask">${sq("var(--signal)")}<span><b>05 · Codex</b> 想把 <b>11 · pi</b> 拉进来：“要在 pi 里跑一遍登录的测试。”</span><span class="sp"></span>
+    <button class="btn warn">[ Deny ]</button><button class="btn pri">[ Allow ]</button></div>`;
+}
+
+// ---------- 1. the window ----------
+function drawWin() {
+  const win = document.getElementById("win");
+  win.classList.toggle("light", S.light);
+  const inDispatch = S.place === "dispatch";
+  const rooms = [
+    { name: "登录重构", ag: ["codex", "cc", "oc"], st: stopped() ? `<span class="w">${sq("var(--amber)", { blink: true })}</span>` : spin(), say: stopped() ? "停下等你" : "07 在改 e2e", on: true },
+    { name: "对账导出", ag: ["cc", "codex"], st: `<span class="w">${sq("var(--amber)", { blink: true })}</span>`, say: "停下等你 · 12 轮" },
+    { name: "依赖升级", ag: ["cc", "pi"], st: `<span class="faint">${sq("var(--ink3)")}</span>`, say: "已结束 · 昨天", done: true },
+  ];
+  const railIcons = inDispatch ? ["dispatch", "terminals", "browser", "clash"] : ["dispatch", "terminals", "browser", "rooms", "clash"];
+  const current = inDispatch ? "dispatch" : "rooms";
+  const rail = `<div class="rail">${railIcons.map((k) => `<span class="ic ${k === current ? "on" : ""}">${icon(k)}${k === current && stopped() ? `<span class="mk" style="background:var(--amber)"></span>` : ""}</span>`).join("")}<span class="gap"></span><span class="ic" style="margin-bottom:12px">${icon("settings")}</span></div>`;
+  const list = `<div class="list"><div class="hd">${inDispatch ? "TOPICS" : "ROOMS"}<button class="btn">${inDispatch ? "+ New" : "+ New Room"}</button></div>
+    ${inDispatch ? `<div class="room"><div class="r1">发布 AgentSwitch<span class="st ok">Done</span></div><div class="r2">话题 · 3 个任务</div></div>` : ""}
+    ${rooms.map((r) => `<div class="room ${r.on ? "on" : ""} ${r.done ? "done" : ""}"><div class="r1">${inDispatch ? `<span class="dim">${roomMark()}</span>` : ""}${esc(r.name)}<span class="st">${r.st}</span></div>
+      <div class="r2">${r.ag.map((a) => agent(a)).join("")}<span>${r.say}</span></div></div>`).join("")}</div>`;
+  const center = S.view === "chat" ? chat() : lanes();
+  const members = ["05", "07", "09"].map((k) => {
+    const m = M[k];
+    const st = m.doing === "working" ? `${spin()} <span>${esc(m.what)}</span>` : `<span class="faint">${sq("var(--ink3)")}</span> <span>空闲</span>`;
+    return `<div class="mem"><span>${agent(m.a)}</span><span class="n">${esc(m.name)}${m.prof ? `<span class="dot" style="color:${m.prof}"></span>` : ""}</span><span class="a"><button class="btn">Open</button></span>
+      <span class="s">${st}${k === "09" ? ` · <span class="w">排着 1 条</span>` : ""}</span></div>`;
+  }).join("");
+  const rounds = stopped() ? `${S.stop} / ${S.stop}` : `3 / ${S.stop || "∞"}`;
+  const side = `<div class="side"><div class="lb">MEMBERS</div>${members}
+    <div class="mem"><span></span><span class="n">You</span><span class="a"></span><span class="s">上一次说话 14:02</span></div>
+    ${S.who === "ask" ? `<div class="mem" style="opacity:.6"><span>${agent("pi")}</span><span class="n">11 · pi</span><span class="a w">待批</span><span class="s">05 · Codex 请你拉进来</span></div>` : ""}
+    <div class="lb" style="margin-top:12px">ROOM</div>
+    <div class="set"><span>Stop After</span><b>${S.stop ? `${S.stop} Rounds Without You` : "Never"}</b></div>
+    <div class="set"><span>没有你介入</span><b>${rounds}</b></div>
+    <div class="set"><span>Answers Come Back</span><b>${S.answers === "auto" ? "On" : "Off"}</b></div>
+    <div class="set"><span>Delivery</span><b>${S.deliver === "typed" ? "Typed In" : "Pull Only"}</b></div>
+    <div style="margin-top:auto; display:flex; gap:14px"><button class="btn">[ Add Terminal ]</button><button class="btn warn">[ End Room ]</button></div></div>`;
+  win.innerHTML = `<div class="bar"><div class="lights"><i></i><i></i><i></i></div>
+      <span class="ttl">${inDispatch ? `<small>Dispatch ›</small>` : ""}登录重构 <small>3 个成员 · ${stopped() ? '<span class="w">停下等你</span>' : "进行中"}</small></span>
+      <div class="end"><span class="views"><button data-view="chat" class="${S.view === "chat" ? "on" : ""}">Chat</button><button data-view="lanes" class="${S.view === "lanes" ? "on" : ""}">Lanes</button></span></div></div>
+    <div class="body">${rail}${list}${center}${side}</div>
+    <div class="status"><span>${sq("var(--green)")} Gateway</span><span>iPhone Online</span><span class="sp"></span><span>${inDispatch ? "Router · Sonnet 5.5" : "3 Rooms · 2 Need You"}</span></div>`;
+  document.getElementById("capWin").innerHTML = capWin();
+}
+
+function chat() {
+  const list = messages();
+  const shown = list.map((m, i) => msgHtml(m, i)).join("");
+  return `<div class="center"><div class="feed">${shown}
+      ${S.who === "ask" ? askCard() : ""}
+      ${stopped() ? `<div class="sys w">14:31 · 连续 ${S.stop} 轮没有你的消息，先停下了</div>${stopCard()}` : ""}
+    </div>
+    <div class="compose"><span class="box"><b>@All</b> 对全体说，或用 @05 点名…</span><button class="btn pri">[ Send ]</button></div></div>`;
+}
+
+// Lanes: one line a member, time down; a message an arrow from who said it to whom.
+function lanes() {
+  const W = 686, H = 520, top = 70, bottom = 470;
+  const cols = { you: 90, "05": 250, "07": 410, "09": 570 };
+  const t0 = 14 * 60 + 2, t1 = 14 * 60 + (stopped() ? 32 : 18);
+  const y = (t) => { const [h, m] = t.split(":").map(Number); return top + ((h * 60 + m - t0) / (t1 - t0)) * (bottom - top); };
+  // What each member did, as spans: working (solid), idle (thin), waiting for you (amber).
+  const spans = {
+    you: [["14:02", stopped() ? "14:32" : "14:18", "idle"]],
+    "05": [["14:02", "14:03", "idle"], ["14:03", "14:09", "working"], ["14:09", "14:13", "idle"], ["14:13", "14:14", "working"], ["14:14", stopped() ? "14:32" : "14:18", "idle"]],
+    "07": [["14:02", "14:03", "idle"], ["14:03", "14:08", "working"], ["14:08", "14:09", "idle"], ["14:09", "14:13", "working"], ["14:13", "14:14", "idle"], ["14:14", "14:16", "working"], ["14:16", stopped() ? "14:32" : "14:18", "working"]],
+    "09": [["14:02", "14:04", "idle"], ["14:04", stopped() ? "14:32" : "14:18", "working"]],
+  };
+  let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><defs>
+      <marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="currentColor"/></marker></defs>`;
+  for (const [k, x] of Object.entries(cols)) {
+    for (const [a, b, st] of spans[k]) {
+      const color = st === "working" ? "var(--cyan)" : st === "waiting" ? "var(--amber)" : "var(--ink3)";
+      svg += `<line x1="${x}" y1="${y(a)}" x2="${x}" y2="${y(b)}" stroke="${color}" stroke-width="${st === "working" ? 5 : 1}"/>`;
+    }
+  }
+  const list = messages();
+  let lastLabel = -100;
+  list.forEach((m, i) => {
+    if (m.sys) return;
+    const targets = m.to === "all" ? ["05", "07", "09"] : [m.to];
+    const yy = y(m.t);
+    for (const to of targets) {
+      const x1 = cols[m.from], x2 = cols[to], dir = Math.sign(x2 - x1);
+      const color = S.pick === i ? "var(--signal)" : m.queued ? "var(--amber)" : "var(--ink)";
+      svg += `<g style="color:${color}; cursor:pointer" data-pick="${i}"><line x1="${x1 + dir * 6}" y1="${yy}" x2="${x2 - dir * 8}" y2="${yy + (m.queued ? 0 : 8)}" stroke="currentColor" stroke-width="1.3"
+        ${m.queued ? 'stroke-dasharray="4 3"' : ""} marker-end="url(#ah)"/><line x1="${x1}" y1="${yy - 6}" x2="${x2}" y2="${yy + 12}" stroke="transparent" stroke-width="12"/></g>`;
+    }
+    const lab = viaWord(m.via) || "You";
+    // Two messages a minute apart: the second one's word goes under its arrow, not over the first's.
+    const ly = yy - lastLabel < 16 ? yy + 22 : yy - 5;
+    lastLabel = yy;
+    svg += `<text x="${(cols[m.from] + cols[targets[0]]) / 2}" y="${ly}" fill="var(--ink2)" font-size="10.5" font-family="var(--mono)" text-anchor="middle">${lab}</text>`;
+  });
+  if (stopped()) {
+    const ys = y("14:31");
+    svg += `<line x1="40" y1="${ys}" x2="${W - 20}" y2="${ys}" stroke="var(--amber)" stroke-dasharray="6 4"/>
+      <text x="52" y="${ys - 6}" fill="var(--amber)" font-size="11" font-family="var(--mono)">停下：连续 ${S.stop} 轮没有你</text>`;
+  }
+  svg += `</svg>`;
+  const heads = Object.entries(cols).map(([k, x]) => {
+    const m = M[k] ?? M.you;
+    const st = k === "you" ? "你" : m.doing === "working" ? `${spin()} 在做` : "空闲";
+    return `<div class="lanehead" style="left:${x}px"><b>${k === "you" ? "" : agent(m.a)}${esc(k === "you" ? "You" : m.name)}${m.prof ? `<span class="dot" style="color:${m.prof}"></span>` : ""}</b><span>${st}</span></div>`;
+  }).join("");
+  const ticks = ["14:02", "14:06", "14:10", "14:14", "14:18", ...(stopped() ? ["14:22", "14:26", "14:30"] : [])]
+    .map((t) => `<span class="tick" style="top:${y(t)}px">${t}</span>`).join("");
+  const p = list[S.pick];
+  const picked = p && !p.sys ? `<div class="picked"><div class="hd"><span>${esc(M[p.from]?.name ?? "You")} → ${p.to === "all" ? "All" : esc(M[p.to].name)}</span><span>${p.t}</span></div>
+      <div class="bd">${md(p.text)}<div class="ft" style="margin-top:6px; font:11px var(--mono); color:var(--ink3)">${esc(p.got)}</div></div></div>` : "";
+  return `<div class="center"><div class="lanes" style="height:100%">${svg}${heads}${ticks}${picked}</div>
+    <div class="compose"><span class="box"><b>@All</b> 对全体说，或用 @05 点名…</span><button class="btn pri">[ Send ]</button></div></div>`;
+}
+
+function capWin() {
+  const chatSay = S.view === "chat"
+    ? `<b>Chat</b>：每条消息一张卡，抬头是谁对谁说、怎么说的（<code>send</code>：用工具点名说的；<code>Reply</code>：一轮由讨论里的话引起，这一轮的回答自动带回）。你说的话靠右。还没送出去的是虚线框，写着在等什么。`
+    : `<b>Lanes</b>：每位成员一条竖线，粗青线是在做、细线是空闲；一条消息是一根从说话人到收件人的箭头，排着还没送的是琥珀色虚线。点一根箭头，右下角显示那条消息。看谁在等谁、在哪里来回绕圈。`;
+  const deliver = S.deliver === "typed"
+    ? "<b>Typed In</b>：对方空闲时由服务打进它的终端；它在做时排队（09 那条），等你时不送。"
+    : "<b>Pull Only</b>：消息只放在讨论里，对方要自己调用 <code>read</code> 才看得到——安静，但 agent 不会自己想起来去看，09 那条多半一直放着，讨论容易停住。";
+  const answers = S.answers === "auto"
+    ? "<b>Auto Back</b>：07 回 05 那一条不是它调用工具发的，是那一轮的回答自动带回的；没有工具的终端靠这条也能参加。"
+    : "<b>Tool Only</b>：只有调用了 <code>send</code> 才算说话；agent 忘了调用，对方就收不到回音。";
+  const stop = S.stop ? `<b>停下</b>：连续 ${S.stop} 轮没有你的消息就停下（点“停下等你”看样子），图标栏和左栏都标琥珀色，实时活动里也有。` : "<b>Never</b>：不停。两个 agent 互相客套可以一直来回下去，只能靠你看着。";
+  const place = S.place === "page" ? "<b>Own Page</b>：图标栏在 Clash 前面多一个图标。" : "<b>In Dispatch</b>：不加新页，讨论作为调度里的一种话题，和任务话题混在一个列表里（左栏第一项是普通话题）。省一个图标，但调度的话题是“你交代、路由器派”，讨论是“几个终端互相说”，放在一起容易混。";
+  return `${chatSay} ${deliver} ${answers} ${stop} ${place}${S.who === "ask" ? " <b>Agents Ask</b>：agent 可以请求拉人，每次一张卡等你批（粉色框），批了才进来。" : ""}`;
+}
+
+// ---------- 2. in the terminal ----------
+function drawTerm() {
+  const el = document.getElementById("term");
+  const typed = S.deliver === "typed";
+  const auto = S.answers === "auto";
+  const simple = `<div class="pane ${S.light ? "light" : ""}"><div class="ph">${agent("cc")}<b>修登录测试</b><span>07 · Claude Code · Opus 5.5</span><span style="margin-left:auto" class="tag">${roomMark()} 登录重构</span></div>
+    <div class="rec">
+      <div class="roomcard"><div class="h">${roomMark()}<span>登录重构</span>${who("05")}<span>→ 你</span><span style="margin-left:auto; color:var(--ink3)">14:09</span></div>
+        <div style="margin-top:4px">${md("跳转改在 `src/auth/redirect.ts`，新地址是 `/signin/next`。测试里旧地址有 3 处。")}</div></div>
+      <div class="work">▾ Worked 3m 52s · Read 2 · Edited 2 · Ran 1
+        <div class="ln"><i>Edit</i>tests/login.test.ts</div><div class="ln"><i>Run</i>npm test</div>
+        ${typed ? "" : `<div class="ln"><i>Room</i>read · 1 条新的</div>`}</div>
+      <div>${md("测试按新地址改好了，`npm test` 41 个通过。`e2e/login.spec.ts` 里还有一处旧地址，你那边要一起改吗？")}</div>
+      <div class="back">${auto ? "↩ Back to 05 · Codex · 14:13" : ""}</div>
+      ${auto ? "" : `<div class="work"><div class="ln"><i>Room</i>Sent to 05 · Codex：测试按新地址改好了…</div></div>`}
+      <div class="work">▾ Worked 1m 40s · Edited 1<div class="ln"><i>Room</i>Sent to 09 · OpenCode：改动都在 main 上了…</div></div>
+    </div><div class="reply">回复</div></div>`;
+  const ttyLines = typed
+    ? `<span class="u">&gt; 〔讨论 · 登录重构〕05 · Codex 对你说：
+  跳转改在 src/auth/redirect.ts，新地址是 /signin/next。测试里旧地址有 3 处。</span>
+
+<span class="g">⏺</span> 先看测试里用到旧地址的地方。
+<span class="g">⏺</span> <span class="k">Edit</span>(tests/login.test.ts)
+<span class="g">⏺</span> <span class="k">Bash</span>(npm test)
+  <span class="d">⎿ 41 passed</span>
+<span class="g">⏺</span> 测试按新地址改好了，npm test 41 个通过。e2e/login.spec.ts
+  里还有一处旧地址，你那边要一起改吗？
+${auto ? "" : `<span class="g">⏺</span> <span class="k">room - send (MCP)</span>(to: "05", text: "测试按新地址改好了…")\n  <span class="d">⎿ 已收下，05 空闲，马上送到</span>\n`}
+<span class="u">&gt; 〔讨论 · 登录重构〕05 · Codex 对你说：
+  e2e 归你，我这边不动。</span>
+
+<span class="g">⏺</span> <span class="k">Edit</span>(e2e/login.spec.ts)
+<span class="g">⏺</span> <span class="k">room - send (MCP)</span>(to: "09", text: "改动都在 main 上了…")
+  <span class="d">⎿ 已收下：09 正在做，等它忙完再送</span>`
+    : `<span class="u">&gt; 05 改登录页的跳转，07 按新地址改测试…</span>  <span class="d">（你在讨论里说的那一句，Pull Only 下也不会打进来）</span>
+
+<span class="g">⏺</span> <span class="k">room - read (MCP)</span>()
+  <span class="d">⎿ 1 条新的：05 · Codex → 你：跳转改在 src/auth/redirect.ts…</span>
+<span class="g">⏺</span> <span class="k">Edit</span>(tests/login.test.ts)
+<span class="g">⏺</span> <span class="k">Bash</span>(npm test)
+  <span class="d">⎿ 41 passed</span>
+<span class="g">⏺</span> <span class="k">room - send (MCP)</span>(to: "05", text: "测试按新地址改好了…")`;
+  const tty = `<div class="pane ${S.light ? "light" : ""}"><div class="ph">${agent("cc")}<b>修登录测试</b><span>终端视图 · Claude Code 自己画的</span></div>
+    <div class="tty">${ttyLines}</div><div class="reply" style="font-family:var(--mono)">&gt;</div></div>`;
+  const rows = `<div class="rows ${S.light ? "light" : ""}">
+    <div class="row"><span class="no">05</span>${agent("codex")}<span class="t">改登录页的跳转</span><span class="end"><span class="tag">${roomMark()} 登录重构</span><span class="dot" style="color:var(--mint)"></span><span class="faint">${sq("var(--ink3)")}</span></span></div>
+    <div class="row"><span class="no">07</span>${agent("cc")}<span class="t">修登录测试</span><span class="end"><span class="tag">${roomMark()} 登录重构</span><span class="dot" style="color:var(--violet)"></span>${spin()}</span></div>
+    <div class="row"><span class="no">09</span>${agent("oc")}<span class="t">看一遍改动</span><span class="end"><span class="tag">${roomMark()} 登录重构 · 排着 1 条</span>${spin()}</span></div>
+    <div class="row"><span class="no">12</span>${agent("pi")}<span class="t">整理下载目录</span><span class="end"><span class="faint">不在讨论里</span>${sq("var(--green)")}</span></div></div>`;
+  el.innerHTML = `<div class="pair">${simple}${tty}</div>${rows}`;
+  document.getElementById("capTerm").innerHTML = typed
+    ? `左边是 07 的简略视图：讨论里收到的话不画成你的气泡，而是一张讨论卡（左边一道粉线，点一下到 Rooms 页那一条）；${auto ? "它的回答下面写 <code>↩ Back to 05 · Codex</code>，表示这段已自动带回" : "它用 <code>send</code> 发出的话在工作那一行里写成 <code>Room · Sent to …</code>"}。右边是同一个终端的终端视图：就是 Claude Code 自己画的样子——收到的话以〔讨论 · 名字〕开头，所以不会被当成 <code>/</code> 命令或 <code>!</code> 命令；整段粘贴再回车，中间的换行不会提前发出。下面是终端列表：讨论里的终端行尾带讨论名，排着消息的写在旁边。`
+    : `<b>Pull Only</b> 下，讨论里的话不会打进终端：07 要自己调用 <code>read</code> 才看得到（右边第一个工具调用）。它不调用，就一直不知道有人对它说话。`;
+}
+
+// ---------- 3. new room and the stop card ----------
+function drawSheet() {
+  const el = document.getElementById("sheet");
+  const seg = [4, 8, 12, 0].map((n) => `<span class="${S.stop === n ? "" : "faint"}">${S.stop === n ? "[" : " "}${n || "Never"}${S.stop === n ? "]" : " "}</span>`).join(" ");
+  const pick = (on, a, name, note, off = false) => `<div class="pick ${off ? "off" : ""}"><span class="cb">${on ? "[x]" : "[ ]"}</span><span>${agent(a)}</span><span>${name}</span><span class="faint" style="font-size:11px">${note.right ?? ""}</span>${note.below ? `<span class="note">${note.below}</span>` : ""}</div>`;
+  const sheet = `<div class="sheet ${S.light ? "light" : ""}"><div class="hd">New Room</div><div class="bd">
+      <div class="lb">NAME</div><div class="fld">登录重构</div>
+      <div class="lb">TERMINALS</div>
+      ${pick(true, "codex", "05 · 改登录页的跳转", { right: "Codex · work" })}
+      ${pick(true, "cc", "07 · 修登录测试", { right: "Claude Code · cwork1" })}
+      ${pick(true, "oc", "09 · 看一遍改动", { right: "OpenCode" })}
+      ${pick(false, "cc", "03 · 网关的引用过期", { right: "已在“对账导出”" }, true)}
+      ${pick(false, "pi", "12 · 整理下载目录", { right: "pi", below: "开讨论以前就在跑：没有 room 工具，能收到话，回答会带回；要主动找人得重开这个终端" })}
+      <div class="lb" style="margin-top:12px">STOP AFTER</div><div style="margin:4px 0 10px; font:12.5px var(--mono)">${seg} <span class="faint">轮没有你的消息</span></div>
+      <div class="set" style="font-size:12.5px"><span>Answers Come Back</span><b>${S.answers === "auto" ? "[x] On" : "[ ] Off"}</b></div>
+      <div class="foot"><button class="btn">[ Cancel ]</button><button class="btn pri">[ Create ]</button></div></div></div>`;
+  const live = S.stop
+    ? `<div class="live"><div class="h">${sq("#ffb000", { blink: true })}<b>登录重构</b><span style="margin-left:auto; color:rgba(255,255,255,.5)">rooms</span></div>
+        <div class="say">连续 ${S.stop} 轮没有你的消息，先停下了。07 · Claude Code 还有 1 条要给 09 · OpenCode。</div>
+        <div class="btns"><button>[ end room ]</button><button>[ continue ]</button></div></div>`
+    : `<div class="live"><div class="h"><b>Never</b></div><div class="say">选了“不停”，就没有这张卡。</div></div>`;
+  const ask = S.who === "ask"
+    ? `<div class="live" style="margin-top:16px"><div class="h">${sq("#ff2e88")}<b>登录重构</b><span style="margin-left:auto; color:rgba(255,255,255,.5)">rooms</span></div>
+        <div class="say">05 · Codex 想把 11 · pi 拉进来：“要在 pi 里跑一遍登录的测试。”</div>
+        <div class="btns"><button>[ deny ]</button><button>[ allow ]</button></div></div>`
+    : "";
+  el.innerHTML = `${sheet}<div><div style="font:11px var(--mono); color:#77746e; letter-spacing:.1em; margin-bottom:10px">菜单栏卡片 / 实时活动</div>${live}${ask}</div>`;
+  document.getElementById("capSheet").innerHTML = `在 Terminals 列表里选几个终端，右键 <code>New Room…</code>，或在 Rooms 页 <code>+ New Room</code>。一个终端同时只在一个讨论里（03 已在别的讨论里，不能勾）。开讨论以前就在跑的终端没有工具，但照样能收话、回答照样带回。右边是讨论停下等你时，菜单栏卡片和锁屏的实时活动上出现的那一张${S.who === "ask" ? "；Agents Ask 下，agent 请求拉人也是这样一张卡" : ""}。`;
+}
+
+// ---------- 4. phone ----------
+function drawPhone() {
+  const el = document.getElementById("phone");
+  const list = messages().filter((m) => !m.sys);
+  const feed = list.slice(-4).map((m, i) => msgHtml(m, i, { compact: true })).join("");
+  const phone = (body, title) => `<div class="phone ${S.light ? "light" : ""}"><div class="sb"><span>9:41</span><span>●●●</span></div>
+      <div class="nav"><span class="dim">‹</span><b>${title}</b><span style="margin-left:auto" class="dim">${stopped() ? `<span class="w">停下等你</span>` : spin()}</span></div>${body}</div>`;
+  const roomBody = `<div class="feed">${feed}${stopped() ? `<div class="stopcard" style="flex-direction:column; align-items:flex-start; gap:6px"><span>连续 ${S.stop} 轮没有你的消息，先停下了。</span><span style="display:flex; gap:14px"><button class="btn pri">[ Continue ]</button><button class="btn warn">[ End Room ]</button></span></div>` : ""}</div>
+      <div class="compose"><span class="box"><b>@All</b> 说点什么…</span></div>`;
+  const listBody = `<div class="feed" style="gap:0">
+      <div class="room on"><div class="r1">登录重构<span class="st">${stopped() ? `<span class="w">停下</span>` : spin()}</span></div><div class="r2">${agent("codex")}${agent("cc")}${agent("oc")}<span>${stopped() ? "停下等你" : "07 在改 e2e"}</span></div></div>
+      <div class="room"><div class="r1">对账导出<span class="st w">停下</span></div><div class="r2">${agent("cc")}${agent("codex")}<span>停下等你 · 12 轮</span></div></div>
+      <div class="room done"><div class="r1">依赖升级</div><div class="r2">${agent("cc")}${agent("pi")}<span>已结束 · 昨天</span></div></div></div><div></div>`;
+  el.innerHTML = phone(listBody, "Rooms") + phone(roomBody, "登录重构");
+  document.getElementById("capPhone").innerHTML = `手机上从 <code>Terminals</code> 标签顶上进 <code>Rooms</code>：讨论列表，和一个讨论的聊天看法（手机上不画泳道）。底部同样的输入框，可以 @ 点名；停下时同样两个按钮。`;
+}
+
+// ---------- events ----------
+function drawAll() { drawWin(); drawTerm(); drawSheet(); drawPhone(); }
+document.addEventListener("click", (e) => {
+  const opt = e.target.closest(".seg[data-opt] button");
+  if (opt) {
+    const k = opt.closest(".seg").dataset.opt, v = opt.dataset.v;
+    for (const b of opt.parentElement.children) b.classList.toggle("on", b === opt);
+    if (k === "theme") S.light = v === "light"; else if (k === "stop") S.stop = +v; else S[k] = v;
+    drawAll(); return;
+  }
+  const view = e.target.closest("[data-view]");
+  if (view) {
+    S.view = view.dataset.view;
+    for (const b of document.querySelectorAll("#ctlWin [data-view]")) b.classList.toggle("on", b.dataset.view === S.view);
+    drawWin(); return;
+  }
+  const state = e.target.closest("[data-state]");
+  if (state) {
+    S.state = state.dataset.state;
+    for (const b of document.querySelectorAll("#ctlWin [data-state]")) b.classList.toggle("on", b.dataset.state === S.state);
+    drawAll(); return;
+  }
+  const pk = e.target.closest("[data-pick]");
+  if (pk) { S.pick = +pk.dataset.pick; drawWin(); return; }
+});
+setInterval(() => { frame++; for (const s of document.querySelectorAll("[data-spin]")) s.textContent = SPIN[frame % SPIN.length]; }, 90);
+const q = new URLSearchParams(location.search);
+if (q.has("light")) S.light = true;
+if (q.get("view")) S.view = q.get("view");
+if (q.has("stopped")) S.state = "stopped";
+for (const k of ["who", "deliver", "answers", "place"]) if (q.get(k)) S[k] = q.get(k);
+if (q.get("stop")) S.stop = +q.get("stop");
+for (const seg of document.querySelectorAll(".seg[data-opt]")) {
+  const k = seg.dataset.opt, v = k === "theme" ? (S.light ? "light" : "dark") : String(S[k]);
+  for (const b of seg.children) b.classList.toggle("on", b.dataset.v === v);
+}
+for (const b of document.querySelectorAll("#ctlWin [data-view]")) b.classList.toggle("on", b.dataset.view === S.view);
+for (const b of document.querySelectorAll("#ctlWin [data-state]")) b.classList.toggle("on", b.dataset.state === S.state);
+drawAll();
+</script>
+</body>
+</html>
