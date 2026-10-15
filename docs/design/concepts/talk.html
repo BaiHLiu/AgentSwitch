@@ -9,7 +9,8 @@
 /* Agents talking to each other in AgentSwitch (2026-10-15, user: 我想写一个 多agent交流机制，要求是各个agent通用、只在
    agentswitch里可以用、删掉agentswitch不留下多余的插件、mcp等垃圾、可以可视化). A demo for review with docs/talk-v0.md,
    not a spec: the main window's Rooms page in its two views, what a terminal shows of a room, making a room, a room
-   that stopped for you, and the phone. The choices still open (talk-v0 §8) are the switches at the top. */
+   that stopped for you, and the phone, each in the two looks (ui-v0 §7 Pixel, §8 Classic). The choices still open
+   (talk-v0 §8) are the switches at the top. */
 :root {
   --bg: #000; --panel: #0b0b0b; --raise: #151515; --hover: #121212;
   --ink: #e9e6df; --ink2: #8d8a84; --ink3: #4d4b48; --ink4: #262524;
@@ -17,6 +18,8 @@
   --violet: #b18cff; --mint: #7fe3c0; --sand: #e2c48d;
   --mono: "MesloLGS NF", "SF Mono", ui-monospace, Menlo, "PingFang SC", monospace;
   --ui: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+  /* code, commands, paths and a terminal's screen: fixed-width in both looks (ui-v0 §8 字) */
+  --code: "MesloLGS NF", "SF Mono", ui-monospace, Menlo, "PingFang SC", monospace;
   color-scheme: dark;
 }
 .light {
@@ -62,7 +65,7 @@ h1 { font: 700 15px var(--mono); margin: 0 0 8px; color: #e9e6df; }
 .btn.pri:hover { background: var(--signal); color: #000; }
 .btn.warn { color: var(--red); }
 .btn.warn:hover { background: var(--red); color: #000; }
-code.c { font: 12px var(--mono); background: color-mix(in srgb, var(--ink) 8%, transparent); padding: 0 3px; }
+code.c { font: 12px var(--code); background: color-mix(in srgb, var(--ink) 8%, transparent); padding: 0 3px; }
 
 /* ---------- the window ---------- */
 .win { width: 1200px; height: 640px; background: var(--bg); color: var(--ink); display: grid; grid-template-rows: 32px minmax(0, 1fr) 24px;
@@ -149,11 +152,12 @@ code.c { font: 12px var(--mono); background: color-mix(in srgb, var(--ink) 8%, t
 .roomcard .h { display: flex; align-items: center; gap: 7px; font: 11.5px var(--mono); color: var(--ink2); }
 .roomcard .h b { color: var(--ink); font-weight: 400; }
 .work { font: 12px var(--mono); color: var(--ink2); }
-.work .ln { display: flex; gap: 8px; padding-left: 14px; color: var(--ink); }
+.work .ln { display: flex; gap: 8px; padding-left: 14px; color: var(--ink); font-family: var(--code); }
+.work .ln i { font-family: var(--mono); }
 .work .ln i { font-style: normal; color: var(--ink2); width: 44px; flex: none; }
 .back { font: 11px var(--mono); color: var(--ink3); }
 .reply { border-top: 1px solid var(--ink4); padding: 9px 14px; color: var(--ink3); font: 13px var(--ui); }
-.tty { background: #0b0b0b; color: #d6d3cc; padding: 12px 14px; font: 12px/1.55 var(--mono); white-space: pre-wrap; overflow: hidden; }
+.tty { background: #0b0b0b; color: #d6d3cc; padding: 12px 14px; font: 12px/1.55 var(--code); white-space: pre-wrap; overflow: hidden; }
 .light .tty { background: #0b0b0b; color: #d6d3cc; }
 .tty .u { color: #fff; }
 .tty .d { color: #8a877f; }
@@ -197,19 +201,89 @@ code.c { font: 12px var(--mono); background: color-mix(in srgb, var(--ink) 8%, t
 .phone .msg .tx { font-size: 12.5px; }
 .phone .compose { padding: 8px 12px 26px; }
 .phones { display: flex; gap: 40px; align-items: flex-start; }
+
+/* ---------- the classic look (ui-v0 §8): the system's type, round shapes, line icons, dots, standard buttons,
+   the system's blue; the main window one black surface, cards a step lighter ---------- */
+.classic { --mono: var(--ui); --accent: #0a84ff; --signal: var(--accent); --cyan: #0a84ff; --amber: #ff9f0a; --green: #30d158; --red: #ff453a;
+  --bg: #000; --panel: #000; --raise: #232326; --hover: #18181b; --card: #141416;
+  --ink: #ededf0; --ink2: #a2a2a8; --ink3: #6c6c72; --ink4: #2a2a2d; }
+.classic.light { --accent: #007aff; --cyan: #007aff; --amber: #d98200; --green: #1f9d3f; --red: #e0352b;
+  --bg: #ffffff; --panel: #f7f7f9; --raise: #efeff3; --hover: #f2f2f5; --card: #f4f4f7;
+  --ink: #1c1c1e; --ink2: #6e6e73; --ink3: #aeaeb2; --ink4: #e3e3e8; }
+.classic .sq { border-radius: 50%; }
+.classic .sq.blink { animation: breathe 2.4s ease-in-out infinite; }
+@keyframes breathe { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--amber) 55%, transparent); } 50% { box-shadow: 0 0 0 4px transparent; } }
+.sq.hollow { background: transparent !important; box-shadow: inset 0 0 0 1.5px var(--ink3); }
+.cspin { width: 11px; height: 11px; border-radius: 50%; display: inline-block; flex: none; vertical-align: -1px;
+  border: 1.6px solid color-mix(in srgb, var(--ink2) 30%, transparent); border-top-color: var(--ink2); animation: rot .9s linear infinite; }
+@keyframes rot { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cspin, .classic .sq.blink { animation: none; } }
+.cag { font: 600 12px var(--ui); display: inline-block; min-width: 13px; text-align: center; color: var(--ink2); flex: none; }
+.li { display: block; flex: none; }
+.cbtn { font: 600 12px var(--ui); padding: 3px 11px; border-radius: 7px; background: var(--raise); color: var(--ink); white-space: nowrap; }
+.cbtn.pri { background: var(--accent); color: #fff; }
+.cbtn.warn { color: var(--red); }
+.classic .lb { font: 600 11.5px var(--ui) !important; letter-spacing: 0 !important; color: var(--ink2) !important; }
+.classic.win { border-radius: 12px; }
+.classic .views { border: 0; background: var(--raise); border-radius: 7px; padding: 2px; gap: 2px; }
+.classic .views button { border-radius: 5px; font: 500 11.5px var(--ui); padding: 1px 10px; }
+.classic .views button.on { background: color-mix(in srgb, var(--ink) 18%, transparent); color: var(--ink); }
+.classic .rail { gap: 12px; padding-top: 10px; }
+.classic .rail .ic { padding: 5px; border-radius: 8px; }
+.classic .rail .ic.on { background: var(--raise); color: var(--accent); }
+.classic .rail .ic.on::before { display: none; }
+.classic .rail .ic .mk { border-radius: 50%; right: 2px; top: 2px; }
+.classic .list .hd { letter-spacing: 0; }
+.classic .room { margin: 1px 8px; border-left: 0; border-radius: 8px; padding: 8px 10px; }
+.classic .room.on { background: var(--raise); }
+.classic .msg { border: 0; background: var(--card); border-radius: 12px; padding: 9px 13px 10px; }
+.classic .msg.you { background: color-mix(in srgb, var(--ink) 9%, transparent); border-radius: 16px; }
+.classic .msg.queued { background: transparent; border: 1px dashed var(--ink3); }
+.classic .msg.pick { outline: 2px solid var(--accent); }
+.classic .msg .h .via { border: 0; background: var(--raise); border-radius: 5px; padding: 0 6px; font: 500 10.5px var(--ui); }
+.classic .stopcard, .classic .ask { border-radius: 12px; }
+.classic .stopcard { border-color: color-mix(in srgb, var(--amber) 45%, transparent); background: color-mix(in srgb, var(--amber) 8%, transparent); }
+.classic .ask { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.classic .compose .box { border-radius: 17px; border-color: var(--ink4); background: var(--card); }
+.classic .compose .box b { color: var(--accent); font-weight: 600; }
+.classic .mem { border-bottom: 0; }
+.classic .picked { border-radius: 12px; border-color: var(--ink4); box-shadow: 0 14px 40px rgba(0,0,0,.45); overflow: hidden; background: var(--card); }
+.classic .picked .hd { background: transparent; color: var(--ink2); border-bottom: 1px solid var(--ink4); }
+.classic.pane { border-radius: 12px; }
+.classic .roomcard { border: 0; border-left: 3px solid var(--accent); border-radius: 10px; background: var(--card); }
+.classic .tag { border: 0; background: var(--raise); border-radius: 6px; padding: 1px 7px; }
+.classic.rows { border-radius: 12px; }
+.classic.sheet { border-color: var(--ink4); border-radius: 12px; box-shadow: 0 22px 60px rgba(0,0,0,.45); background: var(--card); }
+.classic.sheet::after { display: none; }
+.classic.sheet .hd { background: transparent; color: var(--ink); font-weight: 600; font-size: 13.5px; text-align: center; padding-top: 12px; }
+.classic.sheet .fld { border-radius: 7px; border-color: var(--ink4); background: var(--bg); }
+.classic .pick { border-bottom: 1px solid var(--ink4); }
+.ccb { width: 15px; height: 15px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; font: 700 10px var(--ui); border: 1px solid var(--ink3); color: transparent; }
+.ccb.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cseg { display: inline-flex; background: var(--raise); border-radius: 7px; padding: 2px; gap: 2px; }
+.cseg span { padding: 1px 10px; border-radius: 5px; font: 500 12px var(--ui); }
+.cseg span.on { background: color-mix(in srgb, var(--ink) 18%, transparent); }
+.csw { width: 30px; height: 18px; border-radius: 9px; background: var(--ink4); position: relative; display: inline-block; vertical-align: middle; }
+.csw.on { background: var(--green); }
+.csw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; }
+.csw.on::after { left: 14px; }
+.classic.live { border-radius: 24px; font-family: var(--ui); }
+.live .cbtn { background: rgba(255,255,255,.14); color: #fff; }
+.live .cbtn.pri { background: #0a84ff; color: #fff; }
 </style>
 </head>
 <body>
 
 <div class="top">
   <h1>Rooms · 几个 agent 在 AgentSwitch 里互相说话</h1>
-  <p class="lede">配 <code>docs/talk-v0.md</code>。你建一个讨论，把几个终端拉进去；同一个讨论里的 agent 互相说话：话由服务转交，对方空闲时作为一句新的话打进它的终端；一轮由讨论里的话引起，这一轮的回答自动带回说话的那一位；要主动找人、点名说话，用终端启动时临时挂上的 <code>room</code> 工具（<code>peers</code>、<code>send</code>、<code>read</code>）。不写任何一家 agent 的用户配置，讨论的记录只在 AgentSwitch 的库里。全是演示数据。顶上一排是还没定的几件（talk-v0 §8），切换后整页跟着变。</p>
+  <p class="lede">配 <code>docs/talk-v0.md</code>。你建一个讨论，把几个终端拉进去；同一个讨论里的 agent 互相说话：话由服务转交，对方空闲时作为一句新的话打进它的终端；一轮由讨论里的话引起，这一轮的回答自动带回说话的那一位；要主动找人、点名说话，用终端启动时临时挂上的 <code>room</code> 工具（<code>peers</code>、<code>send</code>、<code>read</code>）。不写任何一家 agent 的用户配置，讨论的记录只在 AgentSwitch 的库里。全是演示数据。顶上一排是还没定的几件（talk-v0 §8），切换后整页跟着变；“外观”切换两种外观（ui-v0 §7 像素、§8 经典），布局与入口两种外观相同，只换画法。</p>
   <div class="tools">
     <span>谁建讨论 <span class="seg" data-opt="who"><button data-v="you" class="on">By You</button><button data-v="ask">Agents Ask</button></span></span>
     <span>送达 <span class="seg" data-opt="deliver"><button data-v="typed" class="on">Typed In</button><button data-v="pull">Pull Only</button></span></span>
     <span>回答 <span class="seg" data-opt="answers"><button data-v="auto" class="on">Auto Back</button><button data-v="tool">Tool Only</button></span></span>
     <span>停下 <span class="seg" data-opt="stop"><button data-v="4">4</button><button data-v="8" class="on">8</button><button data-v="12">12</button><button data-v="0">Never</button></span></span>
     <span>放在 <span class="seg" data-opt="place"><button data-v="page" class="on">Own Page</button><button data-v="dispatch">In Dispatch</button></span></span>
+    <span>外观 <span class="seg" data-opt="look"><button data-v="pixel" class="on">Pixel</button><button data-v="classic">Classic</button></span></span>
     <span><span class="seg" data-opt="theme"><button data-v="dark" class="on">Dark</button><button data-v="light">Light</button></span></span>
   </div>
 </div>
@@ -239,13 +313,30 @@ code.c { font: 12px var(--mono); background: color-mix(in srgb, var(--ink) 8%, t
 const P = window.Pixel;
 document.getElementById("gcss").textContent = P.GLITCH_CSS;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const sq = (c, { blink = false } = {}) => `<span class="sq ${blink ? "blink" : ""}" style="background:${c}"></span>`;
-const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-let frame = 0;
-const spin = () => `<span class="spin" data-spin>${SPIN[frame % SPIN.length]}</span>`;
-const agent = (a) => P.sprite(P.AGENT_PX[a], { px: 2 });
 // Inline Markdown of the demo's words: `code` only.
 const md = (s) => esc(s).replace(/`([^`]+)`/g, '<code class="c">$1</code>');
+
+const S = { who: "you", deliver: "typed", answers: "auto", stop: 8, place: "page", look: "pixel", light: false, view: "chat", state: "running", pick: 3 };
+
+// ---------- the two looks (ui-v0 §7 Pixel, §8 Classic): what differs is drawn by these ----------
+const C = () => S.look === "classic";
+/** The classes of a surface: its look and its light or dark. */
+const look = () => `${C() ? "classic" : ""} ${S.light ? "light" : ""}`;
+/** A state's mark: a square in the pixel look, a dot in the classic one (CSS). */
+const sq = (c, { blink = false, hollow = false } = {}) => `<span class="sq ${blink ? "blink" : ""} ${hollow ? "hollow" : ""}" style="background:${c}"></span>`;
+const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+let frame = 0;
+/** Work under way: the braille spinner, or the system's ring. */
+const spin = () => C() ? `<span class="cspin"></span>` : `<span class="spin" data-spin>${SPIN[frame % SPIN.length]}</span>`;
+const AGENT_LINE = { cc: "✳", codex: "›_", oc: "▢", pi: "π" };
+const agent = (a) => C() ? `<span class="cag">${AGENT_LINE[a]}</span>` : P.sprite(P.AGENT_PX[a], { px: 2 });
+/** A button: `[ Word ]`, or a standard one (the main one filled with the accent). */
+const B = (word, kind = "", attrs = "") => C() ? `<button class="cbtn ${kind}" ${attrs}>${word}</button>` : `<button class="btn ${kind}" ${attrs}>[ ${word} ]</button>`;
+/** A section's small title: `// Label`, or the system's small semibold title. */
+const L = (word, style = "") => `<div class="lb" style="${style}">${C() ? word : `// ${word}`}</div>`;
+/** The short words the two looks say differently (ui-v0 §8 第 2 条). */
+const WORDS = { busy: ["Busy", "Working"], idle: ["Idle", "Ready"], waiting: ["Waiting", "Needs You"], ended: ["Ended", "Ended"], gateway: ["Gateway", "Gateway OK"] };
+const w = (k) => WORDS[k][C() ? 1 : 0];
 
 const RAIL = {
   dispatch: ["......###", ".....#...", "....#....", "###.#####", "###......", "....#....", ".....#...", "......###"],
@@ -255,13 +346,24 @@ const RAIL = {
   clash: ["#.....#", "##...##", "#######", "#.#.#.#", "#######", ".#####."],
   settings: ["#........", "#####....", "#........", "....#....", "#########", "....#....", "..#......", "#########", "..#......"],
 };
-const icon = (k) => P.sprite(RAIL[k], { px: 2 });
+// The classic look's line icons (SF Symbols in the app): one source to three lanes, a terminal, a globe, three people
+// joined, the cat, the sliders.
+const LINE = {
+  dispatch: '<circle cx="4.5" cy="12" r="2"/><path d="M6.5 12H19M6.5 12c5 0 5-6 10-6H19M6.5 12c5 0 5 6 10 6H19"/>',
+  terminals: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 10l3 2-3 2M12.5 15H17"/>',
+  browser: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c3.2 3 3.2 14 0 17M12 3.5c-3.2 3-3.2 14 0 17"/>',
+  rooms: '<circle cx="6" cy="7" r="2.4"/><circle cx="18" cy="7" r="2.4"/><circle cx="12" cy="18" r="2.4"/><path d="M8.4 7h7.2M7.2 9.1l3.6 6.8M16.8 9.1l-3.6 6.8"/>',
+  clash: '<path d="M5 10l1-5 3.5 3h5L18 5l1 5v3.5a7 7 0 0 1-14 0z"/><path d="M9.5 13h.01M14.5 13h.01"/>',
+  settings: '<path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="1.9"/><circle cx="15" cy="12" r="1.9"/><circle cx="8" cy="17" r="1.9"/>',
+};
+const line = (k, size) => `<svg class="li" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${size < 16 ? 2.2 : 1.6}" stroke-linecap="round" stroke-linejoin="round">${LINE[k]}</svg>`;
+const icon = (k) => C() ? line(k, 20) : P.sprite(RAIL[k], { px: 2 });
 const ROOMMARK = ["##...##", "##...##", "..#.#..", "...#...", "..###.."];
-const roomMark = () => P.sprite(ROOMMARK, { px: 1.5 });
+const roomMark = () => C() ? line("rooms", 12) : P.sprite(ROOMMARK, { px: 1.5 });
 
 // ---------- the demo's people ----------
 const M = {
-  you: { name: "You", short: "You" },
+  you: { name: "You" },
   "05": { name: "05 · Codex", a: "codex", prof: "var(--mint)", profName: "work", doing: "idle" },
   "07": { name: "07 · Claude Code", a: "cc", prof: "var(--violet)", profName: "cwork1", doing: "working", what: "Edit e2e/login.spec.ts" },
   "09": { name: "09 · OpenCode", a: "oc", doing: "working", what: "Run npm run lint" },
@@ -273,24 +375,22 @@ const who = (k, { mark = true } = {}) => {
   return `${mark ? `<span style="color:var(--ink)">${agent(m.a)}</span>` : ""}<b>${esc(m.name)}</b>${m.prof ? `<span class="dot" style="color:${m.prof}"></span>` : ""}`;
 };
 
-const S = { who: "you", deliver: "typed", answers: "auto", stop: 8, place: "page", light: false, view: "chat", state: "running", pick: 3 };
-
 // The room's record: what was said, to whom, how (`send` by the tool; `reply` an answer that came back by itself).
 function messages() {
-  const auto = S.answers === "auto";
-  const list = [
+  const auto = S.answers === "auto", typed = S.deliver === "typed";
+  return [
     { sys: "你建了讨论“登录重构”：05 · Codex、07 · Claude Code、09 · OpenCode", t: "14:02" },
-    { from: "you", to: "all", via: "you", t: "14:02", text: "05 改登录页的跳转，07 按新地址改测试，09 等他们改完看一遍。做完互相说一声。", got: "已送到 05、07、09" },
-    { from: "05", to: "07", via: "send", t: "14:09", text: "跳转改在 `src/auth/redirect.ts`，新地址是 `/signin/next`。测试里旧地址有 3 处。", got: S.deliver === "typed" ? "已送到 07" : "07 已读" },
-    { from: "07", to: "05", via: auto ? "reply" : "send", t: "14:13", text: "测试按新地址改好了，`npm test` 41 个通过。`e2e/login.spec.ts` 里还有一处旧地址，你那边要一起改吗？", got: S.deliver === "typed" ? "已送到 05" : "05 已读" },
-    { from: "05", to: "07", via: auto ? "reply" : "send", t: "14:14", text: "e2e 归你，我这边不动。", got: S.deliver === "typed" ? "已送到 07" : "07 已读" },
+    { from: "you", to: "all", via: "you", t: "14:02", text: "05 改登录页的跳转，07 按新地址改测试，09 等他们改完看一遍。做完互相说一声。", got: "Delivered to 05, 07, 09" },
+    { from: "05", to: "07", via: "send", t: "14:09", text: "跳转改在 `src/auth/redirect.ts`，新地址是 `/signin/next`。测试里旧地址有 3 处。", got: typed ? "Delivered to 07" : "Read by 07" },
+    { from: "07", to: "05", via: auto ? "reply" : "send", t: "14:13", text: "测试按新地址改好了，`npm test` 41 个通过。`e2e/login.spec.ts` 里还有一处旧地址，你那边要一起改吗？", got: typed ? "Delivered to 05" : "Read by 05" },
+    { from: "05", to: "07", via: auto ? "reply" : "send", t: "14:14", text: "e2e 归你，我这边不动。", got: typed ? "Delivered to 07" : "Read by 07" },
     { from: "07", to: "09", via: "send", t: "14:16", queued: true, text: "改动都在 main 上了：`src/auth/redirect.ts` 和两个测试文件，帮看一遍。",
-      got: S.deliver === "typed" ? "等 09 忙完再送（它在 Run npm run lint）" : "放在讨论里，等 09 用 read 去取" },
+      got: typed ? "等 09 忙完再送（它在 Run npm run lint）" : "放在讨论里，等 09 用 read 去取" },
   ];
-  return list;
 }
 const stopped = () => S.state === "stopped" && S.stop > 0;
 const viaWord = (v) => (v === "send" ? "send" : v === "reply" ? "Reply" : "");
+const waitingMark = () => `<span class="w">${sq("var(--amber)", { blink: true })}</span>`;
 
 function msgHtml(m, i, { compact = false } = {}) {
   if (m.sys) return `<div class="sys">${esc(m.sys)}</div>`;
@@ -309,63 +409,65 @@ function msgHtml(m, i, { compact = false } = {}) {
 
 function stopCard() {
   return `<div class="stopcard">${sq("var(--amber)", { blink: true })}<span>这个讨论已经连续 ${S.stop} 轮没有你的消息，先停下了。排着的 1 条不再送。</span><span class="sp"></span>
-    <button class="btn pri">[ Continue ]</button><button class="btn warn">[ End Room ]</button></div>`;
+    ${B("End Room", "warn")}${B("Continue", "pri")}</div>`;
 }
 function askCard() {
   return `<div class="ask">${sq("var(--signal)")}<span><b>05 · Codex</b> 想把 <b>11 · pi</b> 拉进来：“要在 pi 里跑一遍登录的测试。”</span><span class="sp"></span>
-    <button class="btn warn">[ Deny ]</button><button class="btn pri">[ Allow ]</button></div>`;
+    ${B("Deny", "warn")}${B("Allow", "pri")}</div>`;
 }
 
 // ---------- 1. the window ----------
 function drawWin() {
   const win = document.getElementById("win");
-  win.classList.toggle("light", S.light);
+  win.className = `win ${look()}`;
   const inDispatch = S.place === "dispatch";
   const rooms = [
-    { name: "登录重构", ag: ["codex", "cc", "oc"], st: stopped() ? `<span class="w">${sq("var(--amber)", { blink: true })}</span>` : spin(), say: stopped() ? "停下等你" : "07 在改 e2e", on: true },
-    { name: "对账导出", ag: ["cc", "codex"], st: `<span class="w">${sq("var(--amber)", { blink: true })}</span>`, say: "停下等你 · 12 轮" },
-    { name: "依赖升级", ag: ["cc", "pi"], st: `<span class="faint">${sq("var(--ink3)")}</span>`, say: "已结束 · 昨天", done: true },
+    { name: "登录重构", ag: ["codex", "cc", "oc"], st: stopped() ? waitingMark() : spin(), say: stopped() ? w("waiting") : "07 在改 e2e", on: true },
+    { name: "对账导出", ag: ["cc", "codex"], st: waitingMark(), say: `${w("waiting")} · 12 Rounds` },
+    { name: "依赖升级", ag: ["cc", "pi"], st: `<span class="faint">${sq("var(--ink3)", { hollow: C() })}</span>`, say: `${w("ended")} · Yesterday`, done: true },
   ];
   const railIcons = inDispatch ? ["dispatch", "terminals", "browser", "clash"] : ["dispatch", "terminals", "browser", "rooms", "clash"];
   const current = inDispatch ? "dispatch" : "rooms";
   const rail = `<div class="rail">${railIcons.map((k) => `<span class="ic ${k === current ? "on" : ""}">${icon(k)}${k === current && stopped() ? `<span class="mk" style="background:var(--amber)"></span>` : ""}</span>`).join("")}<span class="gap"></span><span class="ic" style="margin-bottom:12px">${icon("settings")}</span></div>`;
-  const list = `<div class="list"><div class="hd">${inDispatch ? "TOPICS" : "ROOMS"}<button class="btn">${inDispatch ? "+ New" : "+ New Room"}</button></div>
-    ${inDispatch ? `<div class="room"><div class="r1">发布 AgentSwitch<span class="st ok">Done</span></div><div class="r2">话题 · 3 个任务</div></div>` : ""}
+  const list = `<div class="list"><div class="hd">${C() ? (inDispatch ? "Topics" : "Rooms") : `// ${inDispatch ? "Topics" : "Rooms"}`}<button class="${C() ? "cbtn" : "btn"}" style="${C() ? "margin-left:auto" : ""}">${inDispatch ? "+ New" : "+ New Room"}</button></div>
+    ${inDispatch ? `<div class="room"><div class="r1">发布 AgentSwitch<span class="st ok">Done</span></div><div class="r2">Topic · 3 Tasks</div></div>` : ""}
     ${rooms.map((r) => `<div class="room ${r.on ? "on" : ""} ${r.done ? "done" : ""}"><div class="r1">${inDispatch ? `<span class="dim">${roomMark()}</span>` : ""}${esc(r.name)}<span class="st">${r.st}</span></div>
       <div class="r2">${r.ag.map((a) => agent(a)).join("")}<span>${r.say}</span></div></div>`).join("")}</div>`;
   const center = S.view === "chat" ? chat() : lanes();
   const members = ["05", "07", "09"].map((k) => {
     const m = M[k];
-    const st = m.doing === "working" ? `${spin()} <span>${esc(m.what)}</span>` : `<span class="faint">${sq("var(--ink3)")}</span> <span>空闲</span>`;
-    return `<div class="mem"><span>${agent(m.a)}</span><span class="n">${esc(m.name)}${m.prof ? `<span class="dot" style="color:${m.prof}"></span>` : ""}</span><span class="a"><button class="btn">Open</button></span>
-      <span class="s">${st}${k === "09" ? ` · <span class="w">排着 1 条</span>` : ""}</span></div>`;
+    const st = m.doing === "working" ? `${spin()} <span>${esc(m.what)}</span>` : `<span class="ok">${sq("var(--green)")}</span> <span>${w("idle")}</span>`;
+    return `<div class="mem"><span>${agent(m.a)}</span><span class="n">${esc(m.name)}${m.prof ? `<span class="dot" style="color:${m.prof}"></span>` : ""}</span><span class="a">${C() ? `<button class="cbtn">Open</button>` : `<button class="btn">Open</button>`}</span>
+      <span class="s">${st}${k === "09" ? ` · <span class="w">1 Queued</span>` : ""}</span></div>`;
   }).join("");
   const rounds = stopped() ? `${S.stop} / ${S.stop}` : `3 / ${S.stop || "∞"}`;
-  const side = `<div class="side"><div class="lb">MEMBERS</div>${members}
-    <div class="mem"><span></span><span class="n">You</span><span class="a"></span><span class="s">上一次说话 14:02</span></div>
-    ${S.who === "ask" ? `<div class="mem" style="opacity:.6"><span>${agent("pi")}</span><span class="n">11 · pi</span><span class="a w">待批</span><span class="s">05 · Codex 请你拉进来</span></div>` : ""}
-    <div class="lb" style="margin-top:12px">ROOM</div>
+  const side = `<div class="side">${L("Members")}${members}
+    <div class="mem"><span></span><span class="n">You</span><span class="a"></span><span class="s">上次说话 14:02</span></div>
+    ${S.who === "ask" ? `<div class="mem" style="opacity:.6"><span>${agent("pi")}</span><span class="n">11 · pi</span><span class="a w">Asked</span><span class="s">05 · Codex 请你拉进来</span></div>` : ""}
+    ${L("Room", "margin-top:12px")}
     <div class="set"><span>Stop After</span><b>${S.stop ? `${S.stop} Rounds Without You` : "Never"}</b></div>
-    <div class="set"><span>没有你介入</span><b>${rounds}</b></div>
+    <div class="set"><span>Rounds Without You</span><b>${rounds}</b></div>
     <div class="set"><span>Answers Come Back</span><b>${S.answers === "auto" ? "On" : "Off"}</b></div>
     <div class="set"><span>Delivery</span><b>${S.deliver === "typed" ? "Typed In" : "Pull Only"}</b></div>
-    <div style="margin-top:auto; display:flex; gap:14px"><button class="btn">[ Add Terminal ]</button><button class="btn warn">[ End Room ]</button></div></div>`;
+    <div style="margin-top:auto; display:flex; gap:10px">${B("Add Terminal")}${B("End Room", "warn")}</div></div>`;
   win.innerHTML = `<div class="bar"><div class="lights"><i></i><i></i><i></i></div>
-      <span class="ttl">${inDispatch ? `<small>Dispatch ›</small>` : ""}登录重构 <small>3 个成员 · ${stopped() ? '<span class="w">停下等你</span>' : "进行中"}</small></span>
+      <span class="ttl">${inDispatch ? `<small>Dispatch ›</small>` : ""}登录重构 <small>3 Members · ${stopped() ? `<span class="w">${w("waiting")}</span>` : w("busy")}</small></span>
       <div class="end"><span class="views"><button data-view="chat" class="${S.view === "chat" ? "on" : ""}">Chat</button><button data-view="lanes" class="${S.view === "lanes" ? "on" : ""}">Lanes</button></span></div></div>
     <div class="body">${rail}${list}${center}${side}</div>
-    <div class="status"><span>${sq("var(--green)")} Gateway</span><span>iPhone Online</span><span class="sp"></span><span>${inDispatch ? "Router · Sonnet 5.5" : "3 Rooms · 2 Need You"}</span></div>`;
+    <div class="status"><span>${sq("var(--green)")} ${w("gateway")}</span><span>iPhone Online</span><span class="sp"></span><span>${inDispatch ? "Router · Sonnet 5.5" : `3 Rooms · 2 ${C() ? "Need You" : "Waiting"}`}</span></div>`;
   document.getElementById("capWin").innerHTML = capWin();
 }
 
+function compose() {
+  return `<div class="compose"><span class="box"><b>@All</b> 对全体说，或用 @05 点名…</span>${B("Send", "pri")}</div>`;
+}
+
 function chat() {
-  const list = messages();
-  const shown = list.map((m, i) => msgHtml(m, i)).join("");
+  const shown = messages().map((m, i) => msgHtml(m, i)).join("");
   return `<div class="center"><div class="feed">${shown}
       ${S.who === "ask" ? askCard() : ""}
       ${stopped() ? `<div class="sys w">14:31 · 连续 ${S.stop} 轮没有你的消息，先停下了</div>${stopCard()}` : ""}
-    </div>
-    <div class="compose"><span class="box"><b>@All</b> 对全体说，或用 @05 点名…</span><button class="btn pri">[ Send ]</button></div></div>`;
+    </div>${compose()}</div>`;
 }
 
 // Lanes: one line a member, time down; a message an arrow from who said it to whom.
@@ -374,19 +476,21 @@ function lanes() {
   const cols = { you: 90, "05": 250, "07": 410, "09": 570 };
   const t0 = 14 * 60 + 2, t1 = 14 * 60 + (stopped() ? 32 : 18);
   const y = (t) => { const [h, m] = t.split(":").map(Number); return top + ((h * 60 + m - t0) / (t1 - t0)) * (bottom - top); };
-  // What each member did, as spans: working (solid), idle (thin), waiting for you (amber).
+  const end = stopped() ? "14:32" : "14:18";
+  // What each member did, as spans: working (thick), idle (thin).
   const spans = {
-    you: [["14:02", stopped() ? "14:32" : "14:18", "idle"]],
-    "05": [["14:02", "14:03", "idle"], ["14:03", "14:09", "working"], ["14:09", "14:13", "idle"], ["14:13", "14:14", "working"], ["14:14", stopped() ? "14:32" : "14:18", "idle"]],
-    "07": [["14:02", "14:03", "idle"], ["14:03", "14:08", "working"], ["14:08", "14:09", "idle"], ["14:09", "14:13", "working"], ["14:13", "14:14", "idle"], ["14:14", "14:16", "working"], ["14:16", stopped() ? "14:32" : "14:18", "working"]],
-    "09": [["14:02", "14:04", "idle"], ["14:04", stopped() ? "14:32" : "14:18", "working"]],
+    you: [["14:02", end, "idle"]],
+    "05": [["14:02", "14:03", "idle"], ["14:03", "14:09", "working"], ["14:09", "14:13", "idle"], ["14:13", "14:14", "working"], ["14:14", end, "idle"]],
+    "07": [["14:02", "14:03", "idle"], ["14:03", "14:08", "working"], ["14:08", "14:09", "idle"], ["14:09", "14:13", "working"], ["14:13", "14:14", "idle"], ["14:14", end, "working"]],
+    "09": [["14:02", "14:04", "idle"], ["14:04", end, "working"]],
   };
+  const cap = C() ? "round" : "butt";
   let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><defs>
-      <marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="currentColor"/></marker></defs>`;
+      <marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path d="${C() ? "M1,1 L7,4 L1,7" : "M0,0 L8,4 L0,8 z"}" ${C() ? 'fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"' : 'fill="currentColor"'}/></marker></defs>`;
   for (const [k, x] of Object.entries(cols)) {
     for (const [a, b, st] of spans[k]) {
-      const color = st === "working" ? "var(--cyan)" : st === "waiting" ? "var(--amber)" : "var(--ink3)";
-      svg += `<line x1="${x}" y1="${y(a)}" x2="${x}" y2="${y(b)}" stroke="${color}" stroke-width="${st === "working" ? 5 : 1}"/>`;
+      const color = st === "working" ? "var(--cyan)" : "var(--ink3)";
+      svg += `<line x1="${x}" y1="${y(a)}" x2="${x}" y2="${y(b)}" stroke="${color}" stroke-width="${st === "working" ? 5 : 1}" stroke-linecap="${cap}"/>`;
     }
   }
   const list = messages();
@@ -398,7 +502,7 @@ function lanes() {
     for (const to of targets) {
       const x1 = cols[m.from], x2 = cols[to], dir = Math.sign(x2 - x1);
       const color = S.pick === i ? "var(--signal)" : m.queued ? "var(--amber)" : "var(--ink)";
-      svg += `<g style="color:${color}; cursor:pointer" data-pick="${i}"><line x1="${x1 + dir * 6}" y1="${yy}" x2="${x2 - dir * 8}" y2="${yy + (m.queued ? 0 : 8)}" stroke="currentColor" stroke-width="1.3"
+      svg += `<g style="color:${color}; cursor:pointer" data-pick="${i}"><line x1="${x1 + dir * 6}" y1="${yy}" x2="${x2 - dir * 8}" y2="${yy + (m.queued ? 0 : 8)}" stroke="currentColor" stroke-width="1.3" stroke-linecap="${cap}"
         ${m.queued ? 'stroke-dasharray="4 3"' : ""} marker-end="url(#ah)"/><line x1="${x1}" y1="${yy - 6}" x2="${x2}" y2="${yy + 12}" stroke="transparent" stroke-width="12"/></g>`;
     }
     const lab = viaWord(m.via) || "You";
@@ -414,23 +518,22 @@ function lanes() {
   }
   svg += `</svg>`;
   const heads = Object.entries(cols).map(([k, x]) => {
-    const m = M[k] ?? M.you;
-    const st = k === "you" ? "你" : m.doing === "working" ? `${spin()} 在做` : "空闲";
-    return `<div class="lanehead" style="left:${x}px"><b>${k === "you" ? "" : agent(m.a)}${esc(k === "you" ? "You" : m.name)}${m.prof ? `<span class="dot" style="color:${m.prof}"></span>` : ""}</b><span>${st}</span></div>`;
+    const m = M[k];
+    const st = k === "you" ? "&nbsp;" : m.doing === "working" ? `${spin()} ${w("busy")}` : w("idle");
+    return `<div class="lanehead" style="left:${x}px"><b>${k === "you" ? "" : agent(m.a)}${esc(m.name)}${m.prof ? `<span class="dot" style="color:${m.prof}"></span>` : ""}</b><span>${st}</span></div>`;
   }).join("");
   const ticks = ["14:02", "14:06", "14:10", "14:14", "14:18", ...(stopped() ? ["14:22", "14:26", "14:30"] : [])]
     .map((t) => `<span class="tick" style="top:${y(t)}px">${t}</span>`).join("");
   const p = list[S.pick];
-  const picked = p && !p.sys ? `<div class="picked"><div class="hd"><span>${esc(M[p.from]?.name ?? "You")} → ${p.to === "all" ? "All" : esc(M[p.to].name)}</span><span>${p.t}</span></div>
+  const picked = p && !p.sys ? `<div class="picked"><div class="hd"><span>${esc(M[p.from].name)} → ${p.to === "all" ? "All" : esc(M[p.to].name)}</span><span>${p.t}</span></div>
       <div class="bd">${md(p.text)}<div class="ft" style="margin-top:6px; font:11px var(--mono); color:var(--ink3)">${esc(p.got)}</div></div></div>` : "";
-  return `<div class="center"><div class="lanes" style="height:100%">${svg}${heads}${ticks}${picked}</div>
-    <div class="compose"><span class="box"><b>@All</b> 对全体说，或用 @05 点名…</span><button class="btn pri">[ Send ]</button></div></div>`;
+  return `<div class="center"><div class="lanes" style="height:100%">${svg}${heads}${ticks}${picked}</div>${compose()}</div>`;
 }
 
 function capWin() {
   const chatSay = S.view === "chat"
     ? `<b>Chat</b>：每条消息一张卡，抬头是谁对谁说、怎么说的（<code>send</code>：用工具点名说的；<code>Reply</code>：一轮由讨论里的话引起，这一轮的回答自动带回）。你说的话靠右。还没送出去的是虚线框，写着在等什么。`
-    : `<b>Lanes</b>：每位成员一条竖线，粗青线是在做、细线是空闲；一条消息是一根从说话人到收件人的箭头，排着还没送的是琥珀色虚线。点一根箭头，右下角显示那条消息。看谁在等谁、在哪里来回绕圈。`;
+    : `<b>Lanes</b>：每位成员一条竖线，粗线是在做、细线是空闲；一条消息是一根从说话人到收件人的箭头，排着还没送的是琥珀色虚线。点一根箭头，右下角显示那条消息。看谁在等谁、在哪里来回绕圈。`;
   const deliver = S.deliver === "typed"
     ? "<b>Typed In</b>：对方空闲时由服务打进它的终端；它在做时排队（09 那条），等你时不送。"
     : "<b>Pull Only</b>：消息只放在讨论里，对方要自己调用 <code>read</code> 才看得到——安静，但 agent 不会自己想起来去看，09 那条多半一直放着，讨论容易停住。";
@@ -439,7 +542,10 @@ function capWin() {
     : "<b>Tool Only</b>：只有调用了 <code>send</code> 才算说话；agent 忘了调用，对方就收不到回音。";
   const stop = S.stop ? `<b>停下</b>：连续 ${S.stop} 轮没有你的消息就停下（点“停下等你”看样子），图标栏和左栏都标琥珀色，实时活动里也有。` : "<b>Never</b>：不停。两个 agent 互相客套可以一直来回下去，只能靠你看着。";
   const place = S.place === "page" ? "<b>Own Page</b>：图标栏在 Clash 前面多一个图标。" : "<b>In Dispatch</b>：不加新页，讨论作为调度里的一种话题，和任务话题混在一个列表里（左栏第一项是普通话题）。省一个图标，但调度的话题是“你交代、路由器派”，讨论是“几个终端互相说”，放在一起容易混。";
-  return `${chatSay} ${deliver} ${answers} ${stop} ${place}${S.who === "ask" ? " <b>Agents Ask</b>：agent 可以请求拉人，每次一张卡等你批（粉色框），批了才进来。" : ""}`;
+  const lookSay = C()
+    ? " <b>Classic</b>：系统字体、圆角卡片、线性图标、圆点与系统转圈、标准按钮（主按钮是系统蓝）、小标题代替 <code>// Label</code>；短词按 ui-v0 §8：<code>Working</code>、<code>Needs You</code>、<code>Ready</code>、<code>Gateway OK</code>。主窗口照旧是一个黑面，卡片只比底亮一点。"
+    : " <b>Pixel</b>：像素图标、方块状态、盲文转圈、<code>[ Word ]</code> 按钮、<code>// Label</code> 小标题。";
+  return `${chatSay} ${deliver} ${answers} ${stop} ${place}${S.who === "ask" ? ` <b>Agents Ask</b>：agent 可以请求拉人，每次一张卡等你批（${C() ? "蓝框" : "粉框"}），批了才进来。` : ""}${lookSay}`;
 }
 
 // ---------- 2. in the terminal ----------
@@ -447,17 +553,17 @@ function drawTerm() {
   const el = document.getElementById("term");
   const typed = S.deliver === "typed";
   const auto = S.answers === "auto";
-  const simple = `<div class="pane ${S.light ? "light" : ""}"><div class="ph">${agent("cc")}<b>修登录测试</b><span>07 · Claude Code · Opus 5.5</span><span style="margin-left:auto" class="tag">${roomMark()} 登录重构</span></div>
+  const simple = `<div class="pane ${look()}"><div class="ph">${agent("cc")}<b>修登录测试</b><span>07 · Claude Code · Opus 5.5</span><span style="margin-left:auto" class="tag">${roomMark()} 登录重构</span></div>
     <div class="rec">
-      <div class="roomcard"><div class="h">${roomMark()}<span>登录重构</span>${who("05")}<span>→ 你</span><span style="margin-left:auto; color:var(--ink3)">14:09</span></div>
+      <div class="roomcard"><div class="h">${roomMark()}<span>登录重构</span>${who("05")}<span>→ You</span><span style="margin-left:auto; color:var(--ink3)">14:09</span></div>
         <div style="margin-top:4px">${md("跳转改在 `src/auth/redirect.ts`，新地址是 `/signin/next`。测试里旧地址有 3 处。")}</div></div>
-      <div class="work">▾ Worked 3m 52s · Read 2 · Edited 2 · Ran 1
+      <div class="work">${C() ? "›" : "▾"} Worked 3m 52s · Read 2 · Edited 2 · Ran 1
         <div class="ln"><i>Edit</i>tests/login.test.ts</div><div class="ln"><i>Run</i>npm test</div>
-        ${typed ? "" : `<div class="ln"><i>Room</i>read · 1 条新的</div>`}</div>
+        ${typed ? "" : `<div class="ln"><i>Room</i>read · 1 New</div>`}</div>
       <div>${md("测试按新地址改好了，`npm test` 41 个通过。`e2e/login.spec.ts` 里还有一处旧地址，你那边要一起改吗？")}</div>
       <div class="back">${auto ? "↩ Back to 05 · Codex · 14:13" : ""}</div>
       ${auto ? "" : `<div class="work"><div class="ln"><i>Room</i>Sent to 05 · Codex：测试按新地址改好了…</div></div>`}
-      <div class="work">▾ Worked 1m 40s · Edited 1<div class="ln"><i>Room</i>Sent to 09 · OpenCode：改动都在 main 上了…</div></div>
+      <div class="work">${C() ? "›" : "▾"} Worked 1m 40s · Edited 1<div class="ln"><i>Room</i>Sent to 09 · OpenCode：改动都在 main 上了…</div></div>
     </div><div class="reply">回复</div></div>`;
   const ttyLines = typed
     ? `<span class="u">&gt; 〔讨论 · 登录重构〕05 · Codex 对你说：
@@ -484,47 +590,54 @@ ${auto ? "" : `<span class="g">⏺</span> <span class="k">room - send (MCP)</spa
 <span class="g">⏺</span> <span class="k">Bash</span>(npm test)
   <span class="d">⎿ 41 passed</span>
 <span class="g">⏺</span> <span class="k">room - send (MCP)</span>(to: "05", text: "测试按新地址改好了…")`;
-  const tty = `<div class="pane ${S.light ? "light" : ""}"><div class="ph">${agent("cc")}<b>修登录测试</b><span>终端视图 · Claude Code 自己画的</span></div>
-    <div class="tty">${ttyLines}</div><div class="reply" style="font-family:var(--mono)">&gt;</div></div>`;
-  const rows = `<div class="rows ${S.light ? "light" : ""}">
-    <div class="row"><span class="no">05</span>${agent("codex")}<span class="t">改登录页的跳转</span><span class="end"><span class="tag">${roomMark()} 登录重构</span><span class="dot" style="color:var(--mint)"></span><span class="faint">${sq("var(--ink3)")}</span></span></div>
+  const tty = `<div class="pane ${look()}"><div class="ph">${agent("cc")}<b>修登录测试</b><span>终端视图 · Claude Code 自己画的</span></div>
+    <div class="tty">${ttyLines}</div><div class="reply" style="font-family:var(--code)">&gt;</div></div>`;
+  const idle = `<span class="ok">${sq("var(--green)")}</span>`;
+  const rows = `<div class="rows ${look()}">
+    <div class="row"><span class="no">05</span>${agent("codex")}<span class="t">改登录页的跳转</span><span class="end"><span class="tag">${roomMark()} 登录重构</span><span class="dot" style="color:var(--mint)"></span>${idle}</span></div>
     <div class="row"><span class="no">07</span>${agent("cc")}<span class="t">修登录测试</span><span class="end"><span class="tag">${roomMark()} 登录重构</span><span class="dot" style="color:var(--violet)"></span>${spin()}</span></div>
-    <div class="row"><span class="no">09</span>${agent("oc")}<span class="t">看一遍改动</span><span class="end"><span class="tag">${roomMark()} 登录重构 · 排着 1 条</span>${spin()}</span></div>
-    <div class="row"><span class="no">12</span>${agent("pi")}<span class="t">整理下载目录</span><span class="end"><span class="faint">不在讨论里</span>${sq("var(--green)")}</span></div></div>`;
+    <div class="row"><span class="no">09</span>${agent("oc")}<span class="t">看一遍改动</span><span class="end"><span class="tag">${roomMark()} 登录重构 · 1 Queued</span>${spin()}</span></div>
+    <div class="row"><span class="no">12</span>${agent("pi")}<span class="t">整理下载目录</span><span class="end"><span class="faint">Not in a Room</span>${idle}</span></div></div>`;
   el.innerHTML = `<div class="pair">${simple}${tty}</div>${rows}`;
   document.getElementById("capTerm").innerHTML = typed
-    ? `左边是 07 的简略视图：讨论里收到的话不画成你的气泡，而是一张讨论卡（左边一道粉线，点一下到 Rooms 页那一条）；${auto ? "它的回答下面写 <code>↩ Back to 05 · Codex</code>，表示这段已自动带回" : "它用 <code>send</code> 发出的话在工作那一行里写成 <code>Room · Sent to …</code>"}。右边是同一个终端的终端视图：就是 Claude Code 自己画的样子——收到的话以〔讨论 · 名字〕开头，所以不会被当成 <code>/</code> 命令或 <code>!</code> 命令；整段粘贴再回车，中间的换行不会提前发出。下面是终端列表：讨论里的终端行尾带讨论名，排着消息的写在旁边。`
+    ? `左边是 07 的简略视图：讨论里收到的话不画成你的气泡，而是一张讨论卡（左边一道${C() ? "蓝" : "粉"}线，点一下到 Rooms 页那一条）；${auto ? "它的回答下面写 <code>↩ Back to 05 · Codex</code>，表示这段已自动带回" : "它用 <code>send</code> 发出的话在工作那一行里写成 <code>Room · Sent to …</code>"}。右边是同一个终端的终端视图：就是 Claude Code 自己画的样子，两种外观一样（终端屏幕里的内容不随外观变）——收到的话以〔讨论 · 名字〕开头，所以不会被当成 <code>/</code> 命令或 <code>!</code> 命令；整段粘贴再回车，中间的换行不会提前发出。下面是终端列表：讨论里的终端行尾带讨论名，排着消息的写在旁边。`
     : `<b>Pull Only</b> 下，讨论里的话不会打进终端：07 要自己调用 <code>read</code> 才看得到（右边第一个工具调用）。它不调用，就一直不知道有人对它说话。`;
 }
 
 // ---------- 3. new room and the stop card ----------
 function drawSheet() {
   const el = document.getElementById("sheet");
-  const seg = [4, 8, 12, 0].map((n) => `<span class="${S.stop === n ? "" : "faint"}">${S.stop === n ? "[" : " "}${n || "Never"}${S.stop === n ? "]" : " "}</span>`).join(" ");
-  const pick = (on, a, name, note, off = false) => `<div class="pick ${off ? "off" : ""}"><span class="cb">${on ? "[x]" : "[ ]"}</span><span>${agent(a)}</span><span>${name}</span><span class="faint" style="font-size:11px">${note.right ?? ""}</span>${note.below ? `<span class="note">${note.below}</span>` : ""}</div>`;
-  const sheet = `<div class="sheet ${S.light ? "light" : ""}"><div class="hd">New Room</div><div class="bd">
-      <div class="lb">NAME</div><div class="fld">登录重构</div>
-      <div class="lb">TERMINALS</div>
+  const stops = [4, 8, 12, 0];
+  const seg = C()
+    ? `<span class="cseg">${stops.map((n) => `<span class="${S.stop === n ? "on" : ""}">${n || "Never"}</span>`).join("")}</span>`
+    : stops.map((n) => `<span class="${S.stop === n ? "" : "faint"}">${S.stop === n ? "[" : " "}${n || "Never"}${S.stop === n ? "]" : " "}</span>`).join(" ");
+  const box = (on) => C() ? `<span class="ccb ${on ? "on" : ""}">✓</span>` : `<span class="cb">${on ? "[x]" : "[ ]"}</span>`;
+  const pick = (on, a, name, note, off = false) => `<div class="pick ${off ? "off" : ""}">${box(on)}<span>${agent(a)}</span><span>${name}</span><span class="faint" style="font-size:11px">${note.right ?? ""}</span>${note.below ? `<span class="note">${note.below}</span>` : ""}</div>`;
+  const answers = C() ? `<span class="csw ${S.answers === "auto" ? "on" : ""}"></span>` : (S.answers === "auto" ? "[x] On" : "[ ] Off");
+  const sheet = `<div class="sheet ${look()}"><div class="hd">New Room</div><div class="bd">
+      ${L("Name")}<div class="fld">登录重构</div>
+      ${L("Terminals")}
       ${pick(true, "codex", "05 · 改登录页的跳转", { right: "Codex · work" })}
       ${pick(true, "cc", "07 · 修登录测试", { right: "Claude Code · cwork1" })}
       ${pick(true, "oc", "09 · 看一遍改动", { right: "OpenCode" })}
       ${pick(false, "cc", "03 · 网关的引用过期", { right: "已在“对账导出”" }, true)}
       ${pick(false, "pi", "12 · 整理下载目录", { right: "pi", below: "开讨论以前就在跑：没有 room 工具，能收到话，回答会带回；要主动找人得重开这个终端" })}
-      <div class="lb" style="margin-top:12px">STOP AFTER</div><div style="margin:4px 0 10px; font:12.5px var(--mono)">${seg} <span class="faint">轮没有你的消息</span></div>
-      <div class="set" style="font-size:12.5px"><span>Answers Come Back</span><b>${S.answers === "auto" ? "[x] On" : "[ ] Off"}</b></div>
-      <div class="foot"><button class="btn">[ Cancel ]</button><button class="btn pri">[ Create ]</button></div></div></div>`;
+      ${L("Stop After", "margin-top:12px")}<div style="margin:4px 0 10px; font:12.5px var(--mono); display:flex; align-items:center; gap:10px">${seg} <span class="faint">轮没有你的消息</span></div>
+      <div class="set" style="font-size:12.5px; align-items:center"><span>Answers Come Back</span><b>${answers}</b></div>
+      <div class="foot">${B("Cancel")}${B("Create", "pri")}</div></div></div>`;
+  const liveBtns = (a, b) => C() ? `<button class="cbtn">${a}</button><button class="cbtn pri">${b}</button>` : `<button>[ ${a.toLowerCase()} ]</button><button>[ ${b.toLowerCase()} ]</button>`;
   const live = S.stop
-    ? `<div class="live"><div class="h">${sq("#ffb000", { blink: true })}<b>登录重构</b><span style="margin-left:auto; color:rgba(255,255,255,.5)">rooms</span></div>
+    ? `<div class="live ${C() ? "classic" : ""}"><div class="h">${sq("#ffb000", { blink: true })}<b>登录重构</b><span style="margin-left:auto; color:rgba(255,255,255,.5)">${C() ? "Rooms" : "rooms"}</span></div>
         <div class="say">连续 ${S.stop} 轮没有你的消息，先停下了。07 · Claude Code 还有 1 条要给 09 · OpenCode。</div>
-        <div class="btns"><button>[ end room ]</button><button>[ continue ]</button></div></div>`
-    : `<div class="live"><div class="h"><b>Never</b></div><div class="say">选了“不停”，就没有这张卡。</div></div>`;
+        <div class="btns">${liveBtns("End Room", "Continue")}</div></div>`
+    : `<div class="live ${C() ? "classic" : ""}"><div class="h"><b>Never</b></div><div class="say">选了“不停”，就没有这张卡。</div></div>`;
   const ask = S.who === "ask"
-    ? `<div class="live" style="margin-top:16px"><div class="h">${sq("#ff2e88")}<b>登录重构</b><span style="margin-left:auto; color:rgba(255,255,255,.5)">rooms</span></div>
+    ? `<div class="live ${C() ? "classic" : ""}" style="margin-top:16px"><div class="h">${sq(C() ? "#0a84ff" : "#ff2e88")}<b>登录重构</b><span style="margin-left:auto; color:rgba(255,255,255,.5)">${C() ? "Rooms" : "rooms"}</span></div>
         <div class="say">05 · Codex 想把 11 · pi 拉进来：“要在 pi 里跑一遍登录的测试。”</div>
-        <div class="btns"><button>[ deny ]</button><button>[ allow ]</button></div></div>`
+        <div class="btns">${liveBtns("Deny", "Allow")}</div></div>`
     : "";
   el.innerHTML = `${sheet}<div><div style="font:11px var(--mono); color:#77746e; letter-spacing:.1em; margin-bottom:10px">菜单栏卡片 / 实时活动</div>${live}${ask}</div>`;
-  document.getElementById("capSheet").innerHTML = `在 Terminals 列表里选几个终端，右键 <code>New Room…</code>，或在 Rooms 页 <code>+ New Room</code>。一个终端同时只在一个讨论里（03 已在别的讨论里，不能勾）。开讨论以前就在跑的终端没有工具，但照样能收话、回答照样带回。右边是讨论停下等你时，菜单栏卡片和锁屏的实时活动上出现的那一张${S.who === "ask" ? "；Agents Ask 下，agent 请求拉人也是这样一张卡" : ""}。`;
+  document.getElementById("capSheet").innerHTML = `在 Terminals 列表里选几个终端，右键 <code>New Room…</code>，或在 Rooms 页 <code>+ New Room</code>。一个终端同时只在一个讨论里（03 已在别的讨论里，不能勾）。开讨论以前就在跑的终端没有工具，但照样能收话、回答照样带回。右边是讨论停下等你时，菜单栏卡片和锁屏的实时活动上出现的那一张${S.who === "ask" ? "；Agents Ask 下，agent 请求拉人也是这样一张卡" : ""}。${C() ? "经典外观：勾选框、分段控件、开关都是系统的样子；实时活动的按钮是圆角按钮，主按钮蓝色。" : "像素外观的实时活动照它自己的写法：小写的 <code>[ continue ]</code>。"}`;
 }
 
 // ---------- 4. phone ----------
@@ -532,14 +645,14 @@ function drawPhone() {
   const el = document.getElementById("phone");
   const list = messages().filter((m) => !m.sys);
   const feed = list.slice(-4).map((m, i) => msgHtml(m, i, { compact: true })).join("");
-  const phone = (body, title) => `<div class="phone ${S.light ? "light" : ""}"><div class="sb"><span>9:41</span><span>●●●</span></div>
-      <div class="nav"><span class="dim">‹</span><b>${title}</b><span style="margin-left:auto" class="dim">${stopped() ? `<span class="w">停下等你</span>` : spin()}</span></div>${body}</div>`;
-  const roomBody = `<div class="feed">${feed}${stopped() ? `<div class="stopcard" style="flex-direction:column; align-items:flex-start; gap:6px"><span>连续 ${S.stop} 轮没有你的消息，先停下了。</span><span style="display:flex; gap:14px"><button class="btn pri">[ Continue ]</button><button class="btn warn">[ End Room ]</button></span></div>` : ""}</div>
+  const phone = (body, title) => `<div class="phone ${look()}"><div class="sb"><span>9:41</span><span>●●●</span></div>
+      <div class="nav"><span class="dim">‹</span><b>${title}</b><span style="margin-left:auto" class="dim">${stopped() ? `<span class="w">${w("waiting")}</span>` : spin()}</span></div>${body}</div>`;
+  const roomBody = `<div class="feed">${feed}${stopped() ? `<div class="stopcard" style="flex-direction:column; align-items:flex-start; gap:6px"><span>连续 ${S.stop} 轮没有你的消息，先停下了。</span><span style="display:flex; gap:10px">${B("End Room", "warn")}${B("Continue", "pri")}</span></div>` : ""}</div>
       <div class="compose"><span class="box"><b>@All</b> 说点什么…</span></div>`;
   const listBody = `<div class="feed" style="gap:0">
-      <div class="room on"><div class="r1">登录重构<span class="st">${stopped() ? `<span class="w">停下</span>` : spin()}</span></div><div class="r2">${agent("codex")}${agent("cc")}${agent("oc")}<span>${stopped() ? "停下等你" : "07 在改 e2e"}</span></div></div>
-      <div class="room"><div class="r1">对账导出<span class="st w">停下</span></div><div class="r2">${agent("cc")}${agent("codex")}<span>停下等你 · 12 轮</span></div></div>
-      <div class="room done"><div class="r1">依赖升级</div><div class="r2">${agent("cc")}${agent("pi")}<span>已结束 · 昨天</span></div></div></div><div></div>`;
+      <div class="room on"><div class="r1">登录重构<span class="st">${stopped() ? waitingMark() : spin()}</span></div><div class="r2">${agent("codex")}${agent("cc")}${agent("oc")}<span>${stopped() ? w("waiting") : "07 在改 e2e"}</span></div></div>
+      <div class="room"><div class="r1">对账导出<span class="st">${waitingMark()}</span></div><div class="r2">${agent("cc")}${agent("codex")}<span>${w("waiting")} · 12 Rounds</span></div></div>
+      <div class="room done"><div class="r1">依赖升级<span class="st"><span class="faint">${sq("var(--ink3)", { hollow: C() })}</span></span></div><div class="r2">${agent("cc")}${agent("pi")}<span>${w("ended")} · Yesterday</span></div></div></div><div></div>`;
   el.innerHTML = phone(listBody, "Rooms") + phone(roomBody, "登录重构");
   document.getElementById("capPhone").innerHTML = `手机上从 <code>Terminals</code> 标签顶上进 <code>Rooms</code>：讨论列表，和一个讨论的聊天看法（手机上不画泳道）。底部同样的输入框，可以 @ 点名；停下时同样两个按钮。`;
 }
@@ -572,6 +685,7 @@ document.addEventListener("click", (e) => {
 setInterval(() => { frame++; for (const s of document.querySelectorAll("[data-spin]")) s.textContent = SPIN[frame % SPIN.length]; }, 90);
 const q = new URLSearchParams(location.search);
 if (q.has("light")) S.light = true;
+if (q.has("classic")) S.look = "classic";
 if (q.get("view")) S.view = q.get("view");
 if (q.has("stopped")) S.state = "stopped";
 for (const k of ["who", "deliver", "answers", "place"]) if (q.get(k)) S[k] = q.get(k);
