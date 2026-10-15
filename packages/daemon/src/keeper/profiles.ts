@@ -12,13 +12,15 @@ import { API_HOME, apiAddress, apiSite, PROFILE_AGENTS, PROFILE_COLORS, type Age
 /** The calls on the service this needs (client.ts). */
 export type ProfilesClient = {
   profiles(): Promise<{ agents: Record<ProfileAgent, AgentProfiles> }>;
-  createProfile(agent: ProfileAgent, name: string, kind: ProfileKind, api?: { key: string; baseUrl?: string; model?: string }): Promise<{ profile: Profile }>;
-  setProfileApi(agent: ProfileAgent, id: string, api: { key: string | null; baseUrl: string | null; model: string | null }): Promise<unknown>;
+  createProfile(agent: ProfileAgent, name: string, kind: ProfileKind, api?: { key: string; baseUrl?: string; model?: string; force?: boolean }): Promise<{ profile: Profile }>;
+  setProfileApi(agent: ProfileAgent, id: string, api: { key: string | null; baseUrl: string | null; model: string | null; force?: boolean }): Promise<unknown>;
   setProfileColor(agent: ProfileAgent, id: string, color: string): Promise<unknown>;
   removeProfile(agent: ProfileAgent, id: string): Promise<unknown>;
 };
 
-export type ProfilesOptions = { readonly api: boolean; readonly baseUrl?: string | undefined; readonly model?: string | undefined; readonly key: boolean; readonly json: boolean; readonly remote: boolean };
+export type ProfilesOptions = { readonly api: boolean; readonly baseUrl?: string | undefined; readonly model?: string | undefined; readonly key: boolean; readonly json: boolean; readonly remote: boolean;
+  /** Keep a model the address does not list (the service checks it against the address's own list). */
+  readonly force?: boolean };
 
 export type ProfilesDeps = {
   readonly client: ProfilesClient;
@@ -31,15 +33,16 @@ export type ProfilesDeps = {
 
 const USAGE = [
   "profiles [--json]                                        every agent's profiles",
-  'profiles new <agent> "<name>" [--api] [--base-url <url>] [--model <model>]',
+  'profiles new <agent> "<name>" [--api] [--base-url <url>] [--model <model>] [--force]',
   "                                                         a profile that signs in by an account, or (--api, or",
   "                                                         either option) pays by an API key: asked for, never echoed",
-  "profiles api <agent> <profile> [--base-url <url>|\"\"] [--model <model>|\"\"] [--key]",
+  "profiles api <agent> <profile> [--base-url <url>|\"\"] [--model <model>|\"\"] [--key] [--force]",
   "                                                         a key-paying profile's address, model; --key a new key",
   "                                                         (asked for anyway when the address moves to another site)",
   `profiles color <agent> <profile> <${PROFILE_COLORS.join("|")}>`,
   "profiles rm <agent> <profile>",
-  "<agent>: claude-code (claude), codex, opencode, pi; <profile>: its id or its name",
+  "<agent>: claude-code (claude), codex, opencode, pi; <profile>: its id or its name; a model is checked against the",
+  "address's own list (--force keeps one it does not list)",
 ].join("\n");
 
 const ALIASES: Record<string, ProfileAgent> = { claude: "claude-code", cc: "claude-code" };
@@ -127,7 +130,7 @@ export async function profilesCommand(args: readonly (string | undefined)[], o: 
       const host = sealHost(agent, baseUrl);
       const key = await deps.readKey(`API key for ${host}: `);
       if (!key) throw new Error("no key typed; nothing made");
-      const { profile } = await deps.client.createProfile(agent, name, "api", { key: await deps.seal(host, key), ...(baseUrl ? { baseUrl } : {}), ...(model ? { model } : {}) });
+      const { profile } = await deps.client.createProfile(agent, name, "api", { key: await deps.seal(host, key), ...(baseUrl ? { baseUrl } : {}), ...(model ? { model } : {}), ...(o.force ? { force: true } : {}) });
       deps.print(`made ${agent} profile ${profile.id} (${profile.name}): API key for ${host} (kept sealed)${model ? `, model ${model}` : ""}`);
       return 0;
     }
@@ -148,7 +151,7 @@ export async function profilesCommand(args: readonly (string | undefined)[], o: 
         if (!typed) throw new Error("no key typed; nothing changed");
         key = await deps.seal(host, typed);
       }
-      await deps.client.setProfileApi(agent, p.id, { key, baseUrl: baseUrl ?? null, model: model ?? null });
+      await deps.client.setProfileApi(agent, p.id, { key, baseUrl: baseUrl ?? null, model: model ?? null, ...(o.force ? { force: true } : {}) });
       deps.print(`${p.name}: ${baseUrl ?? API_HOME[agent]}${model ? `, model ${model}` : ", the agent's own model"}${key ? ", new key" : ""}. Terminals open under it keep the address and model they started with; close one and resume its conversation to use these`);
       return 0;
     }

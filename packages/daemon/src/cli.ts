@@ -108,6 +108,7 @@ const { values, positionals } = parseArgs({
     "base-url": { type: "string" },
     model: { type: "string" },
     key: { type: "boolean", default: false },
+    force: { type: "boolean", default: false },
     // Added by `secret-gate browser` for a Playwright MCP of its own; the bridge has no files of its own to put there.
     "output-dir": { type: "string" },
   },
@@ -363,7 +364,7 @@ async function main(): Promise<number> {
     case "doctor": return doctor();
     case "profiles": {
       const gate = { bin: layout().gate, home: homes().gateHome };
-      return profilesCommand(positionals.slice(1), { api: values.api, baseUrl: values["base-url"], model: values.model, key: values.key, json: values.json, remote: Boolean(values.on) }, {
+      return profilesCommand(positionals.slice(1), { api: values.api, baseUrl: values["base-url"], model: values.model, key: values.key, force: values.force, json: values.json, remote: Boolean(values.on) }, {
         client, readKey: (prompt) => readKey(prompt), print: (line) => console.log(line),
         seal: (host, value) => {
           if (!existsSync(gate.bin)) throw new Error(`no secret-gate at ${gate.bin}: the key is sealed by this node's gate`);

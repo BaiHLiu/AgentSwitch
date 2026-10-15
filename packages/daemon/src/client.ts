@@ -52,10 +52,10 @@ export class Client {
   revokeDevice(id: string) { return this.call<{ ok: true }>("DELETE", `/devices/${encodeURIComponent(id)}`); }
   /** docs/profiles-v0.md: every agent's profiles; one made (an API key a ciphertext, §3.6), changed, removed. */
   profiles() { return this.call<{ agents: Record<ProfileAgent, AgentProfiles> }>("GET", "/profiles"); }
-  createProfile(agent: ProfileAgent, name: string, kind: ProfileKind, api?: { key: string; baseUrl?: string; model?: string }) {
+  createProfile(agent: ProfileAgent, name: string, kind: ProfileKind, api?: { key: string; baseUrl?: string; model?: string; force?: boolean }) {
     return this.call<{ profile: Profile; agents: Record<ProfileAgent, AgentProfiles> }>("POST", "/profiles", { agent, name, kind, ...(api ? { api } : {}) });
   }
-  setProfileApi(agent: ProfileAgent, id: string, api: { key: string | null; baseUrl: string | null; model: string | null }) {
+  setProfileApi(agent: ProfileAgent, id: string, api: { key: string | null; baseUrl: string | null; model: string | null; force?: boolean }) {
     return this.call<{ agents: Record<ProfileAgent, AgentProfiles> }>("PUT", `/profiles/${agent}/${encodeURIComponent(id)}/api`, api);
   }
   setProfileColor(agent: ProfileAgent, id: string, color: string) { return this.call<{ agents: Record<ProfileAgent, AgentProfiles> }>("PUT", `/profiles/${agent}/${encodeURIComponent(id)}/color`, { color }); }
