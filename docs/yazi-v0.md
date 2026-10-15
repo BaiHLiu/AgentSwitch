@@ -1,10 +1,12 @@
 # yazi：在终端旁边看 agent 做出的文件（v0，方案）
 
-2026-10-15，catop 提出，待确认。
+2026-10-15，catop 提出；同日确认，§3 用做法 2。
 
 用户：考虑加入 yazi cli 的集成，方便在远程或在 agentswitch app 内就能看到工作效果文件（可以考虑按钮+侧边/分屏的方式）。
 
 用户（同日，对方案的选择）：选 A。远程设备不能开 yazi 终端。
+
+用户（同日，对 §3 的冲突）：可以按照你推荐的方法来。即做法 2：节点开关，默认关，只能在节点本机修改。
 
 ## 1. 做什么
 
@@ -34,12 +36,12 @@ yazi 能执行 shell 命令（`:`、`!`、用某个程序打开文件），等�
 - 本机开的工具终端，配对设备**看不到也碰不到**：列表里不返回，它的各条路由（流、`/write`、`/keys`、`/input`、改尺寸）对配对设备一律返回 404。只在"看"的层面放开也不行：能看到流，就能看到 yazi 里预览的任何文件。
 - 审计：开、关各记一条（`via` 是本机的哪块屏幕）。
 
-**这一条和 catop 的用法有冲突，需要确认：** Mac 看 dellarch 上的终端时，对 dellarch 来说 Mac 就是配对设备。所以按上面的规则，从 Mac 上**不能**给 dellarch 的终端开 yazi。而 dellarch 没有桌面应用，只剩 dellarch 本机浏览器里的网页控制台能开。也就是说，"远程看效果文件"这个场景用不了，只有 Mac 给自己本机的终端开 yazi 可以用。
+**这一条和 catop 的用法有冲突（已定：做法 2）：** Mac 看 dellarch 上的终端时，对 dellarch 来说 Mac 就是配对设备。所以按上面的规则，从 Mac 上**不能**给 dellarch 的终端开 yazi。而 dellarch 没有桌面应用，只剩 dellarch 本机浏览器里的网页控制台能开。也就是说，"远程看效果文件"这个场景用不了，只有 Mac 给自己本机的终端开 yazi 可以用。
 
 可选的做法：
 
 1. **严格按"远程不能开"**：只有本机（Mac 本机终端、Linux 节点本机的网页控制台）能开。最安全，但从 Mac 看 dellarch 时用不了。
-2. **加一个节点开关，默认关**（推荐）：Linux 节点和 Mac 各自的设置里加 "Paired Nodes May Open Files"（类似已有的 "Paired Nodes May Type"），只能在节点本机修改（`agentswitch config` 的 Node 页、Mac 的 设置 › Nodes），配对设备改不了。开着时，配对的**节点**可以开、可以用（手机仍然不能，它没有键盘）。不开就是方案 1。理由：一个节点已经允许配对节点打字时，对方本来就能让 agent 跑命令；是否再给一个不经审批的 shell，应该由节点的主人自己决定。
+2. **加一个节点开关，默认关**（推荐，2026-10-15 采用）：Linux 节点和 Mac 各自的设置里加 "Paired Nodes May Open Files"（类似已有的 "Paired Nodes May Type"），只能在节点本机修改（`agentswitch config` 的 Node 页、Mac 的 设置 › Nodes），配对设备改不了。开着时，配对的**节点**可以开、可以用（手机仍然不能，它没有键盘）。不开就是方案 1。理由：一个节点已经允许配对节点打字时，对方本来就能让 agent 跑命令；是否再给一个不经审批的 shell，应该由节点的主人自己决定。
 
 ## 4. 各端
 
@@ -62,7 +64,7 @@ yazi 根据环境变量和对终端的查询来选图片协议（kitty、iTerm2 
 ## 6. 实现顺序（确认之后）
 
 1. 服务：`kind`/`tool`/`parent`、`POST /terminals/:id/tool`、远程过滤、随 agent 终端关闭、退出后移除；doctor 和 `has`。vitest 用一个假的 yazi（回显程序）测试。
-2. 节点开关（如果选第 3 节的做法 2）：服务、`agentswitch config`、Mac 设置。
+2. 节点开关（第 3 节的做法 2）：服务、`agentswitch config`、Mac 设置。
 3. Mac：按钮、菜单、列表里的子行、分屏。规则放在 AgentSwitchMacCore 里并写测试；fork 上的 CI 编译和测试；catop 在 Mac 上实测，图片预览按第 5 节处理。
 4. 网页控制台。
 
