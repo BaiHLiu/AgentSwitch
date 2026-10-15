@@ -109,6 +109,9 @@ function open(deps: ConfigDeps, page?: PageId, locale: "en" | "zh-Hans" | "ja" =
       if (Date.now() > end) throw new Error(`never saw ${seen} in:\n${frame()}`);
       await new Promise((res) => setTimeout(res, 10));
     }
+    // What is drawn takes its keys a moment later (Ink attaches a box's input in an effect after it draws): a key sent
+    // at once can miss it (seen on a CI runner: the `y` for a question already shown was lost).
+    await new Promise((res) => setTimeout(res, 100));
   };
   // One key at a time, each given its turn (the parser takes a lone Esc after a moment). Words typed get longer: the
   // box that takes them filters as it goes, and a key that follows too soon (Enter) can reach it before the words do
