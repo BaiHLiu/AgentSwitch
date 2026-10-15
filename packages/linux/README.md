@@ -26,12 +26,20 @@ agentswitch pair                        # a QR code for the iPhone, a link for a
 | this node's settings | `~/.agentswitch/node.json` |
 
 Run `install.sh` again to update: the new runtime is built beside the old one, `current` is switched, the service
-restarted; if the daemon does not answer within a minute, `current` goes back. The two newest runtimes are kept.
+restarted; if the daemon does not answer within a minute, `current` goes back. The two newest runtimes are kept, and
+any older one a terminal still runs on.
 
-From one of the node's own terminals (an agent at work on AgentSwitch itself, driven from a Mac or a phone) the
-restart would end the script with that terminal; it says so and leaves the restart, the check and the way back to a
-unit of its own 10 seconds later (`AGENTSWITCH_UPDATE_DELAY`). The terminal ends with the restart, as every terminal
-does; resume the agent's conversation from the Sessions list.
+The terminals outlive the restart (`docs/terminal-v0.md` §10): each program is held by a small process of its own
+(`pty-hold`, in a scope of its own in `agentswitch-terminals.slice`, outside the service), and the next daemon takes
+it up again — the agent, its screen, its hooks and its browser tool go on. Dispatch's tasks do not outlive it: while
+one is in progress the update waits, up to 30 minutes, then goes back without restarting; `install.sh --now` does not
+wait. `agentswitch service stop` and `uninstall` end the terminals too; `restart` does not. `"holdTerminals": false` in
+node.json turns holding off.
+
+From a terminal that is not held (one opened before an update brought holding, or with holding off) the restart would
+end the script with that terminal; it says so and leaves the restart, the check and the way back to a unit of its own
+10 seconds later (`AGENTSWITCH_UPDATE_DELAY`). That terminal ends with the restart; resume the agent's conversation from
+the Sessions list.
 
 With nobody logged in systemd stops a user's services; `loginctl enable-linger $USER` keeps the node up.
 
