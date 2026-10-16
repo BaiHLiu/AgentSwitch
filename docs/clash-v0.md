@@ -297,6 +297,40 @@ Clash Verge 没有给外面“更新这个订阅”的入口：它认的链接�
 - 在用户正在跑的内核上（当时是他自己的 `tgyun_config.yaml`），1.2 秒跑完：Claude 经 `Claude → Claude自动选择 → 日本家宽-02` 出去，对方看到的是日本的地址，362 毫秒；OpenAI 经 `OpenAI → OpenAI自动选择 → 美国-01`，对方看到美国的地址；`baidu` 按关键词直连；`163` 按 `GeoIP cn` 直连；广告被拒；其它走 `Manual → 新加坡-01`。
 - 没做的验证：按钮在装好的应用里点一遍。
 
+### 7.10 订阅自带 AI 分组时（2026-10-16）
+
+用户：代理的分组现在怎么带上了上游订阅的分组？两个不会打架吗？
+
+**为什么带着**：交给 Clash Verge 的是底本原样加上 AgentSwitch 的那几样（§7.2），底本的分组一个不删。用户现在的底本换成了一份转换出来的配置（ACL4SSR 那一类），自带 20 个分组：`🌐 代理`、`🤖 AI`、`🎬 奈飞`、`✈️ 电报` 等等。以前那份只有两个，所以看不出来。这些分组管着奈飞、电报这类流量，删掉它们这些就没有去处了。
+
+**查实的**（读正在跑的内核和订阅里点名的公开规则表，什么都没改）：
+
+- **名字不打架**：AgentSwitch 的 `Claude`、`OpenAI` 和订阅的 `🤖 AI` 是不同的组。
+- **流量打架**：
+  - 订阅把 `RULE-SET,openai` 和 `RULE-SET,claude`（blackmatrix7 的表）都送进 `🤖 AI`。AgentSwitch 的规则在最前面，但它的表短。
+  - OpenAI 的 35 条里有 23 条 AgentSwitch 没有：`auth0.com`（登录）、`client-api.arkoselabs.com`（人机验证）、`*.livekit.cloud`（语音）、statsig、intercom、stripe、sentry 等。Claude 的 3 条里有 1 条（`cdn.usefathom.com`）。
+  - 当时 `OpenAI` 用 `🇺🇸 美国家庭-03`，`🤖 AI` 经 `🌐 代理`、`🔄 自动选择` 用的是新加坡的节点。同一次 ChatGPT，登录和验证从新加坡出去，对话从美国出去。
+
+**改法（已做，`build.ts` 的 `ruleService`）**：
+
+- **改哪些**：某一项选了节点时，订阅里专门给这一项的规则改为送进 AgentSwitch 的组。“专门给这一项的”指：
+  - 以它命名的规则集，名字或来源文件名是 `openai`、`OpenAI/OpenAI.yaml`、`ChatGPT.list`、`claude`、`anthropic` 这类；
+  - 或者 `GEOSITE,openai` 这类。
+- **位置不动**：订阅在它前面认领的照旧先中，例如它自己的广告拦截 `reject` 拦下 `segment.io`，微软那张表认领的 Azure 地址仍先被 AgentSwitch 的 `openai` 关键词接住。
+- **不改的**：同时点名几家的表，例如 `GEOSITE,category-ai-!cn`，或文件名里 OpenAI、Claude 都有的，照原样，分不开；AgentSwitch 自己的表照样在它们前面。`🤖 AI` 组留着，管 Gemini 这些 AgentSwitch 不管的。
+- **生效**：这是订阅正文的变化，要 Clash Verge 取一次。它每小时自己会来取；页面在那之前写“不是最新”。
+
+**这份订阅和规则模版的重叠（没改，等用户定）**：
+
+- `Block Ads & Trackers`（`as-block`）排在订阅自己的规则之后、它收尾的 `MATCH` 之前（§7.7）。这份订阅收尾前还有 `cncidr`、`GEOIP,CN`、`tld-not-cn`，最后一条把所有不是 `.cn` 的都送进 `🌐 代理`。所以拦截模版几乎碰不到什么；订阅自己在前面（第 8 条）有一张 `reject`。
+- `Domestic & Local Direct` 的 `as-domestic` 在最前面，把国内的名字直接送 `DIRECT`，排在订阅的 `🎯 直连` 组前面。在 Clash Verge 里把 `🎯 直连` 切到代理，这些名字不受影响。`as-domestic-ip` 排在 `GEOIP,CN,🎯 直连` 后面，也就不再起作用。
+- Clash Verge 里 AI 有两处可选：`Claude`、`OpenAI` 管这两家，`🤖 AI` 管其余的。
+
+**没做的验证**：
+
+- Clash Verge 取到新的一份之后，在正在跑的内核上看一次这些连接。
+- 路由检查只试 `chatgpt.com`，这一处以前也是对的，所以没发现问题。以后可以多试一条订阅自己表里的地址，例如 `client-api.arkoselabs.com`。
+
 ## 8. 分步
 
 1. （做了）第一版：§6 末尾。

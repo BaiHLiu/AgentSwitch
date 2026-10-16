@@ -131,6 +131,43 @@ describe("the subscription AgentSwitch makes", () => {
       { name: "Claude", type: "select", proxies: ["Claude 自动选择"], use: ["as-claude"] }]);
   });
 
+  it("sends the subscription's own rules for a service it has nodes for to its group, where they stand", () => {
+    // As subscription converters write them (2026-10-16, the user's): a group for every AI service, fed by lists
+    // longer than AgentSwitch's — ChatGPT's sign-in and human check went out by `🤖 AI` while the rest went by `OpenAI`.
+    const lists = "https://cdn.example/blackmatrix7/ios_rule_script/master/rule/Clash";
+    const source = `${PLAIN.replace("rules:\n  - DOMAIN-SUFFIX,claude.ai,Proxy\n  - MATCH,Proxy\n", "")}  - { name: 🤖 AI, type: select, proxies: [Proxy, HK 01] }
+rule-providers:
+  openai: { type: http, behavior: classical, url: "${lists}/OpenAI/OpenAI.yaml", path: ./ruleset/openai.yaml, interval: 86400 }
+  claude: { type: http, behavior: classical, url: "${lists}/Claude/Claude.yaml", path: ./ruleset/claude.yaml, interval: 86400 }
+  gemini: { type: http, behavior: classical, url: "${lists}/Gemini/Gemini.yaml", path: ./ruleset/gemini.yaml, interval: 86400 }
+  gpt: { type: http, behavior: classical, url: "https://rules.example/ChatGPT.list", path: ./ruleset/gpt.list, interval: 86400 }
+  every-ai: { type: http, behavior: classical, url: "https://rules.example/OpenAI-Claude-Gemini.yaml", path: ./ruleset/ai.yaml, interval: 86400 }
+rules:
+  - RULE-SET,openai,🤖 AI
+  - RULE-SET,claude,🤖 AI
+  - RULE-SET,gemini,🤖 AI
+  - RULE-SET,gpt,Proxy,no-resolve
+  - RULE-SET,every-ai,🤖 AI
+  - GEOSITE,openai,🤖 AI
+  - GEOSITE,category-ai-!cn,🤖 AI
+  - AND,((RULE-SET,openai),(NETWORK,UDP)),REJECT
+  - DOMAIN-SUFFIX,openai.com,🤖 AI
+  - MATCH,Proxy
+`;
+    const plain: SourceNode[] = ["HK 01", "SG 01"].map((name) => ({ name, from: null, definition: node(name) }));
+    const out = made(source, plain, [], { openai: { nodes: ["SG 01"] } });
+    expect(out.rules).toEqual(["RULE-SET,as-direct,DIRECT", "RULE-SET,as-openai,OpenAI", "RULE-SET,as-domestic,DIRECT,no-resolve",
+      "RULE-SET,openai,OpenAI", "RULE-SET,claude,🤖 AI", "RULE-SET,gemini,🤖 AI", "RULE-SET,gpt,OpenAI,no-resolve", "RULE-SET,every-ai,🤖 AI",
+      "GEOSITE,openai,OpenAI", "GEOSITE,category-ai-!cn,🤖 AI", "AND,((RULE-SET,openai),(NETWORK,UDP)),REJECT", "DOMAIN-SUFFIX,openai.com,🤖 AI",
+      "RULE-SET,as-block,REJECT", "RULE-SET,as-domestic-ip,DIRECT", "MATCH,Proxy"]);
+    // Its group stays, for what AgentSwitch does not decide (Gemini, and Claude while it has no nodes here).
+    expect(out["proxy-groups"].map((g: { name: string }) => g.name)).toContain("🤖 AI");
+    const both = made(source, plain, [], { openai: { nodes: ["SG 01"] }, claude: { nodes: ["HK 01"] } });
+    expect(both.rules.filter((r: string) => r.startsWith("RULE-SET,claude,"))).toEqual(["RULE-SET,claude,Claude"]);
+    // Nothing chosen: the subscription's rules as written.
+    expect(made(source, plain, [], {}).rules.filter((r: string) => !r.includes(",as-"))).toEqual((parse(source) as { rules: string[] }).rules);
+  });
+
   it("writes a node set in the chosen order with all a node needs, and no empty one", () => {
     const chosen = settings({ claude: { nodes: ["🇺🇸 美国-01", "gone", "🇯🇵 日本家宽-01"] } });
     expect(parse(nodeSet("claude", chosen, NODES)!)).toEqual({ proxies: [node("🇺🇸 美国-01"), node("🇯🇵 日本家宽-01")] });
