@@ -132,6 +132,28 @@ final class TerminalsModel {
     @ObservationIgnored var onDetach: (String) -> Void = { _ in }
     @ObservationIgnored var onAttach: (String) -> Void = { _ in }
     @ObservationIgnored var onRaise: (String) -> Void = { _ in }
+    /// The window's Files column (docs/files-v0.md): the list's `Show in Files`, the panes' icons.
+    @ObservationIgnored weak var files: FilesColumn?
+
+    /// Where the Files column's `Add to Reply` lands: the pane in focus, its record's reply or its terminal.
+    func filesTarget() -> FilesTarget? {
+        guard !creating, let state = focused, let info = state.session?.info, info.status != "exited" else { return nil }
+        return FilesTarget(name: info.name) { [weak state] picks in state?.offer(picks) }
+    }
+
+    /// The pane's folder icon (docs/files-v0.md §0): the Files column at its terminal's folder, or closed when it shows
+    /// that one already.
+    func toggleFiles(pane: Int) {
+        guard let folder = panes[pane]?.session?.info?.workdir else { return }
+        focus(pane: pane)
+        files?.toggle(at: folder)
+    }
+
+    /// The column shows this pane's folder now (its icon lit).
+    func filesShow(pane: Int) -> Bool {
+        guard let files, files.open, let folder = panes[pane]?.session?.info?.workdir else { return false }
+        return files.root == folder
+    }
     /// The keyboard to a pane's screen (nil: off whatever field has it).
     @ObservationIgnored var onFocusScreen: (Int) -> Void = { _ in }
     @ObservationIgnored var onGround: (NSColor) -> Void = { _ in }

@@ -178,7 +178,7 @@ Design previews: `-designPreview <dir> -designPreviewOnly clash|profiles|browser
 Two Macs that both run AgentSwitch pair once and each can use the other's Dispatch, Terminals and Browser
 (`docs/mesh-v0.md`; demo `docs/design/concepts/mesh.html`).
 
-- **Settings › Nodes** (it took the place of Devices): this Mac (`Allow Pairing`, `Paired Nodes May Type`), then every
+- **Settings › Nodes** (it took the place of Devices): this Mac (`Allow Pairing`, `Paired Nodes May Type`, `Paired Nodes May Read Files`), then every
   node and phone paired with it — a node with two switches, `This Mac Uses It` and `It Uses This Mac`; a phone with the
   second alone. `Pair With a Link…` takes the link another node's `Pairing` page gives (`Copy for Another Mac` lets
   Universal Clipboard carry it), reads it back, and pairs both ways unless told not.
@@ -195,6 +195,31 @@ Two Macs that both run AgentSwitch pair once and each can use the other's Dispat
   services with `packages/daemon/scripts/mesh_smoke.sh` and its `MESH_SMOKE_THEN`. It also changes page once on this
   node's own pages: `page-change.png` is the window a tenth of a second in, and `calls.txt` says whether the page was
   being drawn in (the pixel look) or there at once (`-appearance classic`: no scan-line refresh, `ScanRefresh.plays`). Then it opens the other node in a window of its own (`window-node.png`), asks for that node again from the main window (the other window comes forward, the main one stays on this Mac), clicks the strip's `×` (`window-node-strip-hidden.png`) and closes that window, each with a line in `calls.txt` (`MainWindows`: a node is in one window at most; docs/mesh-v0.md §9 B 2).
+
+## Files: the column on the right
+
+The main window's own column on its right, above every page (`docs/files-v0.md`; demo
+`docs/design/concepts/files.html`): the bar's folder icon, ⇧⌘F, a pane's icon among several and the list's
+`Show in Files` open it — at the folder of the pane in focus, or where it was; home the first time. Beside the page,
+or over it (`⋯` › `Float Over Page`; a window too narrow floats it by itself). The pixel look's tree, the classic look's
+folders (Finder's last two columns from 460 points), the path every level of which is a button, the preview with
+`Add to Reply` and `Open` (Quick Look's panel on space), the row's menu with the rest.
+
+- What it lists is the service's (`/files…`, `DaemonClient+Files.swift`), on the node the window is on; this Mac's
+  own credential places come as a name and a lock. Its state is kept by node (`files.<node>.*` in the defaults).
+- `Add to Reply` gives the selection to the pane in focus (its record's reply as `[File #n]`, or typed at its
+  terminal's cursor), or to Dispatch's input. A file that may hold a password is asked about first — over the reply
+  box or the screen, the alert where there is neither — whether it came from the column or from Finder
+  (`FilesSensitive.swift`, the service's table for this Mac's paths); its chip is marked.
+- `Settings › Nodes`: `Paired Nodes May Read Files`, and each paired device's `Files` scope (`Home Folder`,
+  `All Files`, `Selected Folders`, `None`).
+- Code: `Sources/AgentSwitchMac/Files/` (`FilesColumn` the model, `FilesColumnView`, `FilesListViews`,
+  `FilesPreviewViews`), the rules without AppKit in `Sources/AgentSwitchMacCore/Files/` (`FilesTests`).
+- `-designPreview <dir> -designPreviewOnly files` draws the window with the column over a made-up disk (`files-*.png`,
+  `-appearance pixel|classic`). `-filesProbe <dir> -probeFolder <path>` (debug builds, with `-localPort` and
+  `AGENTSWITCH_HOME` of a throw-away service) drives the real column against it — the folder read, a folder opened, a
+  file's details and text, the keys, the next look after a file is added, the service's locked places — into
+  `files.txt` and `files-*.png`.
 
 ## Credential gate as a system service
 

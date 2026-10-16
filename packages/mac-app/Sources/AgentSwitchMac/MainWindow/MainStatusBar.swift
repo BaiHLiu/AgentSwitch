@@ -15,6 +15,8 @@ struct MainStatusBar: View {
     let head: TerminalHead
     let model: AppModel
     let browser: BrowserPageModel?
+    /// The Files column: what is selected in it, said first among the page's words (files-v0 §8 demo).
+    var files: FilesColumn?
     let seal: () -> Void
     @Environment(\.interfaceLook) private var look
 
@@ -37,6 +39,9 @@ struct MainStatusBar: View {
             }
             .fixedSize()
             Spacer(minLength: 12)
+            if let files, files.open, !files.selection.isEmpty {
+                Text(files.selection.count == 1 ? "1 Selected" : "\(files.selection.count) Selected · \(FilesText.size(files.selectedSize, short: false))")
+            }
             switch state.page {
             case .terminals:
                 if let context = head.shown { TerminalStatusItems(context: context, seal: seal) }

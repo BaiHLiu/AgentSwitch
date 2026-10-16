@@ -36,6 +36,13 @@ enum DesignPreview {
                     FileHandle.standardError.write(Data("design preview (the browsers) written to \(directory.path)\n".utf8))
                     exit(0)
                 }
+                if UserDefaults.standard.string(forKey: "designPreviewOnly") == "files" {
+                    // docs/files-v0.md: the Files column over a made-up disk, in the main window on Terminals.
+                    model.loadDemoNodes()
+                    try await FilesDesignPreview.render(model: model, into: directory)
+                    FileHandle.standardError.write(Data("design preview (files) written to \(directory.path)\n".utf8))
+                    exit(0)
+                }
                 if UserDefaults.standard.string(forKey: "designPreviewOnly") == "nodes" {
                     // docs/mesh-v0.md: Settings › Nodes with two nodes and a phone, and the link sheet with a link read back.
                     model.loadDemoNodes()

@@ -234,6 +234,8 @@ public enum MainShortcut: Equatable, Sendable {
     case settings
     /// ⌥⌘B: the rail put away or brought back (MainRailLayout).
     case toggleRail
+    /// ⇧⌘F: the Files column, at the folder of the pane in focus (docs/files-v0.md §0), on every page.
+    case files
     case browser(BrowserShortcut)
 
     /// The Browser page's own keys.
@@ -277,6 +279,7 @@ public enum MainShortcut: Equatable, Sendable {
         if press.command, press.option, !press.control, !press.shift, press.key == "b" { return .toggleRail }
         if press.command, press.shift, !press.control, !press.option, press.key == "b" { return .page(.browser) }
         if press.command, press.shift, !press.control, !press.option, press.key == "k" { return .page(.clash) }
+        if press.command, press.shift, !press.control, !press.option, press.key == "f" { return .files }
         if press.command, press.shift, !press.control, !press.option, press.key == "t" { return page == .browser ? .browser(.hold) : nil }
         // With shift or without: `+` is ⇧= on most layouts and a key of its own on others and on the keypad.
         if page == .browser, press.command, !press.control, !press.option, let zoom = zoom(press.key) { return .browser(zoom) }

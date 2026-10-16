@@ -209,7 +209,7 @@ enum TerminalsPagePreview {
     }
 
     /// Terminal `t1` as its record, with a made-up session.
-    private static func stageRecord(_ model: TerminalsModel, working: Bool, terminal: String = "t1", compacting: Bool = false, bare: Bool = false, on usageModel: String? = nil) {
+    static func stageRecord(_ model: TerminalsModel, working: Bool, terminal: String = "t1", compacting: Bool = false, bare: Bool = false, on usageModel: String? = nil) {
         model.setSimple(true, pane: TerminalPanes.paneShowing(model.layout, terminal)?.id)
         guard let pane = model.panes.values.first(where: { $0.session?.id == terminal }), let info = pane.session?.info else { return }
         let ago = { (seconds: Int64) in Int64(Date().timeIntervalSince1970 * 1000) - seconds * 1000 }
@@ -299,9 +299,8 @@ enum TerminalsPagePreview {
         }
     }
 
-    /// `long`: among the sessions, one whose title is as long as the service gives them (120 characters).
-    static func shot(to file: URL, light: Bool = false, long: Bool = false, onScreen: Bool = false, stage: (TerminalsModel) -> Void,
-                             then: (@MainActor (TerminalsModel, NSView) async throws -> Void)? = nil) async throws {
+    /// The page's model with the made-up work staged (the Files preview uses it too).
+    static func demoModel(long: Bool = false) -> TerminalsModel {
         let model = TerminalsModel(client: { DaemonClient(port: 1) }, defaults: nil)
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         func session(_ id: String, _ cwd: String, _ title: String, _ harness: String = "claude-code", ago hours: Int64, active: Bool = false) -> SessionSummary {
@@ -341,6 +340,13 @@ enum TerminalsPagePreview {
                                 TerminalModelOption(id: "gpt-6-luna", name: "GPT-6-Luna", efforts: five, daybreak: "also"), TerminalModelOption(id: "gpt-daybreak-blue-latest", name: "Daybreak Blue", efforts: five, daybreak: "only")]]
         model.stage(terminals: terminals, sessions: sessions, gits: gits, agents: ["claude-code", "codex", "opencode"], models: models, efforts: ["claude-code": five])
         model.area = CGSize(width: size.width - 291, height: size.height)
+        return model
+    }
+
+    /// `long`: among the sessions, one whose title is as long as the service gives them (120 characters).
+    static func shot(to file: URL, light: Bool = false, long: Bool = false, onScreen: Bool = false, stage: (TerminalsModel) -> Void,
+                             then: (@MainActor (TerminalsModel, NSView) async throws -> Void)? = nil) async throws {
+        let model = demoModel(long: long)
         let host = NSHostingView(rootView: TerminalsPageView(model: model))
         host.sizingOptions = []
         let window = PreviewWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)

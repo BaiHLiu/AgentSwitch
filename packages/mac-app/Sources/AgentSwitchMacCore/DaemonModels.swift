@@ -72,11 +72,14 @@ public struct Device: Decodable, Equatable, Identifiable, Sendable {
     public let revokedAt: Date?
     /// Set when the daemon reports presence per device.
     public let online: Bool?
+    /// What of this Mac's files it may read (docs/files-v0.md §7.5); nil from a service before the Files column.
+    public let files: FileScope?
 
     public var isRevoked: Bool { revokedAt != nil }
 
     public init(id: String, name: String, platform: String, createdAt: Date?, lastSeenAt: Date?, revokedAt: Date?,
-                online: Bool? = nil) {
+                online: Bool? = nil, files: FileScope? = nil) {
+        self.files = files
         self.id = id
         self.name = name
         self.platform = platform
@@ -95,6 +98,7 @@ public struct Device: Decodable, Equatable, Identifiable, Sendable {
         lastSeenAt = c.date("lastSeenAt", "last_seen_at")
         revokedAt = c.date("revokedAt", "revoked_at")
         online = c.first(Bool.self, "online")
+        files = c.first(FileScope.self, "files")
     }
 
     /// `[...]` or `{devices: [...]}`.

@@ -167,6 +167,9 @@ final class TerminalScreenController: NSObject {
     var onShortcut: ((_ key: String, _ shift: Bool, _ alt: Bool) -> Void)?
     /// The grid the view fits, whenever it changes (a new terminal starts at it; a pane being sized says it).
     var onGrid: ((_ cols: Int, _ rows: Int) -> Void)?
+    /// Files dropped from Finder, one of which may hold a password (docs/files-v0.md §4): the pane asks first and
+    /// gives back what is to be typed (`type(paths:)`). Nil (a terminal's own window): the window's alert asks.
+    var onFiles: (([FilesPick]) -> Void)?
     private let client: () -> DaemonClient
     private var id: String?
     /// Where the terminal's agent works now (the page says it): a relative path ⌘-clicked on the screen starts there.
@@ -341,6 +344,14 @@ final class TerminalScreenController: NSObject {
             note("这个终端在另一个节点上：文件请拖到简略视图的回复框，它们会被发送过去。")
             return false
         } else if !files.isEmpty {
+            // One that may hold a password is asked about before its path is typed (docs/files-v0.md §4).
+            let picks = files.map { url in
+                FilesPick(path: url.path, name: url.lastPathComponent, folder: url.hasDirectoryPath, sensitive: FilesSensitive.reason(url.path) != nil, onNode: false)
+            }
+            if picks.contains(where: \.sensitive) {
+                if let onFiles { onFiles(picks) } else { askThenType(picks) }
+                return true
+            }
             text = TerminalDrop.paths(files.map(\.path))
         } else if let string = pasteboard.string(forType: .string), !string.isEmpty {
             text = string
@@ -353,6 +364,29 @@ final class TerminalScreenController: NSObject {
         typed(ArraySlice(Array(TerminalDrop.pasted(text, bracketed: view.getTerminal().bracketedPasteMode).utf8)))
         view.window?.makeFirstResponder(view)
         return true
+    }
+
+    /// Paths typed at the terminal's cursor as a drop types them (the Files column's `Add to Reply` on a terminal's
+    /// screen): escaped, a space after, no Enter.
+    func type(paths: [String]) {
+        guard id != nil, !paths.isEmpty else { return }
+        userActed()
+        typed(ArraySlice(Array(TerminalDrop.pasted(TerminalDrop.paths(paths) + " ", bracketed: view.getTerminal().bracketedPasteMode).utf8)))
+        view.window?.makeFirstResponder(view)
+    }
+
+    /// Without a pane to ask over: the window's alert, then the paths typed.
+    private func askThenType(_ picks: [FilesPick]) {
+        guard let window = view.window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Add to Reply?"
+        alert.informativeText = FilesSensitive.question(names: picks.filter(\.sensitive).map(\.name)).replacingOccurrences(of: "`", with: "")
+        alert.addButton(withTitle: "Add")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] answer in
+            let kept = answer == .alertFirstButtonReturn ? picks : picks.filter { !$0.sensitive }
+            self?.type(paths: kept.map(\.path))
+        }
     }
 
     /// A line of the page's own under the program's output ("1 secret sealed").

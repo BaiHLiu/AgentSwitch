@@ -112,8 +112,22 @@ public struct NodeAdded: Decodable, Equatable, Sendable {
 public struct MeshSettings: Codable, Equatable, Sendable {
     /// A paired node may type into a terminal here with a real keyboard (its keystrokes as they are).
     public var keyboard: Bool
+    /// Paired devices may read this Mac's files, each inside its own scope (docs/files-v0.md §7.5).
+    public var files: Bool
 
-    public init(keyboard: Bool = true) { self.keyboard = keyboard }
+    public init(keyboard: Bool = true, files: Bool = true) {
+        self.keyboard = keyboard
+        self.files = files
+    }
+
+    private enum Keys: String, CodingKey { case keyboard, files }
+
+    /// A service from before the Files column says nothing of files: on, as a new one is.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        keyboard = (try? c.decode(Bool.self, forKey: .keyboard)) ?? true
+        files = (try? c.decode(Bool.self, forKey: .files)) ?? true
+    }
 }
 
 extension DaemonClient {

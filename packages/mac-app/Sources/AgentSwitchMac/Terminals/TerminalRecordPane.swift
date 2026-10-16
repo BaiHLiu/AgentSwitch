@@ -572,6 +572,8 @@ private struct RecordDock: View {
             if let clash = daybreakClash(info, record) {
                 Text(clash).font(.system(size: Look.size(12, look))).foregroundStyle(Color.attention).lineLimit(2).padding(.horizontal, 4)
             }
+            // Files that may hold a password, asked about before they go in (docs/files-v0.md §4).
+            if let ask = state.asking { FilesAskCard(ask: ask, answer: state.answer).frame(maxWidth: 460, alignment: .leading) }
             VStack(alignment: .leading, spacing: 0) {
                 if !beside, let line = RecordDisplay.plan(record.plan) {
                     VStack(alignment: .leading, spacing: 5) {
