@@ -9,7 +9,8 @@ import SwiftUI
 /// other names, or much shorter; the reader a little way up, then `↓ Latest` clicked; `Earlier` clicked at its start
 /// and the session going on meanwhile; a run of work opened by a click; a long reply typed; an answer growing; a reply
 /// typed in the box and taken back a key at a time to one line (`shrinks`: after each key, how many states the box went
-/// through in the next 1.2 s — more than three reads `MOVING`).
+/// through in the next 1.2 s — more than three reads `MOVING`); what it offers as the next message taken with Tab, then
+/// the box made again (`tab`: the draft must hold it once).
 /// After each step `turn.txt` gets a line — where the record's scroller stands in its document, how much of what it
 /// shows is drawn on (a pane left blank reads 0%), how many items are shown — and the page's picture is
 /// `turn-<scene>-<step>.png`. `-probeOnScreen YES` puts the window on screen behind the others, which the clicks need
@@ -336,6 +337,42 @@ enum RecordTurnProbe {
                 text.deleteBackward(nil)
                 await watch("one more key back")
             }
+        case .peer:
+            // Another session's message in the record, by the name it gave and by none, and the answer to it.
+            idle()
+            let base = items(turns: 40, working: false)
+            let t = base.last?.at ?? 0
+            pane.record.stageItems(base + [
+                RecordItem(id: "p1", kind: .user, at: t + 60_000, text: "登录接口新加的字段定名为 refreshToken；登录失败都是 401，body 里的 error 分别是 invalid_credentials 和 expired。", from: "05 · Codex"),
+                RecordItem(id: "p2", kind: .answer, at: t + 70_000, text: "收到。登录页按 `error` 区分：`expired` 先拿 refreshToken 换新再重试一次。"),
+                RecordItem(id: "p3", kind: .user, at: t + 80_000, text: "别按旧格式写了，我刚改了。", from: ""),
+            ])
+            await pause(400)
+            try await mark("another session's messages")
+        case .tab:
+            // What it offers as the next message, taken with Tab into the empty box; then the box made again — the
+            // terminal view and back, twice (2026-10-16, user: 我这边对话框还在一直自己自己补对话).
+            let offered = "写进设计稿和演示页，探针也跑一下"
+            idle()
+            pane.record.stageItems(items(turns: 40, working: false))
+            pane.record.stageSuggestion(offered)
+            await pause(300)
+            _ = pane.record.hintKey(.tab)
+            await pause(400)
+            func copies() -> Int { pane.record.draft.components(separatedBy: offered).count - 1 }
+            log.say("     Tab: the draft holds it \(copies()) time(s)")
+            // Made again as the window makes it again — the record's pane is in the window only while nothing else
+            // stands in its place: here the new-terminal panel opened over it and closed, the pane itself (its record,
+            // its draft) kept.
+            model.focus(pane: pane.id, force: true)
+            for n in 1...2 {
+                model.creating = true
+                await pause(500)
+                model.creating = false
+                await pause(600)
+                log.say("     the box made again (\(n)): the draft holds it \(copies()) time(s)\(copies() > 1 ? " — PUT IN AGAIN" : "")")
+            }
+            try await mark("the suggestion taken, the box made again twice")
         case .grows:
             for n in 1...12 {
                 pane.record.stageItems(items(turns: 40, working: true, grown: n), activity: TerminalActivity(tool: "Bash", target: "npm test"))
@@ -355,7 +392,7 @@ enum RecordTurnProbe {
 
     private static let began = Int64(Date().timeIntervalSince1970 * 1000)
 
-    enum Scene: String, CaseIterable { case ends, statusFirst, unknown, reread, renamed, shorter, up, earlier, opens, typing, grows, shrinks }
+    enum Scene: String, CaseIterable { case ends, statusFirst, unknown, reread, renamed, shorter, up, earlier, opens, typing, grows, shrinks, tab, peer }
 
     /// A made-up session of `turns` turns: what was asked, a run of work, an answer of some length. `working`: the last
     /// turn is still going (its run of work open, no answer yet). `grown`: how much of the last answer is written.
