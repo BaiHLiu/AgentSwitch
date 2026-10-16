@@ -30,6 +30,8 @@ struct TerminalPage: View {
     @State private var pickingPhotos = false
     @State private var pickingFiles = false
     @State private var takingPhoto = false
+    /// `+` › Files on Mac (docs/files-v0.md §5): the Mac's files over this page, at the terminal's folder.
+    @State private var browsingMac = false
     /// Placeholders to put into the reply box where the caret is (the field puts them there: it knows the caret).
     @State private var pendingTokens: [String] = []
     /// A direct reply that looks like it holds a secret, asked about before it goes.
@@ -243,6 +245,8 @@ struct TerminalPage: View {
             case "simpleeffort": DispatchQueue.main.asyncAfter(deadline: .now() + 2) { choosingEffort = true }
             case "terminalkeyboard": DispatchQueue.main.asyncAfter(deadline: .now() + 2) { replying = true }
             case "terminalclose": DispatchQueue.main.asyncAfter(deadline: .now() + 2) { confirmClose = true }
+            // `+` › Files on Mac, as the menu would open it; the Mac's files in the reply box (docs/files-v0.md §5).
+            case "filessheet": DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { browsingMac = true }
             // A link held, as a long press on the address in the demo's screen would open its menu.
             case "terminallink": DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { holdFirstLink() }
             default: break
@@ -275,6 +279,16 @@ struct TerminalPage: View {
             case .failure(let failure): page.error = failure.localizedDescription
             }
         }
+        .sheet(isPresented: $browsingMac) {
+            MacFilesSheet(terminal: page.id, start: workdir) { picks in
+                browsingMac = false
+                addMacFiles(picks)
+            }
+            .followsLook()
+        }
+        // Files picked on the Files tab for this terminal (`Add to Reply…`): into the reply box as it opens.
+        .onAppear { takeHandoff() }
+        .onChange(of: model.files.handoff) { takeHandoff() }
         .fullScreenCover(isPresented: $takingPhoto) {
             CameraPicker { data in
                 takingPhoto = false
@@ -673,6 +687,7 @@ struct TerminalPage: View {
                             .disabled(!CameraPicker.isAvailable)
                         Button("Photos", systemImage: "photo.on.rectangle") { replying = false; pickingPhotos = true }
                         Button("Files", systemImage: "folder") { replying = false; pickingFiles = true }
+                        Button("Files on Mac", systemImage: "laptopcomputer") { replying = false; browsingMac = true }
                         Button("Paste Image", systemImage: "doc.on.clipboard") { pasteImages() }
                         // The keys are out of the way under the record until they are wanted.
                         if simple { Button(showKeys ? "Hide Keys" : "Keys", systemImage: "keyboard") { showKeys.toggle() } }
@@ -747,6 +762,21 @@ struct TerminalPage: View {
         addFiles(images)
     }
 
+    /// The Mac's files and folders picked in Files: their placeholders put where the caret is; their paths go with the
+    /// reply.
+    private func addMacFiles(_ picks: [MacPick]) {
+        let tokens = page.addMacFiles(picks)
+        guard !tokens.isEmpty else { return }
+        pendingTokens += tokens
+        replying = true
+    }
+
+    private func takeHandoff() {
+        guard let handoff = model.files.handoff, handoff.terminal == page.id else { return }
+        model.files.handoff = nil
+        addMacFiles(handoff.picks)
+    }
+
     /// Picked files: kept for the reply, their placeholders put where the caret is; nothing is sent yet.
     private func addFiles(_ files: [UploadFile]) {
         let tokens = page.addDraftFiles(files)
@@ -767,14 +797,24 @@ struct TerminalPage: View {
                                 if let thumbnail = d.thumbnail {
                                     Image(uiImage: thumbnail).resizable().scaledToFill()
                                 } else {
-                                    Image(systemName: "doc").font(.system(size: 18)).foregroundStyle(Theme.ink.opacity(0.7))
+                                    Image(systemName: d.isFolder ? "folder" : d.macPath != nil ? FileIcon.symbol(for: d.name) : "doc").font(.system(size: 18)).foregroundStyle(Theme.ink.opacity(0.7))
                                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 }
                             }
                             .frame(width: 48, height: 48)
                             .clipped()
-                            .overlay(Rectangle().strokeBorder(Theme.line, lineWidth: 1))
-                            Text(d.isImage ? "#\(d.number)" : "#\(d.number) \(d.name)").mono(10).foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: 96, alignment: .leading)
+                            .overlay(Rectangle().strokeBorder(d.sensitive ? Theme.waiting : Theme.line, lineWidth: 1))
+                            // A file of the Mac's: `on Mac` (not sent, its path goes); one that may hold a password, the
+                            // amber mark (docs/files-v0.md §4).
+                            HStack(spacing: 3) {
+                                if d.sensitive {
+                                    LookGlyph(glyph: "!", symbol: "exclamationmark.triangle.fill", size: 10, weight: .bold, scale: 0.95).foregroundStyle(Theme.waiting)
+                                        .accessibilityLabel("可能含有密码或密钥")
+                                }
+                                Text(d.isImage ? "#\(d.number)" : "#\(d.number) \(d.name)").mono(10).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            .frame(maxWidth: 96, alignment: .leading)
+                            if d.macPath != nil { Text("on Mac").mono(9).foregroundStyle(.tertiary) }
                         }
                         Button {
                             reply = TerminalDraft.remove(d.token, from: reply)

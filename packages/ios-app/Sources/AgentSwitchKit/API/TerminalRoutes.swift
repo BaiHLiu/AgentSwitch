@@ -15,11 +15,15 @@ private struct GoneReply: Decodable {
 }
 private struct InputBody: Encodable { let text: String; let submit: Bool; let seal: Bool; let attachments: [TerminalAttachmentRef]? }
 
-/// A staged file (`upload`) and the placeholder that says where it goes in the reply (docs/terminal-v0.md §4).
+/// A file for the reply and the placeholder that says where it goes in it (docs/terminal-v0.md §4): one staged from the
+/// phone (`upload`), or one on the Mac by where it is (`path`, from the Files tab, docs/files-v0.md §5) — not copied, its
+/// path typed as a terminal types a dropped file.
 public struct TerminalAttachmentRef: Encodable, Sendable, Equatable {
     public let token: String
-    public let upload: String
-    public init(token: String, upload: String) { self.token = token; self.upload = upload }
+    public let upload: String?
+    public let path: String?
+    public init(token: String, upload: String) { self.token = token; self.upload = upload; self.path = nil }
+    public init(token: String, path: String) { self.token = token; self.upload = nil; self.path = path }
 }
 private struct CommandList: Decodable { let commands: [SlashCommand] }
 private struct ModelBody: Encodable { let model: String }

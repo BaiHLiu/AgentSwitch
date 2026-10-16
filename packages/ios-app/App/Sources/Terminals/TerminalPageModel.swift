@@ -431,10 +431,12 @@ final class TerminalPageModel {
         userActed()
         let files = draftFiles.filter { text.contains($0.token) }
         do {
-            var refs: [TerminalAttachmentRef] = []
-            if !files.isEmpty {
-                let staged = try await api.upload(files.map(\.file))
-                refs = zip(files, staged).map { TerminalAttachmentRef(token: $0.token, upload: $1.id) }
+            // The phone's own files are sent first; the Mac's are named by where they are (docs/files-v0.md §5).
+            var refs: [TerminalAttachmentRef] = files.compactMap { f in f.macPath.map { TerminalAttachmentRef(token: f.token, path: $0) } }
+            let sent = files.filter { $0.file != nil }
+            if !sent.isEmpty {
+                let staged = try await api.upload(sent.compactMap(\.file))
+                refs += zip(sent, staged).map { TerminalAttachmentRef(token: $0.token, upload: $1.id) }
             }
             let result = try await api.sendTerminalInput(id, text: text, sealed: sealed, attachments: refs)
             draftFiles = []
@@ -503,7 +505,8 @@ final class TerminalPageModel {
     // MARK: files in the reply
 
     /// A picture or file for the next reply (docs/terminal-v0.md §4): it stands in the reply box as its placeholder,
-    /// where the user put it, and goes there when the reply is sent — as Claude Code shows `[Image #1]`.
+    /// where the user put it, and goes there when the reply is sent — as Claude Code shows `[Image #1]`. One from the
+    /// phone is sent with the reply (`file`); one of the Mac's, picked in Files, is named by where it is (`macPath`).
     struct DraftFile: Identifiable, Equatable {
         let id = UUID()
         let token: String
@@ -511,7 +514,11 @@ final class TerminalPageModel {
         let isImage: Bool
         let name: String
         let thumbnail: UIImage?
-        let file: UploadFile
+        var file: UploadFile? = nil
+        var macPath: String? = nil
+        var isFolder = false
+        /// The Mac thinks it may hold a password: its chip is marked.
+        var sensitive = false
     }
 
     /// The files of the reply being written, in the order they were added.
@@ -528,6 +535,19 @@ final class TerminalPageModel {
             let token = TerminalDraft.token(image: image, number: number)
             let thumbnail = image ? UIImage(data: prepared.data)?.preparingThumbnail(of: CGSize(width: 96, height: 96)) : nil
             draftFiles.append(DraftFile(token: token, number: number, isImage: image, name: prepared.name, thumbnail: thumbnail, file: prepared))
+            tokens.append(token)
+        }
+        return tokens
+    }
+
+    /// Files and folders of the Mac's, picked in Files (docs/files-v0.md §5): not copied, their paths go to the agent;
+    /// their placeholders, to put in the box. One already in the reply is not added twice.
+    func addMacFiles(_ picks: [MacPick]) -> [String] {
+        var tokens: [String] = []
+        for pick in picks where !draftFiles.contains(where: { $0.macPath == pick.path }) {
+            let number = (draftFiles.map(\.number).max() ?? 0) + 1
+            let token = TerminalDraft.token(image: false, number: number)
+            draftFiles.append(DraftFile(token: token, number: number, isImage: false, name: pick.name, thumbnail: nil, macPath: pick.path, isFolder: pick.isFolder, sensitive: pick.sensitive))
             tokens.append(token)
         }
         return tokens

@@ -276,6 +276,8 @@ struct TerminalsTab: View {
                 ForEach(Array(f.terminals.enumerated()), id: \.element.id) { i, t in
                     Button { path.append(TerminalRoute.terminal(t)) } label: { terminalRow(t, last: i == rows - 1, depth: depth) }
                         .buttonStyle(.plain)
+                        // Its folder on the Files tab (docs/files-v0.md §5).
+                        .contextMenu { Button("Show in Files", systemImage: "folder") { model.showInFiles(t.workdir) } }
                         .modifier(stepIn(at + 1 + i, within: within))
                     // Its sub-agents, one level under it; a tap opens the terminal.
                     if t.isRunning {

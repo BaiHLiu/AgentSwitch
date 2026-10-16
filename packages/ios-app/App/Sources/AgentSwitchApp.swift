@@ -17,7 +17,8 @@ struct AgentSwitchApp: App {
         // terminalslash|terminalclose|terminalmenu|terminaldelete|terminalsearch|terminalquestion|terminallink|newterminal|newterminalbypass|
         // browser|browserpage|browsertook|browserfile|browserlocal|browserdenied|browsernew|browserclose|browserzoom|
         // browserzoomwatch|linkedpage|proxies|clash|clashservice|clashrules|clashcheck|clashnodes|clashtext|clashsource|
-        // proxybrowser|proxyprofile`.
+        // proxybrowser|proxyprofile|files|fileshome|filesopen|filespreview|filesimage|filesselect|fileschoose|filessensitive|
+        // filesscoped|filessheet|filesreply`.
         if let hosts = UserDefaults.standard.string(forKey: "tlsProbe"), let pin = UserDefaults.standard.string(forKey: "tlsProbePin") {
             TLSProbe.run(hosts: hosts.split(separator: ",").map(String.init), pin: pin)
         }
@@ -42,6 +43,18 @@ struct AgentSwitchApp: App {
                  "simple", "simplebusy", "simplecompact", "simpledaybreak", "simpledaybreakclash", "simpleidle", "simpleeffort", "simplepaste", "simplestep", "simplesuggest", "simplequestion", "simpleprompt", "simplechanges":
                 model.tab = .terminals; model.openTerminalRequest = "a1b2c3d4"
             case "newterminal", "newterminalbypass", "newterminalprofile": model.tab = .terminals; model.openTerminalRequest = "new"
+            // The Files tab (docs/files-v0.md §5) on the made-up disk (DemoFiles): its pages in FilesTab.demo.
+            case "files", "filesopen", "filespreview", "filesimage", "filesselect", "fileschoose", "filessensitive":
+                model.tab = .files; model.files.openRequest = DemoFiles.project
+            case "fileshome", "filesscoped": model.tab = .files; model.files.openRequest = DemoFiles.home
+            // `+` › Files on Mac over the terminal; the Mac's files in its reply box.
+            case "filessheet": model.tab = .terminals; model.openTerminalRequest = "a1b2c3d4"
+            case "filesreply":
+                // As the Files tab hands them over, to a reply begun before (kept as a draft is).
+                model.tab = .terminals; model.openTerminalRequest = "a1b2c3d4"
+                ReplyDrafts.shared.text["a1b2c3d4"] = "对照一下 "
+                model.files.handoff = .init(terminal: "a1b2c3d4", picks: [MacPick(path: "\(DemoFiles.project)/src/app.ts", isFolder: false),
+                                                                          MacPick(path: "\(DemoFiles.project)/.env", isFolder: false, sensitive: true)])
             case let s? where s.hasPrefix("browser"): model.tab = .browser; model.openBrowserRequest = DemoBrowser.openRequest(s)
             // A link tapped on a terminal's screen: its page over the terminal, `Done` back to it.
             case "linkedpage":
