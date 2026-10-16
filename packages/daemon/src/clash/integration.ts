@@ -5,7 +5,7 @@
 
 import { createHash } from "node:crypto";
 import { stringify } from "yaml";
-import { buildConfig, chosen, CLASH_SERVICES, CLASH_TEMPLATES, defaultGroup, DIRECT_SET, dnsSection, dnsText, groupNames, groupsIn, nodeSet, RULE_SETS, ruleSet, running, SERVICE, templateRules, VERGE_UPDATE_HOURS, type ClashService, type ClashSettings, type ClashTemplate } from "./build.js";
+import { buildConfig, chosen, CLASH_SERVICES, CLASH_TEMPLATES, defaultGroup, DIRECT_SET, directGroup, dnsSection, dnsText, groupNames, groupsIn, nodeSet, RULE_SETS, ruleSet, running, SERVICE, templateRules, VERGE_UPDATE_HOURS, type ClashService, type ClashSettings, type ClashTemplate } from "./build.js";
 import { rulesFrom } from "./rules.js";
 import { observe, type CheckDeps, type Observed } from "./check.js";
 import { ClashController, type ClashStatus } from "./controller.js";
@@ -185,12 +185,16 @@ export class ClashIntegration {
       ...settings.direct.slice(0, 8).map((address) => ({ id: `direct:${address}`, title: address, host: address, port: ports.get(address.toLowerCase()) ?? HTTPS, expect: { kind: "direct" as const } })),
       { id: "other", title: "Everything Else", host: "www.google.com", expect: null },
     ];
+    const via = directGroup(document);
     const rows = await Promise.all(wanted.map(async ({ far, port: at, ...row }): Promise<ClashCheckRow> => {
       const observed = await observe(deps, row.host, at ?? HTTPS, far === true);
       // A `Go Direct` address need not answer on the port tried (a proxy server has its own): nothing seen says nothing.
       const ok = row.expect === null || (at !== undefined && observed.outcome === "unknown") ? null
         : row.expect.kind === "group" ? observed.outcome === "proxied" && observed.path[0] === row.expect.group
-        : row.expect.kind === "direct" ? observed.outcome === "direct" : observed.outcome === "rejected";
+        // The domestic template goes by the subscription's own group for what goes direct, where it has one: through
+        // that group is as its rules say, whatever the group is set to. A `Go Direct` address goes direct itself.
+        : row.expect.kind === "direct" ? observed.outcome === "direct" || (via !== null && !row.id.startsWith("direct:") && observed.path[0] === via)
+        : observed.outcome === "rejected";
       return { ...row, observed, ok };
     }));
     return { rows };

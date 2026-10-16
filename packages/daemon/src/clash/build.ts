@@ -169,8 +169,10 @@ export function buildConfig(document: Record<string, unknown>, nodes: readonly S
     first.push(`RULE-SET,${set},${names.group}`);
   }
   // The domestic template's names and processes: decided without a lookup (`no-resolve`: an address rule in it
-  // matches an address as given, never a name's).
-  first.push(`RULE-SET,${DOMESTIC_SET},DIRECT,no-resolve`);
+  // matches an address as given, never a name's). To the subscription's own group for what goes direct where it has
+  // one (`🎯 直连`): switched to a proxy there, this goes with the rest (2026-10-16, §7.10).
+  const direct = directGroup(config) ?? "DIRECT";
+  first.push(`RULE-SET,${DOMESTIC_SET},${direct},no-resolve`);
   // The node sets it fetched by link are fetched from AgentSwitch instead: one place asks the subscription service,
   // and what it brings back the core can be told to take at once.
   const own = record(config["proxy-providers"]);
@@ -183,8 +185,6 @@ export function buildConfig(document: Record<string, unknown>, nodes: readonly S
   config["proxy-groups"] = [...front, ...groups];
   if (Object.keys(own).length || Object.keys(sets).length) config["proxy-providers"] = { ...own, ...sets };
   config["rule-providers"] = { ...record(config["rule-providers"]), ...ruleSets };
-  // Blocking, then what needs a lookup: after everything of the subscription's that claims traffic, before the rules
-  // it ends on (`GEOIP…`, `MATCH`) — where the user's own file had them.
   // The subscription's own rules for a service AgentSwitch has nodes for send that traffic to AgentSwitch's group too,
   // where they stand: its lists are often longer than AgentSwitch's (sign-in, the human check, voice), and what they
   // caught went out by the subscription's own group (`🤖 AI`) — one service by two ways out (2026-10-16, user: 代理的
@@ -194,9 +194,15 @@ export function buildConfig(document: Record<string, unknown>, nodes: readonly S
     const group = service && decides[service];
     return group ? target(rule as string, group) : rule;
   });
-  let end = theirs.length;
-  while (end > 0 && typeof theirs[end - 1] === "string" && /^(MATCH|GEOIP)\s*,/i.test((theirs[end - 1] as string).trim())) end -= 1;
-  config.rules = [...first, ...theirs.slice(0, end), `RULE-SET,${BLOCK_SET},REJECT`, `RULE-SET,${DOMESTIC_LOOKUP_SET},DIRECT`, ...theirs.slice(end)];
+  // Blocking after everything of the subscription's that claims a kind of traffic, before the broad rules it ends on
+  // (the lists of everything abroad, `GEOIP`, `MATCH`): there it meets what is left. What needs a lookup as late as it
+  // can be, just before the first of those that needs one — where the user's own file had them (§7.7). A converted
+  // subscription ends on `gfw`, `proxy`, `cncidr`, `GEOIP,CN`, `tld-not-cn`, `MATCH`: blocking put before only the last
+  // of them met almost nothing (§7.10).
+  const broad = broadFrom(theirs, config);
+  let lookup = broad;
+  while (lookup < theirs.length && !looksUpRule(theirs[lookup], config)) lookup += 1;
+  config.rules = [...first, ...theirs.slice(0, broad), `RULE-SET,${BLOCK_SET},REJECT`, ...theirs.slice(broad, lookup), `RULE-SET,${DOMESTIC_LOOKUP_SET},${direct}`, ...theirs.slice(lookup)];
   return config;
 }
 
@@ -217,6 +223,51 @@ export function running(expect: { readonly enabled: Readonly<Record<ClashService
   return { active, current: active && RULE_SETS.every((name) => name in status.ruleSets)
     && CLASH_SERVICES.every((service) => expect.enabled[service] === (SERVICE[service].set in status.nodeSets))
     && expect.groups.every((name) => have.has(name)) };
+}
+
+/** The subscription's own group for what goes direct: the hand-picked one its `GEOIP,CN` sends to, where that group
+ *  offers `DIRECT` (a converted subscription's `🎯 直连`). Null for none: what goes direct goes to `DIRECT` itself. */
+export function directGroup(config: Record<string, unknown>): string | null {
+  const rules = (Array.isArray(config.rules) ? config.rules : []).filter((r): r is string => typeof r === "string");
+  const geoip = rules.map((r) => r.split(",").map((p) => p.trim())).find((p) => p[0]?.toUpperCase() === "GEOIP" && p[1]?.toUpperCase() === "CN");
+  const name = geoip?.[2];
+  const group = name ? groupsOf(config).find((g) => g.name === name) : undefined;
+  return group && group.type === "select" && Array.isArray(group.proxies) && group.proxies.includes("DIRECT") ? name! : null;
+}
+
+/** The words that name the broad lists a subscription ends on: everything abroad, everything at home. */
+const BROAD = new Set(["gfw", "greatfire", "proxy", "proxylite", "cncidr", "cnip", "chnip", "chinaip", "china", "cn", "tld", "geolocation", "global", "lancidr"]);
+const BROAD_SITE = /^(?:cn|!cn|private|gfw|greatfire|geolocation-!?cn|tld-!?cn)$/i;
+
+/** Where the broad rules the subscription ends on begin: counted back from its end, `MATCH`, `GEOIP`, the broad
+ *  `GEOSITE`s and rule sets of the broad lists. Its length when it ends on none. */
+function broadFrom(rules: readonly unknown[], config: Record<string, unknown>): number {
+  let i = rules.length;
+  while (i > 0 && broadRule(rules[i - 1], config)) i -= 1;
+  return i;
+}
+
+function broadRule(rule: unknown, config: Record<string, unknown>): boolean {
+  if (typeof rule !== "string" || rule.includes("(")) return false;
+  const [kind, value = ""] = rule.split(",").map((p) => p.trim());
+  switch (kind?.toUpperCase()) {
+    case "MATCH": case "FINAL": case "GEOIP": return true;
+    case "GEOSITE": return BROAD_SITE.test(value);
+    case "RULE-SET": return [value, providerFile(record(record(config["rule-providers"])[value]))].flatMap((n) => n.toLowerCase().split(/[^a-z0-9]+/)).some((w) => BROAD.has(w));
+    default: return false;
+  }
+}
+
+/** A rule that looks the name up to decide (`GEOIP`, an address rule or a rule set of addresses without
+ *  `no-resolve`), or the one that takes everything left (`MATCH`). */
+function looksUpRule(rule: unknown, config: Record<string, unknown>): boolean {
+  if (typeof rule !== "string" || rule.includes("(")) return false;
+  const parts = rule.split(",").map((p) => p.trim());
+  const kind = parts[0]?.toUpperCase() ?? "";
+  if (kind === "MATCH" || kind === "FINAL") return true;
+  if (parts.some((p) => /^no-resolve$/i.test(p))) return false;
+  if (kind === "GEOIP" || kind === "IP-CIDR" || kind === "IP-CIDR6" || kind === "IP-ASN") return true;
+  return kind === "RULE-SET" && record(record(config["rule-providers"])[parts[1] ?? ""]).behavior === "ipcidr";
 }
 
 /** The service a rule of the subscription's is for: a rule set it names after one service (by the set's name, or by

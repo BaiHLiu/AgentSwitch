@@ -320,11 +320,18 @@ Clash Verge 没有给外面“更新这个订阅”的入口：它认的链接�
 - **不改的**：同时点名几家的表，例如 `GEOSITE,category-ai-!cn`，或文件名里 OpenAI、Claude 都有的，照原样，分不开；AgentSwitch 自己的表照样在它们前面。`🤖 AI` 组留着，管 Gemini 这些 AgentSwitch 不管的。
 - **生效**：这是订阅正文的变化，要 Clash Verge 取一次。它每小时自己会来取；页面在那之前写“不是最新”。
 
-**这份订阅和规则模版的重叠（没改，等用户定）**：
+**这份订阅和规则模版的重叠（2026-10-16 已改，用户：把那几个bug都修了）**：
 
-- `Block Ads & Trackers`（`as-block`）排在订阅自己的规则之后、它收尾的 `MATCH` 之前（§7.7）。这份订阅收尾前还有 `cncidr`、`GEOIP,CN`、`tld-not-cn`，最后一条把所有不是 `.cn` 的都送进 `🌐 代理`。所以拦截模版几乎碰不到什么；订阅自己在前面（第 8 条）有一张 `reject`。
-- `Domestic & Local Direct` 的 `as-domestic` 在最前面，把国内的名字直接送 `DIRECT`，排在订阅的 `🎯 直连` 组前面。在 Clash Verge 里把 `🎯 直连` 切到代理，这些名字不受影响。`as-domestic-ip` 排在 `GEOIP,CN,🎯 直连` 后面，也就不再起作用。
-- Clash Verge 里 AI 有两处可选：`Claude`、`OpenAI` 管这两家，`🤖 AI` 管其余的。
+- **拦截模版排得太后**：`Block Ads & Trackers`（`as-block`）原来排在订阅自己的规则之后、它收尾的 `GEOIP`、`MATCH` 之前（§7.7）。这份订阅收尾前还有 `gfw`、`proxy`、`cncidr`、`tld-not-cn`，最后一条把所有不是 `.cn` 的都送进 `🌐 代理`，拦截模版几乎碰不到什么。
+  - 改为：从订阅的末尾往前数，`MATCH`、`GEOIP`、宽的 `GEOSITE`（`cn`、`geolocation-!cn` 这类）、宽的规则集（名字或文件名里有 `gfw`、`proxy`、`cncidr`、`china`、`cn`、`tld` 这类词的）都算“收尾的宽规则”，拦截排在它们前面。
+  - `as-domestic-ip` 仍尽量靠后：排在收尾那几条里第一条要查 IP 的前面（`GEOIP`、不带 `no-resolve` 的地址规则或地址规则集）。
+  - 你这份订阅现在是 `… scholar, as-block, gfw, proxy, cncidr, as-domestic-ip, GEOIP,CN, tld-not-cn, MATCH`。只以 `GEOIP,CN`、`MATCH` 收尾的老式订阅，位置和以前一样。
+- **国内模版绕过了订阅自己的直连组**：`as-domestic` 在最前面，原来直接送 `DIRECT`，在 Clash Verge 里把 `🎯 直连` 切到代理，这些名字不受影响。
+  - 改为：订阅有自己的直连组时，两条国内规则都送进它。直连组指订阅的 `GEOIP,CN` 指向的那个手选组，并且组里有 `DIRECT`。
+  - 没有这样的组时照旧送 `DIRECT`。
+  - `Go Direct`（`as-direct`，配置的代理服务器）始终直接 `DIRECT`，不能被切走。
+  - 路由检查跟着改：国内那两行经过这个组就算照规则走了，组里选的是什么都一样。
+- Clash Verge 里 AI 有两处可选：`Claude`、`OpenAI` 管这两家，`🤖 AI` 管其余的。这一处不是错，没改。
 
 **没做的验证**：
 

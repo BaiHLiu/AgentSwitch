@@ -12,7 +12,7 @@ import { parse } from "yaml";
 import { mountClash } from "../src/api/clash.js";
 import { LocalAuth } from "../src/api/localAuth.js";
 import type { ApiDeps } from "../src/api/shared.js";
-import { BUILT_IN, buildSubscription, defaultGroup, directRule, dnsSection, dnsText, EMPTY_SETTINGS, groupNames, nodeSet, RULE_SETS, ruleSet, running, type ClashSettings } from "../src/clash/build.js";
+import { BUILT_IN, buildSubscription, defaultGroup, directGroup, directRule, dnsSection, dnsText, EMPTY_SETTINGS, groupNames, nodeSet, RULE_SETS, ruleSet, running, type ClashSettings } from "../src/clash/build.js";
 import { looksUp, ruleLine, rulesFrom } from "../src/clash/rules.js";
 import { observe, parseTrace } from "../src/clash/check.js";
 import { ClashController } from "../src/clash/controller.js";
@@ -166,6 +166,36 @@ rules:
     expect(both.rules.filter((r: string) => r.startsWith("RULE-SET,claude,"))).toEqual(["RULE-SET,claude,Claude"]);
     // Nothing chosen: the subscription's rules as written.
     expect(made(source, plain, [], {}).rules.filter((r: string) => !r.includes(",as-"))).toEqual((parse(source) as { rules: string[] }).rules);
+  });
+
+  it("puts blocking before a converted subscription's broad rules, and sends the domestic template by its own group for what goes direct", () => {
+    // As subscription converters end theirs (2026-10-16, the user's): every list abroad, the addresses at home, GEOIP,
+    // every name not under .cn, MATCH; and a group for what goes direct that the person can switch to a proxy.
+    const lists = "https://cdn.example/rules";
+    const set = (name: string, behavior = "domain") => `  ${name}: { type: http, behavior: ${behavior}, url: "${lists}/${name}.list", path: ./ruleset/${name}.yaml, interval: 86400 }`;
+    const source = `${PLAIN.replace("rules:\n  - DOMAIN-SUFFIX,claude.ai,Proxy\n  - MATCH,Proxy\n", "")}  - { name: 🎯 直连, type: select, proxies: [DIRECT, Proxy] }
+rule-providers:
+${["private", "scholar", "gfw", "proxy", "tld-not-cn"].map((n) => set(n)).join("\n")}
+${set("cncidr", "ipcidr")}
+rules:
+  - RULE-SET,private,🎯 直连
+  - RULE-SET,scholar,Proxy
+  - RULE-SET,gfw,Proxy
+  - RULE-SET,proxy,Proxy
+  - RULE-SET,cncidr,🎯 直连,no-resolve
+  - GEOIP,CN,🎯 直连
+  - RULE-SET,tld-not-cn,Proxy
+  - MATCH,Proxy
+`;
+    const plain: SourceNode[] = ["HK 01", "SG 01"].map((name) => ({ name, from: null, definition: node(name) }));
+    const doc = parse(source) as Record<string, unknown>;
+    expect(directGroup(doc)).toBe("🎯 直连");
+    expect(made(source, plain, [], {}).rules).toEqual(["RULE-SET,as-direct,DIRECT", "RULE-SET,as-domestic,🎯 直连,no-resolve",
+      "RULE-SET,private,🎯 直连", "RULE-SET,scholar,Proxy", "RULE-SET,as-block,REJECT", "RULE-SET,gfw,Proxy", "RULE-SET,proxy,Proxy",
+      "RULE-SET,cncidr,🎯 直连,no-resolve", "RULE-SET,as-domestic-ip,🎯 直连", "GEOIP,CN,🎯 直连", "RULE-SET,tld-not-cn,Proxy", "MATCH,Proxy"]);
+    // A subscription without such a group: what goes direct goes to DIRECT itself, as before.
+    expect(directGroup(parse(OWN) as Record<string, unknown>)).toBeNull();
+    expect(made(PLAIN, plain, [], {}).rules).toContain("RULE-SET,as-domestic,DIRECT,no-resolve");
   });
 
   it("writes a node set in the chosen order with all a node needs, and no empty one", () => {
