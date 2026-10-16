@@ -75,7 +75,10 @@ import { mountNodes } from "./api/nodes.js";
 import { NodeBook, NODES_DIR } from "./nodes/book.js";
 import { Dialer } from "./nodes/dial.js";
 import { Nodes } from "./nodes/nodes.js";
-import { loadMesh } from "./nodes/settings.js";
+import { loadMesh, scopeOf, setScope } from "./nodes/settings.js";
+import { FileAudit, type FileAccess } from "./api/browse.js";
+import { DEFAULT_SCOPE } from "./files/browse.js";
+import { Thumbnails } from "./files/thumbnails.js";
 import { vergeDir } from "./clash/verge.js";
 import { createRemoteApp } from "./remote/app.js";
 import { DEFAULT_REMOTE_PORT, macName, remoteRuntime, type RemoteRuntime } from "./remote/runtime.js";
@@ -463,7 +466,13 @@ export function buildDaemon(cfg: DaemonConfig, overrides: BuildOverrides = {}): 
     proxyPorts: () => new Map(Object.values(profiles.all()).flatMap((a) => a.profiles).flatMap((p) => { const place = p.proxy ? proxyPlace(p.proxy.server) : null; return place ? [[place.host.toLowerCase(), place.port] as const] : []; })) });
   // The nodes are made after the API (they need the remote listener): what they heard is asked through this.
   let nodesMade: Nodes | null = null;
-  const apiDeps: ApiDeps = { liveElsewhere: () => nodesMade?.lives() ?? [], remoteKeyboard: () => loadMesh(cfg.home).keyboard, exits, profiles, sessionKeys, apiKeys, ...(profileBrowsers ? { profileBrowsers } : {}), clash, ...(browser ? { browser } : {}), ...(engineKit ? { engineKit } : {}), ...(taskFolderRoot ? { taskFolderRoot } : {}), ...(sessions ? { sessions } : {}), ...(terminals ? { terminals } : {}), ...(sealer ? { sealer } : {}), store, bus, engine, targets, quota, routingLog, routeDeps, contextPath, memoryPath, platformMemoryPath, policyPath, workRoot, cwdRules: defaultCwdRules(process.env, cfg.home), home: cfg.home, ...(cfg.appBundle ? { appBundle: cfg.appBundle } : {}), uploads, artifactsDir, extensions, version: VERSION, models: { path: modelsPath, base: baseTargets }, ...(overrides.sseHeartbeatMs ? { sseHeartbeatMs: overrides.sseHeartbeatMs } : {}) };
+  // The Files column (docs/files-v0.md §7): what of this node's disk its screens and its paired devices may read.
+  const thumbnails = new Thumbnails();
+  const fileAccess: FileAccess = {
+    home: process.env.HOME ?? homedir(), denied: prot, thumbnails, audit: new FileAudit(join(cfg.home, "files", "audit.jsonl")),
+    remote: () => { const m = loadMesh(cfg.home); return { on: m.files, scopeOf: (id: string) => m.scopes[id] ?? DEFAULT_SCOPE }; },
+  };
+  const apiDeps: ApiDeps = { liveElsewhere: () => nodesMade?.lives() ?? [], remoteKeyboard: () => loadMesh(cfg.home).keyboard, fileAccess, exits, profiles, sessionKeys, apiKeys, ...(profileBrowsers ? { profileBrowsers } : {}), clash, ...(browser ? { browser } : {}), ...(engineKit ? { engineKit } : {}), ...(taskFolderRoot ? { taskFolderRoot } : {}), ...(sessions ? { sessions } : {}), ...(terminals ? { terminals } : {}), ...(sealer ? { sealer } : {}), store, bus, engine, targets, quota, routingLog, routeDeps, contextPath, memoryPath, platformMemoryPath, policyPath, workRoot, cwdRules: defaultCwdRules(process.env, cfg.home), home: cfg.home, ...(cfg.appBundle ? { appBundle: cfg.appBundle } : {}), uploads, artifactsDir, extensions, version: VERSION, models: { path: modelsPath, base: baseTargets }, ...(overrides.sseHeartbeatMs ? { sseHeartbeatMs: overrides.sseHeartbeatMs } : {}) };
   // assistant-v0 §1.1: the router as the user's assistant, on the router model (a text-only agent); echo mode has none
   // and every message becomes a task. Task creation is POST /tasks's second half (admitSealed).
   const assistantRouter = overrides.assistant ?? (summarizer ? oracle("assistant") : undefined);
@@ -481,14 +490,15 @@ export function buildDaemon(cfg: DaemonConfig, overrides: BuildOverrides = {}): 
     info: () => ({
       name: remote?.name ?? macName(), kind: process.platform === "darwin" ? "mac" : "linux", version: VERSION, home: process.env.HOME ?? homedir(),
       has: ["dispatch", ...(terminalHost ? ["terminals", "profiles"] : []), ...(browser ? ["browser"] : []), ...(process.platform === "darwin" && existsSync(vergeDir()) ? ["clash"] : []),
-        ...(cfg.appBundle ? ["update"] : []), ...(loadMesh(cfg.home).keyboard ? ["keyboard"] : [])],
+        ...(cfg.appBundle ? ["update"] : []), ...(loadMesh(cfg.home).keyboard ? ["keyboard"] : []), "files"],
     }),
   });
   nodesMade = nodes;
-  const app = mountNodes(mountRemoteAdmin(new Hono().route("/", api), { store, remote, onRevoke: (id) => nodes.inboundGone(id) }), { nodes, home: cfg.home });
+  const fileScopes = { get: (id: string) => scopeOf(cfg.home, id), set: (id: string, scope: Parameters<typeof setScope>[2]) => setScope(cfg.home, id, scope) };
+  const app = mountNodes(mountRemoteAdmin(new Hono().route("/", api), { store, remote, onRevoke: (id) => nodes.inboundGone(id), fileScopes }), { nodes, home: cfg.home });
   return { app, api, remote, nodes, engine, store, quota, targets, clash, terminals: terminalHost, sessions: sessions ?? null, browser: browser?.host ?? null, setLocalPort: (port) => { localPort = port; },
     stopBrowser: async () => { await profileBrowsers?.stop(); await browser?.agents.shutdown(); await browser?.host.shutdown(); await browser?.stop(); },
-    close: () => { nodes.close(); terminalHost?.closeAll(); void profileBrowsers?.stop(); void exits.stop(); void browser?.agents.shutdown(); void browser?.host.shutdown(); reporter.stop(); store.close(); routingLog.close(); conversation.close(); } };
+    close: () => { nodes.close(); thumbnails.close(); terminalHost?.closeAll(); void profileBrowsers?.stop(); void exits.stop(); void browser?.agents.shutdown(); void browser?.host.shutdown(); reporter.stop(); store.close(); routingLog.close(); conversation.close(); } };
 }
 
 /** The planner as a text-only Router (loop-v0 §6): the router's pick when it named a usable one, else targets.yaml

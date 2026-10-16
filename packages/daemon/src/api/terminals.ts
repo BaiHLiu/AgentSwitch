@@ -11,6 +11,8 @@ import { z } from "zod";
 import { remoteCaller } from "../core/caller.js";
 import { SSE_HEARTBEAT_MS } from "../core/limits.js";
 import type { TerminalAudit } from "../terminals/audit.js";
+import { attachable } from "../files/browse.js";
+import { viewerFor } from "./browse.js";
 import type { ElsewhereCheck } from "../terminals/elsewhere.js";
 import { checkPicks, MAX_OTHER, PERMISSION_MODES, TERMINAL_HARNESSES, TerminalError, type QuestionPick, type TerminalEvent, type TerminalHarness, type TerminalHost, CLAUDE_MODES } from "../terminals/host.js";
 import type { TerminalStyle } from "../terminals/style.js";
@@ -567,12 +569,25 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
     const byToken = new Map(body.data.attachments.map((a) => [a.token, a]));
     const pieces = byToken.size ? text.split(/(\[(?:Image|File) #\d{1,3}\])/) : [text];
     const used = [...new Set(pieces.filter((p) => byToken.has(p)))];
-    // A file by its place on this Mac is the Mac's own screens' to name (a phone's files are sent, never pointed at),
-    // and it has to be there (a file, or a folder: a terminal types a dragged folder's path too).
+    // A file by its place here has to be there (a file, or a folder: a terminal types a dragged folder's path too). This
+    // node's own screens may name any but AgentSwitch's own credential places; a paired device one its Files column
+    // could give it (docs/files-v0.md §7.1: the switch, its scope), and none without the Files column.
     const local = used.filter((t) => byToken.get(t)!.path !== undefined);
-    if (local.length && remoteCaller(c.env)) return c.json({ error: "attachments: a path is this Mac's own to give" }, 403);
+    if (local.length && remoteCaller(c.env) && !deps.fileAccess) return c.json({ error: "attachments: a path is this Mac's own to give" }, 403);
     const missing = local.find((t) => !existsSync(byToken.get(t)!.path!));
     if (missing) return c.json({ error: `文件不存在：${byToken.get(missing)!.path}` }, 400);
+    if (local.length && deps.fileAccess) {
+      const viewer = viewerFor(deps.fileAccess, c.env);
+      if (viewer === "files-off") return c.json({ error: "此节点不允许配对的设备读取文件。", code: "files-off" }, 403);
+      for (const t of local) {
+        const p = byToken.get(t)!.path!;
+        const why = attachable(p, viewer);
+        if (why === "locked") return c.json({ error: `此处存放 AgentSwitch 的凭据，无法交给 agent：${p}`, code: why }, 403);
+        if (why === "scope") return c.json({ error: `不在这台设备的授权范围内：${p}`, code: why }, 403);
+        if (why === "permission") return c.json({ error: `AgentSwitch 无权访问：${p}`, code: why }, 403);
+        if (why) return c.json({ error: `文件不存在：${p}` }, 400);
+      }
+    }
     const staged = used.filter((t) => byToken.get(t)!.upload !== undefined);
     let moved: { name: string; path: string; size: number }[] = [];
     if (staged.length) {

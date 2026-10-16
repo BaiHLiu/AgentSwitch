@@ -38,7 +38,8 @@ const FILE_STALL_MS = 15_000;
 const FILE_LONGEST_MS = 15 * 60_000;
 
 const AddBody = z.object({ link: z.string().min(1).max(8192), back: z.boolean().optional() });
-const MeshBody = z.object({ keyboard: z.boolean() });
+/** Either switch, or both; what is not named stays as it is. */
+const MeshBody = z.object({ keyboard: z.boolean().optional(), files: z.boolean().optional() }).refine((b) => b.keyboard !== undefined || b.files !== undefined, "keyboard or files");
 
 export type NodesApiDeps = { readonly nodes: Nodes; readonly home: string };
 
@@ -65,12 +66,15 @@ export function mountNodes<A extends Hono>(app: A, deps: NodesApiDeps): A {
   });
 
   // What paired nodes may do here beyond the list's own rules; this node's own to set.
-  app.get("/settings/mesh", (c) => c.json(loadMesh(home)));
+  // The devices' own scopes are told with the devices (`GET /devices`), not here.
+  const switches = () => { const m = loadMesh(home); return { keyboard: m.keyboard, files: m.files }; };
+  app.get("/settings/mesh", (c) => c.json(switches()));
   app.put("/settings/mesh", async (c) => {
     const body = MeshBody.safeParse(await c.req.json().catch(() => ({})));
     if (!body.success) return c.json({ error: issues(body.error) }, 400);
-    saveMesh(home, body.data);
-    return c.json(body.data);
+    const now = loadMesh(home);
+    saveMesh(home, { ...now, ...(body.data.keyboard !== undefined ? { keyboard: body.data.keyboard } : {}), ...(body.data.files !== undefined ? { files: body.data.files } : {}) });
+    return c.json(switches());
   });
 
   app.all("/nodes/:id/*", async (c) => {

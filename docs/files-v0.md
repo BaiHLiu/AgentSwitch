@@ -160,16 +160,17 @@
 
 ### 7.1 接口（草案）
 
-`/files…` 都是 GET、只读，路径一律是绝对路径（`~` 由服务展开）；本机的应用经本地令牌，手机和别的节点经远程表，并受 §7.5 的开关与范围管。
+已做（2026-10-16，daemon `src/files/browse.ts`、`src/api/browse.ts`）。错误一律 `{error: <码>}`：`bad-path`、`not-folder`、`folder` 400，`not-found` 404，`locked`、`scope`、`permission`、`files-off` 403，`too-large` 413。一层的列表带版本（`ETag`），没变时 304。`/files…` 都是 GET、只读，路径一律是绝对路径（`~` 由服务展开）；本机的应用经本地令牌，手机和别的节点经远程表，并受 §7.5 的开关与范围管。
 
 | 接口 | 给什么 |
 |---|---|
 | `GET /files?path=<abs>&hidden=0\|1&limit=2000` | 一层：`{path, parent, home, entries: [{name, kind: dir\|file\|link\|other, size, mtime, hidden, dim?, locked?, link?: {target, kind}}], more, scoped?}`；不给 `path` 时是家目录（范围是 `Selected Folders` 时是第一个授权文件夹）；`scoped: true` 表示这一层只列了通往授权范围的项 |
 | `GET /files/stat?path=<abs>` | 一项：同上的字段，加 `type`（`text` `image` `pdf` `audio` `video` `archive` `binary`，按扩展名和前 8 KB 判断：有 NUL 或不是 UTF-8 就不当文字）、文字的行数（读到 256 KB 为止）、文件夹的项数、`sensitive?: {reason}`（§7.3） |
-| `GET /files/preview?path=<abs>` | 文字：前 64 KB（`{text, truncated, lines}`）；图片：缩略图（Mac 上用系统的 `sips` / Quick Look 缩略图做，长边 512 像素，JPEG）；其他：只给 `stat` |
+| `GET /files/preview?path=<abs>` | 文字的前 64 KB（`{text, truncated, lines?, size}`，切在整字上）；不是文字回 415 `{error: "not-text", type}` |
+| `GET /files/thumbnail?path=<abs>` | 图片的小图：Mac 上用系统的 `sips` 做（长边 512 像素，JPEG），做不了时 5 MB 以内的原图照给；不是图片回 415 |
 | `GET /files/content?path=<abs>` | 原样的字节，支持 `Range`；超过上限（手机 25 MB）回 413。给手机的 Quick Look、别的节点上的文件的 Quick Look 用 |
 | `GET` / `PUT /settings/mesh` | 多一个 `files: boolean`（`Paired Nodes May Read Files`）；只在本机 |
-| `PUT /devices/:id/files` | 这个设备的范围 `{mode: home\|all\|folders\|none, folders?: [abs]}`；`GET /devices` 每项带上它；只在本机 |
+| `PUT /devices/:id/files` | 这个设备的范围 `{mode: home\|all\|folders\|none, folders?: [abs]}`（文件夹按真实位置存，须是在的文件夹）；`GET /devices` 每项带上它（`files`）；存在 `mesh.json`，设备吊销时删掉；只在本机 |
 
 `/terminals/:id/input` 的 `attachments` 多一种 `{path}`：服务检查路径存在、不在禁区、在调用方的范围里，再按占位符输入这个路径（与 `{token, upload}` 搬进附件目录后输入路径，是同一个后半段）。“可能含凭据”的那一问在界面上做，服务不拦：用户确认过的照收。
 
@@ -213,7 +214,7 @@
 - **范围外是什么样**：路径照样每层可点。范围之上的那几层（比如只给了 `~/Projects/lumen` 时的 `/`、`/Users`、`/Users/you`、`~/Projects`）只列通往授权文件夹的那几个，其余不列，底部写“仅显示授权范围内的项目。”。直接请求范围外的路径（`Go to Folder…`、记着的位置）回 403 `{error: "scope"}`，界面写“此文件夹不在 Mac mini 给这台设备的授权范围内。”，`Home` 回到范围里第一个能去的地方。
 - **管到哪**：`/files`、`/files/stat`、`/files/preview`、`/files/content` 和 `{path}` 附件。判断用 `realpath` 之后的路径：范围里的链接指到范围外，按范围外算。
 - **管不到的**（设置里的说明照写）：范围不是沙箱。配对的设备照样能开终端，在终端里让 agent 读别的地方——配对的设备本来就等于能以用户身份在这台 Mac 上跑命令（mesh-v0 §6 第 1 条）。范围管的是文件栏和附件能看到、能交出去的。设置里那一组下面写：“范围只限制其他设备在文件栏中能浏览和附加的文件。配对的设备仍可在终端中让 agent 读取其他位置。”。
-- **谁定**：只在这个节点自己身上定（mesh-v0“各管各的”）：Mac 在设置里；Linux 节点用命令行：`agentswitch devices files <设备> home|all|none|<文件夹>…`、`agentswitch settings files on|off`。设备记录多一个 `files: {mode, folders}`。
+- **谁定**：只在这个节点自己身上定（mesh-v0“各管各的”）：Mac 在设置里；Linux 节点用命令行：`agentswitch devices files <设备> home|all|none|<文件夹>…`、`agentswitch settings files on|off`（第二步）。范围存在 `mesh.json` 的 `scopes` 里，按设备号。
 - 用别的节点时，主窗口文件栏的标题写 `@ Mac mini`，范围是 Mac mini 给这台 Mac 的那一份。
 
 ## 8. 演示页

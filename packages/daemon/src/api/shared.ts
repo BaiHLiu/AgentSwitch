@@ -85,6 +85,9 @@ export type ApiDeps = {
   readonly assistant?: Assistant;
   /** Whether a paired node may send keystrokes as they are (docs/mesh-v0.md §10); absent = no. */
   readonly remoteKeyboard?: () => boolean;
+  /** The Files column's reads of this node's disk (docs/files-v0.md §7); absent = no `/files…`, and a reply's `{path}`
+   *  is this node's own screens' alone. */
+  readonly fileAccess?: import("./browse.js").FileAccess;
 };
 
 /** A request body's issues; an issue on the body itself reads "body: ...". */

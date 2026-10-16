@@ -7,6 +7,7 @@ import { mountBrowserEngine } from "./browserEngine.js";
 import { mountBrowserIdentity } from "./browserIdentity.js";
 import { mountUpdate } from "./update.js";
 import { mountExtensions } from "./extensions.js";
+import { mountBrowse } from "./browse.js";
 import { mountFiles } from "./files.js";
 import { mountLive } from "./live.js";
 import { mountModelSettings } from "./models.js";
@@ -32,6 +33,7 @@ export function createApp(deps: ApiDeps): Hono {
   mountTasks(app, deps);
   mountAssistant(app, deps);
   mountFiles(app, deps);
+  if (deps.fileAccess) mountBrowse(app, deps.fileAccess);
   mountThreads(app, deps);
   mountSessions(app, deps);
   mountTerminals(app, deps);

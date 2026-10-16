@@ -13,6 +13,7 @@ import { ensureLocalToken, LocalAuth } from "../src/api/localAuth.js";
 import { buildDaemon, listenLocal, type DaemonConfig } from "../src/daemon.js";
 import { remoteAllowed } from "../src/remote/routes.js";
 import { markRemote } from "../src/core/caller.js";
+import { registerDevice } from "../src/remote/devices.js";
 import { folderFiles, matchFiles } from "../src/terminals/files.js";
 import { answerText, askQuestions, checkPicks, cleanTitle, meaningfulTitle, permissionSummary, piTool, safeCut, TerminalHost, terminalName, type Launcher, type TerminalEvent, compactingOnScreen, workingOnScreen, choicesOnScreen, printedSince, commandRows, inputEmpty, screenRows, modeOnScreen, suggestionOnScreen, type ScreenRow } from "../src/terminals/host.js";
 import { DEFAULT_STYLE, parseItermFont, styleFromItermProfile } from "../src/terminals/style.js";
@@ -1593,14 +1594,63 @@ describe("terminals over HTTP", () => {
     // Until 2026-10-08 this went through the sealer (the default); an older phone still says `seal`, which is not read.
     expect(await (await req(`/terminals/${id}/input`, { text: "pw hunter2" })).json()).toEqual({ ok: true, sealed: 0, attached: 0 });
     expect(await (await req(`/terminals/${id}/input`, { text: "again hunter2", seal: true })).json()).toEqual({ ok: true, sealed: 0, attached: 0 });
-    // A phone sends its files; it does not point at the Mac's.
+    // A phone points at the Mac's files only inside its scope (docs/files-v0.md §7.5): its home folder by default,
+    // and this temporary folder is not in it.
     writeFileSync(join(cwd, "notes.txt"), "x");
-    expect((await req(`/terminals/${id}/input`, { text: "看 [File #1]", seal: false, attachments: [{ token: "[File #1]", path: join(cwd, "notes.txt") }] })).status).toBe(403);
+    const outside = await req(`/terminals/${id}/input`, { text: "看 [File #1]", seal: false, attachments: [{ token: "[File #1]", path: join(cwd, "notes.txt") }] });
+    expect(outside.status).toBe(403);
+    expect(await outside.json()).toMatchObject({ code: "scope" });
     await until(() => text(events).includes("got: pw hunter2") && text(events).includes("got: again hunter2"));
     expect(await (await req(`/terminals/${id}/input`, { text: "ls -la", seal: false })).json()).toEqual({ ok: true, sealed: 0, attached: 0 });
     await until(() => text(events).includes("got: ls -la"));
     expect(sealerAsked).toBe(0);
     expect(text(events)).not.toContain(TOKEN);
+  });
+
+  it("a paired device gives a path of this node's in a reply only inside its scope, and only while this node lets paired devices read files (docs/files-v0.md §7.5)", async () => {
+    const home = mkdtempSync(join(tmpdir(), "agentswitch-terminals-"));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "agentswitch-terminal-cwd-")));
+    const cfg: DaemonConfig = { home, targetsPath: TARGETS_PATH, port: 0, router: "echo", executors: "echo", browser: false, quotaTtlMs: 1000, maxTasks: 4, opencodePort: 0, opencodeBinary: "" };
+    const daemon = buildDaemon(cfg, { terminalLauncher: fakeLauncher(() => "http://127.0.0.1:9", false) });
+    closers.push(() => daemon.close());
+    const { device } = registerDevice(daemon.store, { name: "iPhone", platform: "ios" });
+    const phone = markRemote({}, { deviceId: device.id });
+    const json = (method: string, body: unknown) => ({ method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const req = (path: string, body: unknown) => daemon.api.request(path, json("POST", body), phone);
+    const id = ((await (await req("/terminals", { harness: "codex", cwd })).json()) as { terminal: { id: string } }).terminal.id;
+    const events: TerminalEvent[] = [];
+    daemon.terminals!.subscribe(id, null, (e) => events.push(e));
+    await until(() => text(events).includes("fake agent ready"));
+    writeFileSync(join(cwd, "notes.txt"), "x");
+    const give = () => req(`/terminals/${id}/input`, { text: "看 [File #1]", seal: false, attachments: [{ token: "[File #1]", path: join(cwd, "notes.txt") }] });
+    // The device's scope is set on this node (its own listener): this folder only.
+    const set = await daemon.app.request(`/devices/${device.id}/files`, json("PUT", { mode: "folders", folders: [cwd] }));
+    expect(await set.json()).toEqual({ ok: true, files: { mode: "folders", folders: [cwd] } });
+    expect(((await (await daemon.app.request("/devices")).json()) as { id: string; files: unknown }[]).find((d) => d.id === device.id)?.files).toEqual({ mode: "folders", folders: [cwd] });
+    expect(await (await give()).json()).toMatchObject({ ok: true, attached: 1 });
+    await until(() => text(events).includes(`got: 看 ${join(cwd, "notes.txt")}`));
+    // Read through the Files routes as well, by the same scope.
+    expect((await daemon.api.request(`/files?path=${encodeURIComponent(cwd)}`, {}, phone)).status).toBe(200);
+    expect((await daemon.api.request(`/files?path=${encodeURIComponent(tmpdir())}`, {}, phone)).status).toBe(200);
+    expect((await daemon.api.request(`/files/stat?path=${encodeURIComponent(home)}`, {}, phone)).status).toBe(403);
+    // Off on this node: neither.
+    expect(await (await daemon.app.request("/settings/mesh", json("PUT", { files: false }))).json()).toEqual({ keyboard: true, files: false });
+    const off = await give();
+    expect(off.status).toBe(403);
+    expect(await off.json()).toMatchObject({ code: "files-off" });
+    expect((await daemon.api.request(`/files?path=${encodeURIComponent(cwd)}`, {}, phone)).status).toBe(403);
+    // This node's own screens still may, and never AgentSwitch's own credential places.
+    expect((await daemon.api.request(`/files?path=${encodeURIComponent(cwd)}`)).status).toBe(200);
+    writeFileSync(join(home, "local-token"), "t");
+    const locked = await daemon.api.request(`/terminals/${id}/input`, json("POST", { text: "看 [File #1]", seal: false, attachments: [{ token: "[File #1]", path: join(home, "local-token") }] }));
+    expect(locked.status).toBe(403);
+    expect(await locked.json()).toMatchObject({ code: "locked" });
+    // A device removed forgets its scope; a bad scope is refused.
+    expect((await daemon.app.request(`/devices/${device.id}/files`, json("PUT", { mode: "folders", folders: [join(cwd, "notes.txt")] }))).status).toBe(400);
+    expect((await daemon.app.request(`/devices/${device.id}`, { method: "DELETE" })).status).toBe(200);
+    expect((await daemon.app.request(`/devices/${device.id}/files`, json("PUT", { mode: "all" }))).status).toBe(404);
+    expect(remoteAllowed("PUT", `/devices/${device.id}/files`)).toBe(false);
+    expect(((await (await daemon.app.request("/node")).json()) as { has: string[] }).has).toContain("files");
   });
 
   it("another node's real terminal screen types with keystrokes as they are, unless this node says paired nodes may not (docs/mesh-v0.md §10)", async () => {
@@ -1619,7 +1669,7 @@ describe("terminals over HTTP", () => {
     await until(() => text(events).includes("got: keys from afar"));
     // Set on the node itself: the local listener's route, which the remote list does not name.
     const set = await daemon.app.request("/settings/mesh", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ keyboard: false }) });
-    expect(await set.json()).toEqual({ keyboard: false });
+    expect(await set.json()).toEqual({ keyboard: false, files: true });
     expect(remoteAllowed("PUT", "/settings/mesh")).toBe(false);
     const refused = await req(`/terminals/${id}/write`, { data: "x" });
     expect(refused.status).toBe(403);
