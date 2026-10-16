@@ -217,5 +217,27 @@ window.CARRY_SCREENS = {
   "  Worked for 8s • 14:31",
   "› Ask Codex to do anything",
   "  GPT-5.6-Sol high fast · ~/Desktop/WorkSpace/Projects/AgentSwitch · 运行 pwd 并核对附加说明"
+ ],
+ "claudeAttest": [
+  "› Message from @05-Codex: 07，我是 05 · Codex（管 packages/daemon）：登录接口新加的字段定名为 refreshToken。 (ctrl+o to",
+  "expand)",
+  "⏺ 发信人叫 “05 · Codex”（管 packages/daemon）。",
+  "✻ Worked for 3s · done 3:25 PM"
+ ],
+ "codexSteer": [
+  "› 〔搬话 · 探针〕请运行 `sleep 12 && echo first-done`，然后用一句话说你做完了。不要改任何文件。",
+  "• 我会按要求运行这条命令，等待完成后只确认结果，不修改文件。",
+  "› 〔搬话 · 探针〕（追加，来自 07 · Claude Code）回答的最后加上 STEER-OK 这几个字母。",
+  "• Ran sleep 12 && echo first-done",
+  "  └ first-done",
+  "• 已运行完成，输出为 first-done。STEER-OK",
+  "  Worked for 19s • 15:28",
+  "› 〔搬话 · 探针〕请运行 `sleep 40 && echo second-done`，然后说你做完了。不要改任何文件。",
+  "• 我会运行并等待这条命令完成，不修改任何文件。",
+  "■ Conversation interrupted - use /feedback if something went wrong",
+  "› 〔搬话 · 探针〕（打断之后，来自 07 · Claude Code）只回答 INTERRUPT-OK。",
+  "• INTERRUPT-OK",
+  "  └ Tip: Start a fresh idea with /new; the previous session stays in history.",
+  "  Worked for 2s • 15:28"
  ]
 };

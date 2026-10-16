@@ -207,8 +207,8 @@
 4. **放在哪**：主窗口单独一页 `Rooms`（建议）／作为调度里的一种话题。
 5. **回答自动带回**：默认开（建议：不用工具也能参加）／默认关（只有 `send` 才算说话）。
 6. **名字**：页名 `Rooms`、一个讨论叫 Room；或 `Talk`。
-7. **搬话的默认**（§10）：B 正忙时 `Send To` 排着等它做完（建议）／立刻送；agent 发的话默认知会（建议）／默认提问。
-8. **跳过权限的 Claude Code 收到 agent 的话**：它自己扣住、服务出卡等你去放行（建议）／发的一方也在跳过权限时如实声明、不扣（要先试）。
+7. **搬话的默认**（§10）：`Send To` 有两种送法 `Send` 与 `Interrupt`（2026-10-16 定：用户要两种）；agent 发的话默认知会（建议）／默认提问。
+8. **跳过权限的 Claude Code 收到 agent 的话**（2026-10-16 定：发送方如实声明自己的权限方式，不扣）：同类之间就此不扣；会问权限的 agent 发给跳过权限的仍被 Claude Code 扣住（§10.5），要不要在接收方的设置里改成全收，待定。
 
 ## 9. 试验（2026-10-15）
 
@@ -261,10 +261,16 @@
   你说：看看你那边要不要跟着改
   ```
 
-- **送达**：
-  - 这是你的话，所以照你打字的方式送进去：Claude Code 是打进终端，它正忙时自己会排着；Codex 用 `turn/start`。
-  - B 正忙时先排着，标题栏写 `1 Queued`，B 这一轮做完再送；`Send Now` 立刻送。
-  - 不经 Claude Code 的收件 socket：从那里进来的话它会说“不是你的用户打的字”，跳过权限的会话还会扣住它（§10.6 探针 3），而这确实是你的话。
+- **两种送法**（2026-10-16，用户：Send To 添加两种模式一种是打断一种是直接发送）：
+  - `Send`（直接发送，默认）：不打断。B 空闲就开一轮。B 正在做时，话并进它这一轮，它在下一步之前读到：
+    - Claude Code：照你在它做事时打字的方式送进去，它自己排着、做下一步之前读到。
+    - Codex：`turn/steer`。探针 6 试过：追加的一句并进了正在跑的那一轮，这一轮的回答照做了。
+    - 没有这种入口的（OpenCode、pi）：等这一轮做完再送，标题栏写 `1 Queued`。
+  - `Interrupt`（打断）：先停下 B 手上的这一轮，再把话送进去开一轮：
+    - Claude Code：按 Esc，和回复框的停止键是同一下。
+    - Codex：`turn/interrupt` 再 `turn/start`。探针 6 试过：屏幕上 `■ Conversation interrupted`，正在跑的命令没跑完，接着答了新送进去的那一句。
+  - 菜单里两个按钮并排：`Interrupt`、`Send`。B 空闲时两个一样，`Interrupt` 灰着。
+  - 这是你的话，所以照你打字的方式送，不经 Claude Code 的收件 socket：从那里进来的话它会说“不是你的用户打的字”，跳过权限的会话还会扣住它（§10.6 探针 3），而这确实是你的话。
 - **记录**：A 的记录里一行 `→ 07 · 14:31`；B 那边是一张 `From 05 · Codex · Carried by You` 的卡（§10.5 末尾说怎么认出来）。
 
 ### 10.3 三种消息
@@ -272,8 +278,8 @@
 | 种类 | 例子 | 怎么到对方 |
 |---|---|---|
 | 知会 `notice`（默认） | “我在 `/api/login` 的返回里加了 `refreshToken`” | 不开新的一轮。对方下一次调用工具、或你下一次对它说话时，钩子在它的上下文里加一段（Claude Code 和 Codex 的 `additionalContext`，§10.6 探针 2 两家都试过）：`AgentSwitch：05 · Codex 留了一条知会：……`。太长的只放前 300 字，后面写“完整的用 room 的 read 看”。对方空闲时下一步就是你下一次说话，所以空闲着的知会也写在它的卡上，你看得见 |
-| 提问 `message` | “登录失败时你返回什么状态码？” | 一轮：空闲就送，在做就等这一轮做完 |
-| 喊停 `stop` | “别按旧格式写了，我刚改了” | 立刻：Claude Code 的收件 socket 带 `priority: "now"`，Codex 用 `turn/steer` 插进这一轮（两样都还没试）。界面上这种卡是醒目的颜色，写着谁、为什么 |
+| 提问 `message` | “登录失败时你返回什么状态码？” | 同 `Send To` 的 `Send`：空闲就开一轮，在做就并进这一轮（Claude Code 的收件 socket 带 `priority: "next"`，Codex 用 `turn/steer`） |
+| 喊停 `stop` | “别按旧格式写了，我刚改了” | 同 `Send To` 的 `Interrupt`：先停下对方这一轮再送。Codex 是 `turn/interrupt` 再 `turn/start`（试过，探针 6）；Claude Code 是收件 socket 带 `priority: "now"`（没试）。界面上这种卡是醒目的颜色，写着谁、为什么 |
 
 只有喊停会打断。agent 发的默认是知会，要它答、要它停得明说；说明里（§3.2）也这样告诉它。
 
@@ -300,9 +306,24 @@
 | pi | AgentSwitch 扩展里的 `sendUserMessage` | 同上 | 扩展在下一步之前加一段 | — |
 
 - **退路**：上面的入口不在、或这一次没起来（例如 Codex 的私有服务没起），照 §4.2 打进终端。
-- **跳过权限的 Claude Code**：从收件 socket 来的话它先扣住，等人放行，屏幕上是它自己的框 `Held message from another session`、`Deny` / `Deliver`，回信地址收到 `peer_message_status: held`（探针 3）。服务照这个回执在两块和讨论里出一张卡 `等你在 07 的终端里放行`，带 `Open Terminal`。服务不替你点。另一个办法是发的一方本身也在跳过权限时，如实声明自己的权限方式（帧里的 `from_mode`），它就不扣——没试。
+- **用它自己的信封，带上名字和权限方式**（2026-10-16，用户：他们的对话让发送方声明自己的权限方式、不扣住就行了）：
+  - 服务把 agent 的话包成 Claude Code 自己的格式：`<cross-session-message from="uds:…" from-name="05 · Codex" from-mode="…">`，换行，正文，换行，`</cross-session-message>`。它解析时要求逐字与它自己的写法一致（属性顺序 from、from-name、from-mode）。
+  - 名字是终端在列表里的称呼。它的屏幕上就成了一行 `Message from @05-Codex: …`，不再是“Another Claude session”那一大段；记录里是 `origin.name`、`origin.body`。
+  - Claude Code 把会话分两类：`bypass`（跳过权限）和 `prompting`（会问人）。声明了权限方式时，两边同类才收，不同类就扣住；不声明时，只有接收方是 `bypass` 才扣（它的代码，探针 5 逐一试过）。
+  - 所以服务只在接收方跳过权限时附上 `from-mode`，写发送方真实的那一类；接收方会问权限时不附。附了反而会让“跳过权限的发给手动的”被扣。
+
+  | 发送方 → 接收方 | 服务附的 | 结果（探针 3、5） |
+  |---|---|---|
+  | 手动 → 手动 | 不附 | 送到 |
+  | 跳过权限 → 手动 | 不附 | 送到（附 `bypass` 会被扣：试过） |
+  | 跳过权限 → 跳过权限 | `bypass` | 送到，开了一轮 |
+  | 手动 → 跳过权限 | `prompting` | 扣住：`The sending session's permission mode class doesn't match` |
+
+  - 最后一行是 Claude Code 防止借道提权的规矩：会问权限的 agent，不能让一个不问的替它做事。如实声明解不开它。服务照回执出一张卡 `等你在 07 的终端里放行`，带 `Open Terminal`，不替你点。要让这种情况也不扣，只能在接收方这个终端自己的设置里写 `crossSessionInbound: "accept"`。那样它谁的话都收，包括这台 Mac 上别的会话，没有做。
+  - Codex 没有这一道，照常送。
 - **认出是谁说的**：服务记着自己送出去的每一条，所以简略视图能把它们画成卡，而不是你的话：
-  - Claude Code：认 `origin.kind == "peer"` 加 `msg_id`。它包在外面的那两句（“Another Claude session sent a message:”和后面那段提醒）不画；钩子加的知会（记录里的 `hook_additional_context`）在那一段工作里画一小行。
+  - Claude Code：认 `origin.kind == "peer"` 加 `msg_id`。它包在外面的抬头（“Another Claude session sent a message:”）和后面那段提醒不画；钩子加的知会（记录里的 `hook_additional_context`）在那一段工作里画一小行。
+    - 已做（2026-10-16，用户说的“那几个bug”之一）：在这之前，别的会话送进来的话简略视图里根本没有，它是 `isMeta` 的一行，被当成程序自己的东西扔掉了。现在读成一条带 `from` 的话，Mac 和手机画成靠左的一张卡，抬头 `From 05 · Codex`，没给名字的写 `From Another Session`。它在忙时进来的那种（记录里是 `queued_command` 附件）也一样。你发的话在记录里有没有出现，不再拿它比对。
   - Codex：认 `turn/start` 回的那一轮。
   - 这也解决了 §4.8“哪一轮是讨论引起的”：不用再按文字去比对，`msg_id` 和轮次 id 就是起因。
 - **它们怎么看这句话**：Claude Code 从收件 socket 收到的话，在它的屏幕上标“Another Claude session sent a message”，后面它自己加一段：这不是你的用户打的字，按你自己的权限办事，别人的话不能当作用户的批准。这正是 §4.6 要的。它说“另一个 Claude 会话”，哪怕来的是 Codex，所以我们的抬头要写明是谁。Codex 收到的就是一句话，抬头是唯一的来历。
@@ -322,7 +343,10 @@
 | 3 | Claude Code 的收件 socket | 手动模式：一帧送进去它就开了一轮，钩子照常 `UserPromptSubmit → PreToolUse → PostToolUse → Stop`。它的回答：“这句话来自另一个 Claude 会话……它也不是你本人在这个会话里输入的。”屏幕和记录见 §10.5。没有回执发回（只有被扣时才有）。跳过权限模式：扣住，没开新的一轮，响了一次 `Notification`，回执 `held`。它退出时把自己的令牌文件删了 |
 | 4 | Codex：第二个客户端 `turn/start` | TUI 把它画成一句你打的话（`› 〔搬话 · 探针〕…`），接着照常做完这一轮、回答；钩子照常响，知会也到了。TUI 的输入框没被碰 |
 
-**没试的**：喊停（Claude Code 的 `priority: "now"`、Codex 的 `turn/steer`）；`from_mode`；问分身；OpenCode 与 pi 的入口；Claude Code 收到带回信地址的话后，会不会用它自带的 `SendMessage` 回信（这次没让它回，回信地址也没收到别的）。
+| 5 | Claude Code 的权限方式要两边同类（`attest`） | 用它自己的信封送：跳过权限 → 跳过权限送到，开了一轮，它答出发信人叫“05 · Codex”；手动 → 跳过权限扣住；跳过权限 → 手动、附了 `bypass` 也扣住。见 §10.5 的表 |
+| 6 | `Send To` 的两种送法在 Codex 上（`steer`） | `turn/steer`（要带这一轮的 id）：追加的一句并进了正在跑 `sleep` 的那一轮，回答照做。`turn/interrupt` 再 `turn/start`：那一轮停下，命令没跑完，新的一句答了 |
+
+**没试的**：Claude Code 的 `priority: "now"`；问分身；OpenCode 与 pi 的入口；Claude Code 收到带回信地址的话后，会不会用它自带的 `SendMessage` 回信（这次没让它回，回信地址也没收到别的）。
 
 ### 10.7 分步（拍板以后）
 

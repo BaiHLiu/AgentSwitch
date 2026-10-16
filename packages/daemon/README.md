@@ -297,7 +297,10 @@ started as the service starts one (`agentLauncher`, its hooks pointed at the scr
 then Claude Code's own inbox (`--messaging-socket-path`, a frame with its peer key), manual and bypass, or a second
 client's `turn/start` on a Codex terminal's private app-server — and the PostToolUse hook's `additionalContext`. Codex
 has its hooks only where the user's Codex already trusts the installed app's (read with `hooks/list`, never written).
-It types nothing and answers nothing, and ends everything it started; the sessions it made are listed for removal.
+`attest` sends in Claude Code's own envelope (`<cross-session-message from=… from-name=… from-mode=…>`) to see its
+permission-mode parity (bypass to bypass, manual to bypass, bypass to manual); `steer` tries Send To's two ways into a
+Codex turn at work (`turn/steer`; `turn/interrupt`, then `turn/start`). It types nothing and answers nothing, and ends
+everything it started; the sessions it made are listed for removal.
 
 ## Shared browser
 

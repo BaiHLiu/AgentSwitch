@@ -13,6 +13,12 @@
  *    TUI's thread (`turn/start`). Where the user's Codex already trusts the installed app's hooks (read with `hooks/list`,
  *    never written), they are on too and PostToolUse answers with the note.
  *
+ *  attest: Claude Code's permission-mode parity. A message in its own envelope (`<cross-session-message from=…
+ *    from-name=… from-mode=…>`) with the sender's mode, to a terminal in bypass mode (from `bypass`: delivered? from
+ *    `prompting`: held?) and to one in manual mode (from `bypass`: held?). One real turn at most.
+ *  steer: Send To's two ways into a Codex terminal at work — `turn/steer` into the turn it is doing, and
+ *    `turn/interrupt` and then `turn/start`.
+ *
  *  Typed into a terminal: nothing. Answered for anyone: nothing (the one command it lets run is `pwd`, by a flag of
  *  this run). It stops at anything on a screen it does not expect, prints the screen, and ends what it started. What it
  *  saw goes to <out dir>: screens, the frames it got back, the hooks' events, the record as the simple view reads it,
@@ -35,7 +41,7 @@ import { connectWsLines } from "../src/harness/wsLines.js";
 
 const which = process.argv[2];
 const out = resolve(process.argv[3] ?? "carry-probe");
-if (which !== "claude" && which !== "codex") { console.error("claude|codex <out dir>"); process.exit(2); }
+if (!["claude", "codex", "attest", "steer"].includes(which ?? "")) { console.error("claude|codex|attest|steer <out dir>"); process.exit(2); }
 mkdirSync(out, { recursive: true });
 const REPO = resolve(import.meta.dirname, "..", "..", "..");
 // Sockets want a short path (104 bytes on macOS).
@@ -146,7 +152,7 @@ async function end(): Promise<void> {
 }
 
 try {
-  if (which === "claude") await claude(); else await codex();
+  if (which === "claude") await claude(); else if (which === "attest") await attest(); else await codex(which === "steer");
 } catch (err) {
   say(`failed: ${(err as Error).stack ?? err}`);
 } finally {
@@ -205,7 +211,7 @@ async function claude(): Promise<void> {
 }
 
 // ---- Codex
-async function codex(): Promise<void> {
+async function codex(steer = false): Promise<void> {
   const bin = join(homedir(), ".local/share/agentswitch/cli/codex/beta/0.163.0-alpha.5/bin/codex");
   // The installed app's hook command is the text the user's Codex trusts (docs/terminal-v0.md §3).
   const app = join(REPO, "packages/mac-app/build/AgentSwitch.app/Contents/Resources/runtime");
@@ -254,6 +260,7 @@ async function codex(): Promise<void> {
     }
     if (!thread) { say("  stopped: the TUI's thread did not appear"); return; }
     say(`  the TUI's thread: found; its record: ${session.transcript ? "named" : "not named yet"}`);
+    if (steer) { await steering(t, rpc, thread); return; }
     const text = `${MARK}07 · Claude Code（管 packages/mac-app）对你说：\n我这边按 /api/login 的新返回改完了登录页。\n\n` +
       "（这是一次试验：请运行一次 `pwd`，然后用两句话回答：1. 这句话是谁、经什么到你这里的（你看得出来的话）；2. 运行 pwd 之后你有没有收到别的附加说明，有的话原样写出来。不要改任何文件。）";
     const sentAt = Date.now();
@@ -278,5 +285,94 @@ async function codex(): Promise<void> {
     await sleep(1000);
     const after = daemons();
     say(`  Codex's managed daemon: before ${before ? "running" : "not running"}, after ${after ? "running" : "not running"}`);
+  }
+}
+
+/** Send To's two ways into a Codex turn that is going on (docs/talk-v0.md §10.2): into it (`turn/steer`), or after
+ *  stopping it (`turn/interrupt`, then `turn/start`). */
+async function steering(t: Term, rpc: AppServerClient, thread: string): Promise<void> {
+  const stops = () => events.filter((e) => e.event === "Stop").length;
+  const turnId = (r: unknown) => ((r as { turn?: { id?: string } }).turn?.id);
+  // 1. Into the turn it is doing.
+  let before = stops();
+  const first = await rpc.request("turn/start", { threadId: thread, input: [{ type: "text", text: `${MARK}请运行 \`sleep 12 && echo first-done\`，然后用一句话说你做完了。不要改任何文件。` }] }, 20_000);
+  const id1 = turnId(first);
+  await until("the command running", () => t.lines().some((l) => /sleep 12/.test(l)), 30_000);
+  await sleep(1500);
+  shot(t, "steer-1-running");
+  let steered: unknown;
+  try { steered = await rpc.request("turn/steer", { threadId: thread, expectedTurnId: id1, input: [{ type: "text", text: `${MARK}（追加，来自 07 · Claude Code）回答的最后加上 STEER-OK 这几个字母。` }] }, 20_000); }
+  catch (err) { steered = { error: String(err) }; }
+  say(`  turn/steer while it ran: ${JSON.stringify(steered).slice(0, 200)}`);
+  await until("end of the first turn", () => stops() > before, 120_000, 500);
+  await sleep(2000);
+  shot(t, "steer-2-end");
+  const last = t.lines();
+  // The steered words have STEER-OK in them too: the answer is a line that has it and not them.
+  say(`  the answer has STEER-OK: ${last.some((l) => /STEER-OK/.test(l) && !/追加/.test(l)) ? "yes" : "no"}; the steered words on its screen: ${last.some((l) => /追加，来自 07/.test(l)) ? "yes" : "no"}`);
+  // 2. Stopped, then a new one.
+  before = stops();
+  const second = await rpc.request("turn/start", { threadId: thread, input: [{ type: "text", text: `${MARK}请运行 \`sleep 40 && echo second-done\`，然后说你做完了。不要改任何文件。` }] }, 20_000);
+  const id2 = turnId(second);
+  await until("the second command running", () => t.lines().some((l) => /sleep 40/.test(l)), 30_000);
+  await sleep(1500);
+  let stopped: unknown;
+  try { stopped = await rpc.request("turn/interrupt", { threadId: thread, turnId: id2 }, 20_000); }
+  catch (err) { stopped = { error: String(err) }; }
+  say(`  turn/interrupt: ${JSON.stringify(stopped).slice(0, 200)}`);
+  await sleep(2500);
+  shot(t, "steer-3-interrupted");
+  const after = await rpc.request("turn/start", { threadId: thread, input: [{ type: "text", text: `${MARK}（打断之后，来自 07 · Claude Code）只回答 INTERRUPT-OK。` }] }, 20_000);
+  say(`  turn/start after it: ${JSON.stringify(after).slice(0, 120)}`);
+  await until("end of the turn after the interrupt", () => stops() > before, 120_000, 500);
+  await sleep(2000);
+  shot(t, "steer-4-end");
+  const screen = t.lines().join("\n");
+  say(`  after the interrupt: the answer INTERRUPT-OK on its screen: ${/INTERRUPT-OK\s*$|• INTERRUPT-OK/m.test(screen) ? "yes" : "no"}; its command's output (\`└ second-done\`, only if it was not stopped): ${/└ second-done/.test(screen) ? "yes" : "no"}`);
+  if (!session.transcript) {
+    const read = ((await rpc.request("thread/read", { threadId: thread, includeTurns: false }, 10_000)).thread ?? {}) as { path?: string };
+    if (typeof read.path === "string") session.transcript = read.path;
+  }
+  if (session.transcript) { ended.push(session.transcript); record("codex", session.transcript); }
+}
+
+/** Claude Code's parity between the sender's permission mode and its own (docs/talk-v0.md §10.5). */
+async function attest(): Promise<void> {
+  const launch = agentLauncher({ binaries: { "claude-code": join(homedir(), ".local/bin/claude") }, hookUrl: () => hookUrl, stateDir: STATE, env });
+  // Its own envelope, as it writes one (from, from-name, from-mode in this order; the body between two line breaks).
+  const envelope = (from: string, mode: "bypass" | "prompting", body: string) =>
+    `<cross-session-message from="uds:${from}" from-name="05 · Codex" from-mode="${mode}">\n${body}\n</cross-session-message>`;
+  const body = "07，我是 05 · Codex（管 packages/daemon）：登录接口新加的字段定名为 refreshToken。\n\n（这是一次试验：请只用一句话回答：你看到的发信人叫什么。不要运行命令，不要改任何文件。）";
+  const cases: { mode: "manual" | "bypass"; from: ("bypass" | "prompting")[] }[] = [{ mode: "bypass", from: ["bypass", "prompting"] }, { mode: "manual", from: ["bypass"] }];
+  for (const c of cases) {
+    say(`== Claude Code, ${c.mode}`);
+    const inbox = join(SOCKS, `${c.mode}.sock`), back = join(SOCKS, `${c.mode}-from.sock`);
+    const plan = launch({ id: `attest-${c.mode}`, harness: "claude-code", cwd: REPO, mode: c.mode, model: "sonnet", hookToken: "probe" });
+    const t = open(plan.file, [...plan.args, "--messaging-socket-path", inbox], plan.env);
+    if (!await until("input box", t.ready, 45_000)) { shot(t, `attest-${c.mode}-stuck`); say("  stopped: its input is not on screen (see the screen)"); return; }
+    const dir = join(homedir(), ".claude", "sessions");
+    const key = readdirSync(dir).find((f) => f.startsWith(`${t.pty.pid}.`) && f.endsWith(".key"));
+    const token = key ? (JSON.parse(readFileSync(join(dir, key), "utf8")) as { peerToken?: string }).peerToken : undefined;
+    if (!token) { say("  stopped: no peer key"); return; }
+    const replies = listen(back);
+    for (const from of c.from) {
+      const sentAt = Date.now(), seen = frames.length;
+      await send(inbox, [{ type: "auth", token }, { type: "user", message: { role: "user", content: envelope(back, from, body) }, from: `uds:${back}`, msg_id: randomUUID(), priority: "next" }]);
+      const ran = await until("end of a turn", () => events.some((e) => e.event === "Stop" && e.at > sentAt), 60_000, 500);
+      await sleep(2000);
+      shot(t, `attest-${c.mode}-from-${from}`);
+      const got = frames.slice(seen).map((f) => f.frame as { action?: string; status?: string; cause?: string; reason?: string });
+      say(`  from ${from}: a turn ran: ${ran ? "yes" : "no"}; receipts: ${got.map((g) => `${g.status ?? g.action}${g.cause ? ` (${g.cause})` : ""}`).join(", ") || "none"}`);
+      const held = t.lines().join("\n");
+      if (/Held message from another session/.test(held)) {
+        say(`  its own box: ${(held.match(/The sending session[^\n]*|The sender[^\n]*/) ?? [""])[0].trim()}`);
+        break;   // the box stays until someone answers it: nobody does, the terminal is ended
+      }
+    }
+    if (session.transcript) { ended.push(session.transcript); record("claude-code", session.transcript); }
+    session = {};
+    replies.close();
+    try { process.kill(-t.pty.pid, "SIGTERM"); } catch { t.pty.kill(); }
+    await sleep(1500);
   }
 }
