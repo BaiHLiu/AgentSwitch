@@ -359,7 +359,19 @@
   - **还没做的验证**：交互式的终端（不是 `-p`）里同样走得通；接在配置的转发口里、后面串着上游代理；按进程号只打开主进程的连接（它跑的 `curl https://api.anthropic.com` 应拿到真证书）；长对话、压缩上下文、子代理的请求各是什么 request class。
   - 读屏幕留作后备：转发口不在时，取它屏幕上最后一个 `⏺` 起、到状态行之前的那几行，纯文本，只有一屏高。
 - **调度的任务**（2026-10-16 验证）：它们本来就由 Agent SDK 在后台跑，是官方 app 的那种跑法，但执行器写的是 `includePartialMessages: false`（`src/executors/claude.ts`），所以也是整段出现。同一句话量过（`scripts/sdk_partial_probe.ts`）：关着，0 段，14.7 秒整段到；开着，195 段 `content_block_delta`，5.8 秒起一段段来，10.8 秒整段到。打开它、把逐段文字作为事件发给页面即可，不用旁路。
-- **OpenCode**：它的私有服务有逐段的事件（`message.part.updated`），同一条路；**pi**：扩展里有它的消息事件。两家都还没量。
+- **四家都量过**（2026-10-16，用户：那默认做成这样行吗，其他的agent支持这样吗？……测试一下；`scripts/partial_probe.ts`，各一轮真模型，问同一段说明）：
+
+  | agent | 逐字从哪来 | 量到的 | 现在 AgentSwitch 用的 |
+  |---|---|---|---|
+  | Claude Code（调度） | Agent SDK `includePartialMessages: true` 的 `stream_event` | 195 段，5.8 秒起，10.8 秒整段到（关着：0 段，14.7 秒整段到） | 关着 |
+  | Claude Code（终端） | 网络旁路（上面） | `claude -p` 61 段 | 读记录 |
+  | Codex（调度与终端） | app-server 的 `item/agentMessage/delta`；执行器自己就是会话的客户端，收得到 | 执行器的方式：278 段。这一次它想了 16 秒、0.3 秒写完 375 字，所以几乎是一下出来；终端那次（第二个客户端）552 段、分布在 7 秒里 | 只用写完的 `item/completed` |
+  | OpenCode（调度与终端） | 它服务的事件流 `/api/event`：`session.text.delta`（回答）、`session.reasoning.delta`（思考） | 25 + 4 段，1.35 秒到 4.49 秒（`deepseek/deepseek-flash`，这台 Mac 上 OpenCode 只登录了 DeepSeek） | 每 250 毫秒问一次消息接口：**没写完时一个字也没有**，4.54 秒整段 532 字出现 |
+  | pi（终端，扩展里） | `pi.on("message_update")` 的 `text_delta` | 90 段，21.1 秒到 25.6 秒（临时目录，本机 LM Studio 的 `qwen3.8-27b`，没碰你的 pi） | 扩展只报状态 |
+
+  - 更正：此前写“OpenCode 每次问到的就是已经写出的部分”是错的。它的消息接口只给写完的段落，逐字只在事件流里。
+  - 所以默认就开：Claude Code 调度打开 `includePartialMessages`，Codex 接上 delta，OpenCode 订阅 `/api/event`，pi 的扩展转发 `message_update`。几十到几百段，合并成每 100～200 毫秒一次再发给页面；不进库，写完以完整的那段为准。
+  - 片段的速度看模型：先想很久、再一口气写完的（这次的 Codex），边写边出的效果就小，但“正在想”的那段时间也能显示它想的内容（Codex 的 `item/reasoning/*`、OpenCode 的 `session.reasoning.delta`）。
 - 只在打开着这个简略视图时做：没人看就不订阅、不读屏。手机一样（经同一条事件流，多一种 `writing` 事件：`{text, done}`）。
 
 ### 5.15 后台任务（2026-10-16）

@@ -296,6 +296,12 @@ answer is written (docs/simple-view-v0.md §5.14; a real model turn each): every
 the agent's screen and how much in its record; for Codex, how much a second client of its private app-server is sent
 (`thread/resume` once the turn has begun, `item/agentMessage/delta`) and what `thread/backgroundTerminals/list` says.
 
+`node --import tsx scripts/partial_probe.ts codex|opencode|pi` does the same for the other three (docs/simple-view-v0.md
+§5.14): Codex's app-server over stdio as its executor runs it (`item/agentMessage/delta`, an ephemeral thread); OpenCode's
+server as its executor's, its messages asked for every 250 ms and its `/api/event` stream followed (lengths and times
+only, the session deleted after); pi with an extension counting `message_update` on a throw-away agent folder and this
+Mac's LM Studio model. One real turn each.
+
 `node --import tsx scripts/sdk_partial_probe.ts` runs the Agent SDK as Dispatch's executor does, once with
 `includePartialMessages: false` (the executor's) and once with `true`, and says how many pieces of the answer came
 before the whole of it, and when (two turns on the cheapest model, no tools, `persistSession: false`). 2026-10-16:
