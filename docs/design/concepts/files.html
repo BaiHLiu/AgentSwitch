@@ -1,0 +1,1133 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentSwitch Files</title>
+<style id="gcss"></style>
+<style>
+/* Files (2026-10-16, user: 我想要给agentswitch加一个简单的文件管理功能，加到右边的侧边栏 …). A demo for review with
+   docs/files-v0.md, not a spec: the main window with the Files column on its right, reached from the list on the left,
+   from the bar and from a pane's title bar; the preview, Quick Look, files given to an agent; and the phone. Two looks
+   (ui-v0 §7 Pixel: a tree drawn in characters; §8 Classic: folders, one level at a time). The paths are made up. */
+:root {
+  --bg: #000; --panel: #0b0b0b; --raise: #151515; --hover: #121212; --card: #0b0b0b;
+  --ink: #e9e6df; --ink2: #8d8a84; --ink3: #4d4b48; --ink4: #262524;
+  --signal: #ff2e88; --cyan: #2ee6ff; --green: #9be22d; --amber: #ffb000; --red: #ff4a3d; --accent: #ff2e88;
+  --mono: "MesloLGS NF", "SF Mono", ui-monospace, Menlo, "PingFang SC", monospace;
+  --ui: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+  --code: "MesloLGS NF", "SF Mono", ui-monospace, Menlo, "PingFang SC", monospace;
+  --short: var(--mono);
+  color-scheme: dark;
+}
+.light {
+  --bg: #f4f1ea; --panel: #ece8df; --raise: #e4dfd4; --hover: #e9e5dc; --card: #ece8df;
+  --ink: #16140f; --ink2: #6b675f; --ink3: #a6a196; --ink4: #d6d1c6;
+  --signal: #e0106f; --cyan: #0096b3; --green: #3d8a00; --amber: #b87400; --red: #c9281b; --accent: #e0106f;
+  color-scheme: light;
+}
+/* the classic look (ui-v0 §8): the system's type, round shapes, line icons, dots, the system's blue; the main window
+   one black surface, what floats a step lighter */
+.classic { --short: var(--ui); --accent: #0a84ff; --signal: var(--accent); --cyan: #0a84ff; --amber: #ff9f0a; --green: #30d158; --red: #ff453a;
+  --bg: #000; --panel: #000; --raise: #232326; --hover: #18181b; --card: #141416;
+  --ink: #ededf0; --ink2: #a2a2a8; --ink3: #6c6c72; --ink4: #2a2a2d; }
+.classic.light { --accent: #007aff; --signal: #007aff; --cyan: #007aff; --amber: #d98200; --green: #1f9d3f; --red: #e0352b;
+  --bg: #ffffff; --panel: #f7f7f9; --raise: #ececf0; --hover: #f2f2f5; --card: #f4f4f7;
+  --ink: #1c1c1e; --ink2: #6e6e73; --ink3: #aeaeb2; --ink4: #e3e3e8; }
+
+* { box-sizing: border-box; }
+html, body { overflow-x: hidden; }
+body { margin: 0; background: #1b1b1d; color: #d8d4cc; font: 13px var(--ui); }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+button:focus { outline: none; }
+button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #0a84ff; outline-offset: -2px; }
+.top { max-width: 1240px; margin: 0 auto; padding: 18px 16px 4px; }
+h1 { font: 700 15px var(--mono); margin: 0 0 8px; color: #e9e6df; }
+.lede { color: #a9a6a0; font-size: 12.5px; line-height: 1.75; margin: 0 0 10px; max-width: 112ch; }
+.lede code, .cap code, .docs code { font: 12px var(--mono); color: #d8d4cc; }
+.lede b, .cap b, .docs b { color: #e9e6df; font-weight: 600; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; font: 12px var(--mono); color: #8f8b84; }
+.tools > span { display: inline-flex; gap: 8px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid #3a3a3e; }
+.seg button { color: #b5b1aa; font: 12px var(--mono); padding: 4px 10px; }
+.seg button.on { background: #e9e6df; color: #111; }
+.sec { max-width: 1240px; margin: 34px auto 12px; padding: 0 16px; font: 11px var(--mono); letter-spacing: .14em; color: #77746e; }
+.stage { max-width: 1240px; margin: 0 auto; padding: 0 16px; }
+.cap { max-width: 1240px; margin: 10px auto 0; padding: 0 16px; color: #8f8b84; font-size: 12.5px; line-height: 1.75; }
+.ctl { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
+.ctl button { border: 1px solid #3a3a3e; color: #b5b1aa; font: 12px var(--mono); padding: 3px 10px; }
+.ctl button.on { background: #e9e6df; color: #111; }
+/* the window is drawn at its real size and scaled down to fit a narrow page (no sideways scrolling) */
+.fit { position: relative; width: 100%; overflow: hidden; }
+.fit > .scaled { transform-origin: 0 0; position: absolute; left: 0; top: 0; }
+
+.px { display: block; image-rendering: pixelated; }
+.li { display: block; flex: none; }
+.sq { width: 8px; height: 8px; display: inline-block; flex: none; }
+.classic .sq { border-radius: 50%; }
+.spin { color: var(--cyan); }
+.cspin { width: 11px; height: 11px; border-radius: 50%; display: inline-block; flex: none; vertical-align: -1px;
+  border: 1.6px solid color-mix(in srgb, var(--ink2) 30%, transparent); border-top-color: var(--ink2); animation: rot .9s linear infinite; }
+@keyframes rot { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cspin { animation: none; } }
+.cag { font: 600 12px var(--ui); display: inline-block; min-width: 13px; text-align: center; color: var(--ink2); flex: none; }
+.btn { font: 12px var(--mono); color: var(--ink); white-space: nowrap; }
+.btn:hover { background: var(--ink); color: var(--bg); }
+.btn.pri { background: var(--ink); color: var(--bg); padding: 0 2px; }
+.btn.pri:hover { background: var(--signal); color: #000; }
+.btn:disabled { color: var(--ink3); background: none; cursor: default; }
+.cbtn { font: 600 12px var(--ui); padding: 3px 10px; border-radius: 7px; background: var(--raise); color: var(--ink); white-space: nowrap; }
+.cbtn.pri { background: var(--accent); color: #fff; }
+.cbtn:disabled { opacity: .45; cursor: default; }
+code.c { font: 12px var(--code); background: color-mix(in srgb, var(--ink) 8%, transparent); padding: 0 3px; }
+
+/* ---------- the window ---------- */
+.win { width: 1200px; height: 660px; background: var(--bg); color: var(--ink); display: grid; grid-template-rows: 32px minmax(0, 1fr) 24px;
+  font: 13px var(--mono); border-radius: 10px; overflow: hidden; position: relative; box-shadow: 0 0 0 .5px rgba(255,255,255,.2), 0 26px 70px rgba(0,0,0,.6); }
+.win.narrow { width: 900px; }
+.classic.win { border-radius: 12px; }
+.bar { position: relative; display: flex; align-items: center; gap: 4px; padding: 0 10px 0 20px; border-bottom: 1px solid var(--ink4); }
+.lights { display: flex; gap: 8px; margin-right: 14px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.lights i:nth-child(1) { background: #ff5f57; } .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+.bar .ttl { position: absolute; left: 50%; transform: translateX(-50%); font: 600 13px var(--ui); display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; pointer-events: none; }
+.bar .ttl small { font: 11.5px var(--mono); color: var(--ink2); font-weight: 400; }
+.bar .end { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.tb { width: 26px; height: 22px; display: grid; place-items: center; color: var(--ink2); position: relative; }
+.tb:hover { color: var(--ink); }
+.tb.on { background: var(--ink); color: var(--bg); }
+.classic .tb { border-radius: 6px; }
+.classic .tb.on { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+.tb .tip { display: none; position: absolute; top: 26px; right: 0; white-space: nowrap; background: var(--ink); color: var(--bg); font: 11px var(--mono); padding: 2px 6px; z-index: 9; pointer-events: none; }
+.classic .tb .tip { font-family: var(--ui); border-radius: 5px; }
+.tb:hover .tip { display: block; }
+.body { display: grid; grid-template-columns: 44px 214px minmax(0, 1fr) var(--fw, 0px); min-height: 0; position: relative; }
+.rail { border-right: 1px solid var(--ink4); display: flex; flex-direction: column; align-items: center; gap: 18px; padding-top: 14px; color: var(--ink2); }
+.rail .ic { position: relative; padding: 2px; }
+.rail .ic.on { color: var(--ink); }
+.rail .ic.on::before { content: ""; position: absolute; left: -15px; top: 0; bottom: 0; width: 2px; background: var(--signal); }
+.rail .gap { flex: 1; }
+.classic .rail { gap: 12px; padding-top: 10px; }
+.classic .rail .ic { padding: 5px; border-radius: 8px; }
+.classic .rail .ic.on { background: var(--raise); color: var(--accent); }
+.classic .rail .ic.on::before { display: none; }
+.status { border-top: 1px solid var(--ink4); display: flex; align-items: center; gap: 14px; padding: 0 12px; font: 11.5px var(--mono); color: var(--ink2); }
+.classic .status { font-family: var(--ui); }
+.status .sp { flex: 1; }
+
+/* the terminals' list (docs/terminal-v0.md §1, implemented/terminal.html) */
+.list { border-right: 1px solid var(--ink4); padding: 8px 0; overflow: hidden; font: 12.5px var(--mono); position: relative; }
+.list .hd { display: flex; align-items: center; padding: 2px 12px 8px; color: var(--ink3); font-size: 11px; letter-spacing: .06em; }
+.ldir { display: grid; grid-template-columns: 2ch minmax(0, 1fr) auto; align-items: center; padding: 3px 12px 3px 10px; margin-top: 8px; cursor: default; }
+.ldir:hover, .ldir.ctx { background: var(--hover); }
+.ldir .chev { color: var(--ink3); }
+.ldir .name { color: var(--ink); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ldir .count { color: var(--ink3); font-size: 11px; }
+.row { position: relative; display: grid; grid-template-columns: 2ch 3ch 14px minmax(0, 1fr) auto; align-items: center; padding: 3px 12px 3px 10px; white-space: nowrap; cursor: default; }
+.row:hover, .row.ctx { background: var(--hover); }
+.row .ix { color: var(--ink3); font-size: 11px; }
+.row .tr { color: var(--ink3); }
+.row .nm { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.row.session .nm { color: var(--ink2); }
+.row .mt { color: var(--ink3); font-size: 11px; display: flex; gap: 6px; align-items: center; padding-left: 8px; }
+.row.sel { background: var(--raise); }
+.row.sel::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--signal); }
+.row.sel .ix { color: var(--signal); }
+.classic .list { font-family: var(--ui); font-size: 13px; }
+.classic .list .hd { letter-spacing: 0; font-weight: 600; }
+.classic .ldir { grid-template-columns: 16px 18px minmax(0, 1fr) auto; gap: 4px; margin: 6px 6px 0; border-radius: 7px; padding: 3px 8px; }
+.classic .ldir .name { font-weight: 600; }
+.classic .row { grid-template-columns: 22px 14px minmax(0, 1fr) auto; margin: 1px 6px; border-radius: 7px; padding: 4px 8px 4px 22px; }
+.classic .row.sel { background: var(--raise); }
+.classic .row.sel::before { display: none; }
+
+/* a pane, and its title bar while there are two (docs/terminal-v0.md §1 分屏) */
+.center { min-height: 0; display: grid; grid-template-columns: repeat(var(--panes, 1), minmax(0, 1fr)); position: relative; }
+.pane { min-height: 0; min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+.pane + .pane { border-left: 1px solid var(--ink4); }
+.sph { height: 28px; display: flex; align-items: center; gap: 7px; padding: 0 6px 0 10px; border-bottom: 1px solid var(--ink4); font: 11.5px var(--mono); color: var(--ink2); white-space: nowrap; overflow: hidden; }
+.pane.focus .sph { box-shadow: inset 0 -2px 0 var(--signal); }
+.sph b { color: var(--ink); font: 600 12px var(--ui); overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 5em; }
+.sph .pth { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 0 3 auto; }
+.sph .end { margin-left: auto; display: flex; gap: 2px; align-items: center; }
+.sph .tb { width: 22px; height: 20px; }
+.sph .tb .tip { top: 22px; }
+.classic .sph { font-family: var(--ui); }
+.classic .pane.focus .sph { box-shadow: inset 0 -2px 0 var(--accent); }
+.rec { overflow: hidden; padding: 16px 26px 8px; display: flex; flex-direction: column; gap: 12px; font: 13.5px/1.65 var(--ui); max-width: 760px; width: 100%; justify-self: center; }
+.ub { align-self: flex-end; max-width: 82%; background: var(--raise); border: 1px solid var(--ink4); padding: 6px 12px; }
+.classic .ub { border: 0; border-radius: 16px; background: color-mix(in srgb, var(--ink) 9%, transparent); }
+.md p { margin: 0 0 6px; } .md ul { margin: 0; padding-left: 1.2em; }
+.work { font: 12px var(--mono); color: var(--ink2); display: flex; gap: 10px; }
+.classic .work { font-family: var(--ui); }
+.work .d { margin-left: auto; color: var(--green); } .work .d i { color: var(--red); font-style: normal; }
+.now { font: 12px var(--mono); color: var(--ink2); display: flex; gap: 8px; align-items: center; }
+.classic .now { font-family: var(--ui); }
+.now code { font-family: var(--code); color: var(--ink); }
+.now .t { margin-left: auto; color: var(--ink3); }
+.reply { padding: 8px 26px 14px; max-width: 812px; width: 100%; justify-self: center; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.fchip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--ink3); padding: 1px 4px 1px 6px; font: 11.5px var(--mono); color: var(--ink); }
+.fchip i { font-style: normal; color: var(--ink3); }
+.fchip button { color: var(--ink2); padding: 0 3px; }
+.fchip button:hover { background: var(--ink); color: var(--bg); }
+.classic .fchip { border: 0; background: var(--raise); border-radius: 7px; font-family: var(--ui); padding: 2px 4px 2px 7px; }
+.box { border: 1px solid var(--ink3); min-height: 40px; display: flex; align-items: center; padding: 6px 10px; color: var(--ink3); font: 13px var(--ui); gap: 8px; }
+.box .tx { flex: 1; color: var(--ink); }
+.box .tx.ph { color: var(--ink3); }
+.box .tx b { font: 12px var(--mono); color: var(--signal); font-weight: 400; }
+.box .caret { display: inline-block; width: 1.5px; height: 15px; background: var(--ink); vertical-align: -3px; animation: blink 1.1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.classic .box { border-radius: 17px; border-color: var(--ink4); background: var(--card); }
+.classic .box .tx b { color: var(--accent); font: 600 12.5px var(--ui); }
+.tty { background: #0b0b0b; color: #d6d3cc; padding: 12px 14px; font: 12px/1.55 var(--code); white-space: pre; overflow: hidden; margin: 0; }
+.tty .u { color: #fff; } .tty .d { color: #8a877f; } .tty .g { color: #9be22d; } .tty .k { color: #6d9bff; }
+
+/* ---------- Files: the window's column on the right ---------- */
+.files { min-height: 0; border-left: 1px solid var(--ink4); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; background: var(--bg); font: 12.5px var(--mono); position: relative; }
+.files.float { position: absolute; right: 0; top: 0; bottom: 0; width: 300px; z-index: 6; border: 1px solid var(--ink); }
+.files.float::after { content: ""; position: absolute; left: -7px; top: 6px; right: 6px; bottom: -7px; z-index: -1; background: repeating-conic-gradient(var(--ink3) 0 25%, transparent 0 50%) 0 0 / 2px 2px; }
+/* its own stacking context: the shadow under it would show through the parts, so each part has the ground */
+.files.float > :not(.drag) { background: var(--bg); }
+.classic .files.float { border: 1px solid var(--ink4); border-radius: 12px 0 0 12px; box-shadow: -14px 0 40px rgba(0,0,0,.45); overflow: hidden; }
+.classic .files.float::after { display: none; }
+.files .drag { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 2; }
+.fhd { display: flex; align-items: center; gap: 6px; padding: 7px 8px 4px 12px; }
+.fhd .lb { color: var(--ink3); font-size: 11px; letter-spacing: .06em; }
+.fhd .node { color: var(--signal); font-size: 11px; }
+.fhd .acts { margin-left: auto; display: flex; gap: 2px; }
+.ib { min-width: 22px; height: 22px; padding: 0 3px; display: grid; place-items: center; color: var(--ink2); font: 13px var(--mono); position: relative; }
+.ib:hover, .ib.on { background: var(--ink); color: var(--bg); }
+.crumbs { display: flex; align-items: center; gap: 0; padding: 0 12px 7px; border-bottom: 1px solid var(--ink4); white-space: nowrap; overflow: hidden; font: 12px var(--mono); }
+.crumbs .seg2 { color: var(--ink2); padding: 0 1px; flex: 0 1 auto; min-width: 1.6em; overflow: hidden; text-overflow: ellipsis; }
+.crumbs .seg2.cur { flex-shrink: 0; }
+.crumbs .sl, .crumbs .nav { flex: none; }
+.crumbs .seg2:hover { background: var(--ink); color: var(--bg); }
+.crumbs .seg2.cur { color: var(--ink); font-weight: 700; }
+.crumbs .sl { color: var(--ink3); padding: 0 3px; }
+.crumbs .nav { color: var(--ink3); margin-right: 6px; display: none; }
+.fl { overflow: auto; padding: 3px 0 8px; scrollbar-width: thin; }
+.fl:focus { outline: none; }
+.fr { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; height: 22px; padding: 0 10px 0 12px; white-space: nowrap; cursor: default; user-select: none; }
+.fr:hover { background: var(--hover); }
+.fr .tr { color: var(--ink3); white-space: pre; }
+.fr .tw { color: var(--ink2); cursor: pointer; }
+.fr .tw:hover { color: var(--ink); background: var(--raise); }
+.fr .nm { overflow: hidden; text-overflow: ellipsis; padding-left: 1ch; }
+.fr.dir .nm { color: var(--ink); font-weight: 700; }
+.fr.file .nm { color: var(--ink); }
+.fr.dim .nm, .fr.dim .tr { color: var(--ink3); font-weight: 400; }
+.fr.locked .nm { color: var(--ink3); font-weight: 400; }
+.fr .lk { color: var(--ink3); margin-left: 5px; font-weight: 400; }
+.fr .to { color: var(--ink3); font-weight: 400; }
+.fr .mt { color: var(--ink3); font-size: 11px; padding-left: 10px; display: flex; gap: 8px; }
+.fr .mt .sz { min-width: 4ch; text-align: right; }
+.fr.sel { background: var(--raise); }
+.fr.sel::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--signal); }
+.fr.up .nm { color: var(--ink2); font-weight: 400; padding-left: 0; }
+.fr .go { color: var(--ink3); padding-left: 8px; }
+.ffoot { border-top: 1px solid var(--ink4); padding: 6px 12px; color: var(--ink3); font-size: 11px; display: flex; gap: 10px; }
+.note { padding: 10px 12px; color: var(--ink2); font: 12px/1.6 var(--ui); }
+
+/* the preview: the lower part of the column, the selected file as Quick Look draws it */
+.pv { border-top: 1px solid var(--ink4); min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 300px; }
+.pv .h { padding: 8px 12px 6px; }
+.pv .h b { display: block; font: 600 12.5px var(--mono); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv .h span { font-size: 11px; color: var(--ink3); }
+.pv .cnt { min-height: 0; overflow: hidden; margin: 0 12px; border: 1px solid var(--ink4); background: var(--panel); position: relative; }
+.pv .acts { display: flex; gap: 12px; padding: 8px 12px 10px; flex-wrap: wrap; }
+.code { margin: 0; padding: 6px 8px; font: 11px/1.5 var(--code); color: var(--ink); white-space: pre; overflow: hidden; }
+.code .ln { color: var(--ink3); display: inline-block; width: 2.4ch; text-align: right; margin-right: 1.2ch; user-select: none; }
+.code.big { font-size: 12.5px; line-height: 1.6; padding: 12px 16px; }
+.nopv { height: 100%; display: grid; place-items: center; text-align: center; color: var(--ink2); font: 12px/1.7 var(--ui); padding: 12px; }
+.nopv .big { font: 28px var(--mono); color: var(--ink3); }
+.pic { display: grid; place-items: center; height: 100%; padding: 8px; }
+.pic svg { max-width: 100%; max-height: 100%; }
+.trunc { position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 8px; font: 11px var(--ui); color: var(--ink2); background: linear-gradient(transparent, var(--panel) 40%); }
+
+/* Quick Look (space) */
+.ql { position: absolute; inset: 22px 30px 26px; z-index: 8; background: var(--bg); border: 1px solid var(--ink); display: grid; grid-template-rows: 26px minmax(0, 1fr); }
+.ql::after { content: ""; position: absolute; left: 6px; top: 6px; right: -7px; bottom: -7px; z-index: -1; background: repeating-conic-gradient(var(--ink3) 0 25%, transparent 0 50%) 0 0 / 2px 2px; }
+.ql .h { background: var(--ink); color: var(--bg); display: flex; align-items: center; gap: 10px; padding: 0 10px; font: 12px var(--mono); }
+.ql .h .sp { flex: 1; }
+.ql .h button { color: var(--bg); }
+.ql .h button:hover { background: var(--bg); color: var(--ink); }
+.ql .bd { min-height: 0; overflow: hidden; background: var(--panel); }
+.classic .ql { border: 1px solid var(--ink4); border-radius: 12px; overflow: hidden; box-shadow: 0 22px 60px rgba(0,0,0,.55); background: var(--card); }
+.classic .ql::after { display: none; }
+.classic .ql .h { background: var(--raise); color: var(--ink); font: 600 12.5px var(--ui); justify-content: center; position: relative; }
+.classic .ql .h .x { position: absolute; left: 10px; }
+.classic .ql .h .op { position: absolute; right: 8px; }
+.classic .ql .h button { color: var(--ink); }
+
+/* a system menu (the native list's right click is the system's; the ⋯ menu too) */
+.menu { position: absolute; z-index: 9; min-width: 210px; padding: 5px; border-radius: 8px; background: rgba(38,38,40,.97); color: #f2f2f4; font: 13px var(--ui);
+  box-shadow: 0 0 0 .5px rgba(255,255,255,.18), 0 12px 32px rgba(0,0,0,.55); }
+.light .menu { background: rgba(246,246,248,.98); color: #1c1c1e; box-shadow: 0 0 0 .5px rgba(0,0,0,.18), 0 12px 32px rgba(0,0,0,.2); }
+.menu .it { display: flex; align-items: center; gap: 8px; padding: 3px 10px 3px 22px; border-radius: 5px; position: relative; white-space: nowrap; cursor: default; }
+.menu .it.chk::before { content: "✓"; position: absolute; left: 7px; font-size: 11px; }
+.menu .it .k { margin-left: auto; padding-left: 24px; opacity: .55; }
+.menu .it:hover, .menu .it.hi { background: #0a84ff; color: #fff; }
+.menu .it.off { opacity: .4; }
+.menu .it.off:hover { background: none; color: inherit; }
+.menu .it .new { font: 600 10px var(--ui); color: #0a84ff; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; margin-left: 8px; }
+.menu .it.hi .new, .menu .it:hover .new { color: #fff; }
+.menu hr { border: 0; border-top: 1px solid rgba(255,255,255,.14); margin: 4px 8px; }
+.light .menu hr { border-top-color: rgba(0,0,0,.12); }
+
+/* Files, the classic look: Finder's folders, one level at a time */
+.classic .files { font-family: var(--ui); }
+.classic .fhd { padding: 8px 8px 6px 14px; }
+.classic .fhd .lb { font: 600 13px var(--ui); letter-spacing: 0; color: var(--ink); }
+.classic .ib { border-radius: 6px; color: var(--ink2); }
+.classic .ib:hover { background: var(--raise); color: var(--ink); }
+.classic .ib.on { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+.classic .crumbs { font: 12px var(--ui); padding: 0 10px 8px; gap: 1px; }
+.classic .crumbs .nav { display: inline-flex; gap: 0; color: var(--ink2); }
+.classic .crumbs .nav button { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 5px; }
+.classic .crumbs .nav button:hover { background: var(--raise); }
+.classic .crumbs .nav button:disabled { opacity: .35; }
+.classic .crumbs .seg2 { display: inline-flex; align-items: center; gap: 3px; padding: 1px 4px; border-radius: 5px; color: var(--ink2); min-width: 2.4em; }
+.classic .crumbs .seg2 .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.classic .crumbs .seg2:hover { background: var(--raise); color: var(--ink); }
+.classic .crumbs .seg2.cur { color: var(--ink); font-weight: 600; }
+.classic .crumbs .seg2 svg { color: var(--accent); }
+.classic .crumbs .sl { padding: 0; color: var(--ink3); display: inline-flex; }
+.cr { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto 12px; gap: 8px; align-items: center; height: 30px; margin: 0 6px; padding: 0 8px; border-radius: 7px; font: 13px var(--ui); cursor: default; user-select: none; }
+.cr:hover { background: var(--hover); }
+.cr .ic { color: var(--ink2); display: grid; place-items: center; }
+.cr.dir .ic { color: var(--accent); }
+.cr .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cr .mt { font-size: 11.5px; color: var(--ink2); white-space: nowrap; }
+.cr .go { color: var(--ink3); display: grid; place-items: center; }
+.cr.dim .nm, .cr.locked .nm, .cr.dim .ic, .cr.locked .ic { color: var(--ink3); }
+.cr.sel { background: var(--accent); color: #fff; }
+.cr.sel .mt, .cr.sel .go, .cr.sel .ic { color: rgba(255,255,255,.85); }
+.cr .to { color: var(--ink3); font-size: 11.5px; }
+.cr.sel .to { color: rgba(255,255,255,.75); }
+/* classic as a tree (⋯ › As Tree): disclosure chevrons and indents */
+.ct { display: grid; grid-template-columns: 14px 18px minmax(0, 1fr) auto; gap: 5px; align-items: center; height: 26px; margin: 0 6px; padding: 0 8px; border-radius: 6px; font: 13px var(--ui); cursor: default; user-select: none; }
+.ct:hover { background: var(--hover); }
+.ct .tw { color: var(--ink2); display: grid; place-items: center; cursor: pointer; }
+.ct .ic { color: var(--ink2); display: grid; place-items: center; }
+.ct.dir .ic { color: var(--accent); }
+.ct .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ct .mt { font-size: 11.5px; color: var(--ink2); }
+.ct.dim .nm, .ct.locked .nm { color: var(--ink3); }
+.ct.sel { background: var(--accent); color: #fff; }
+.ct.sel .mt, .ct.sel .ic, .ct.sel .tw { color: rgba(255,255,255,.85); }
+.classic .ffoot { font: 11.5px var(--ui); }
+.classic .pv .h b { font: 600 13px var(--ui); }
+.classic .pv .h span { font: 11.5px var(--ui); }
+.classic .pv .cnt { border-radius: 8px; border-color: var(--ink4); background: var(--card); }
+.classic .note { font-family: var(--ui); }
+
+/* ---------- the phone ---------- */
+.phones { display: flex; flex-wrap: wrap; gap: 28px 44px; align-items: flex-start; }
+.phonebox { display: flex; flex-direction: column; gap: 8px; }
+.phonebox .lbl { font: 11px var(--mono); letter-spacing: .1em; color: #77746e; }
+.phone { width: 320px; height: 660px; border-radius: 44px; background: var(--bg); color: var(--ink); box-shadow: 0 0 0 9px #222, 0 0 0 10px #444, 0 26px 60px rgba(0,0,0,.6);
+  overflow: hidden; margin: 10px; position: relative; display: grid; grid-template-rows: 44px minmax(0, 1fr); font: 14px var(--ui); }
+.phone .sbar { display: flex; justify-content: space-between; padding: 15px 28px 0; font: 600 13px var(--ui); }
+.pscr { min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; position: relative; }
+.pnav { display: flex; align-items: center; gap: 6px; padding: 4px 12px 8px; border-bottom: 1px solid var(--ink4); }
+.pnav .t { flex: 1; text-align: center; min-width: 0; }
+.pnav .t b { display: block; font: 600 15px var(--ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pnav .t span { font: 11px var(--short); color: var(--ink2); }
+.pnav .nb { min-width: 44px; font: 14px var(--short); color: var(--ink); text-align: left; }
+.pnav .nb.r { text-align: right; }
+.classic .pnav .nb { color: var(--accent); font: 15px var(--ui); }
+.pbody { min-height: 0; overflow: hidden; padding: 10px 14px; display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; line-height: 1.6; }
+.pfoot { padding: 8px 12px 24px; border-top: 1px solid var(--ink4); }
+.pbox { border: 1px solid var(--ink3); min-height: 38px; display: flex; align-items: center; gap: 8px; padding: 4px 8px; font: 13.5px var(--ui); }
+.pbox .plus { width: 30px; height: 30px; border: 1px solid var(--ink3); display: grid; place-items: center; font: 18px var(--mono); color: var(--ink2); flex: none; }
+.pbox .tx { flex: 1; color: var(--ink); min-width: 0; }
+.pbox .tx.ph { color: var(--ink3); }
+.pbox .tx b { font: 12px var(--mono); color: var(--signal); font-weight: 400; }
+.classic .pbox { border-radius: 19px; border-color: var(--ink4); background: var(--card); }
+.classic .pbox .plus { border: 0; font: 24px var(--ui); color: var(--ink2); }
+.classic .pbox .tx b { color: var(--accent); font: 600 13px var(--ui); }
+/* the sheet over the terminal page */
+.sheet { position: absolute; left: 0; right: 0; top: 46px; bottom: 0; background: var(--bg); border-top: 1px solid var(--ink); display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; z-index: 3; }
+.classic .sheet { border-top: 0; border-radius: 12px 12px 0 0; background: var(--card); box-shadow: 0 -10px 30px rgba(0,0,0,.4); }
+.dimmer { position: absolute; inset: 0; background: rgba(0,0,0,.45); z-index: 2; }
+.grab { width: 36px; height: 5px; border-radius: 3px; background: var(--ink3); margin: 6px auto 2px; }
+.sheet .pnav { border-bottom: 0; padding-top: 2px; }
+.pcrumbs { display: flex; gap: 0; padding: 0 14px 8px; overflow: hidden; white-space: nowrap; font: 12.5px var(--mono); border-bottom: 1px solid var(--ink4); }
+.pcrumbs button { color: var(--ink2); }
+.pcrumbs button.cur { color: var(--ink); font-weight: 700; }
+.pcrumbs .sl { color: var(--ink3); padding: 0 4px; }
+.classic .pcrumbs { font-family: var(--ui); gap: 4px; }
+.classic .pcrumbs button { background: var(--raise); border-radius: 12px; padding: 1px 9px; font-size: 12px; }
+.classic .pcrumbs button.cur { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); font-weight: 600; }
+.classic .pcrumbs .sl { display: none; }
+.plist { min-height: 0; overflow: hidden; padding: 4px 0; }
+.pr { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; min-height: 40px; padding: 0 14px; font: 13.5px var(--mono); gap: 0; border-bottom: 1px solid var(--ink4); }
+.pr .tr { color: var(--ink3); white-space: pre; }
+.pr .tw { color: var(--ink2); }
+.pr .nm { padding-left: 1ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr.dir .nm { font-weight: 700; }
+.pr.dim .nm { color: var(--ink3); font-weight: 400; }
+.pr .mt { font-size: 11px; color: var(--ink3); padding-left: 8px; }
+.pr .cb { font: 13px var(--mono); color: var(--ink2); margin-right: 8px; }
+.pr .cb.on { color: var(--signal); }
+.pr.on { background: var(--raise); }
+.classic .pr { grid-template-columns: auto 28px minmax(0, 1fr) 14px; font: 14.5px var(--ui); min-height: 52px; gap: 10px; }
+.classic .pr .ic { color: var(--ink2); display: grid; place-items: center; }
+.classic .pr.dir .ic { color: var(--accent); }
+.classic .pr.dir .nm { font-weight: 400; }
+.classic .pr .nm { padding: 0; }
+.classic .pr .nm small { display: block; font-size: 12px; color: var(--ink2); }
+.classic .pr .go { color: var(--ink3); display: grid; place-items: center; }
+.classic .pr .cb2 { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--ink3); display: grid; place-items: center; color: #fff; font: 700 11px var(--ui); }
+.classic .pr .cb2.on { background: var(--accent); border-color: var(--accent); }
+.classic .pr.on { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.pbar { border-top: 1px solid var(--ink4); padding: 10px 14px 26px; display: flex; justify-content: space-between; align-items: center; font: 13px var(--mono); }
+.classic .pbar { font-family: var(--ui); }
+.pmenu { position: absolute; left: 12px; bottom: 76px; width: 230px; z-index: 4; border-radius: 13px; background: rgba(40,40,42,.97); color: #f2f2f4; font: 15px var(--ui); overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,.6); }
+.light .pmenu { background: rgba(250,250,250,.98); color: #1c1c1e; }
+.pmenu .it { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: .5px solid rgba(255,255,255,.12); }
+.light .pmenu .it { border-bottom-color: rgba(0,0,0,.1); }
+.pmenu .it.hi { background: rgba(255,255,255,.12); }
+.light .pmenu .it.hi { background: rgba(0,0,0,.07); }
+.pmenu .it .new { font: 600 10px var(--ui); color: #0a84ff; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; margin-left: 6px; }
+
+/* ---------- the notes under the demos ---------- */
+.docs { max-width: 1240px; margin: 0 auto; padding: 0 16px; display: flex; flex-direction: column; gap: 14px; color: #a9a6a0; font-size: 12.5px; line-height: 1.75; }
+.docs ol, .docs ul { margin: 0; padding-left: 1.4em; max-width: 112ch; }
+.tbl { overflow-x: auto; border: 1px solid #333; }
+.tbl table { border-collapse: collapse; width: 100%; font-size: 12.5px; min-width: 720px; }
+.tbl th, .tbl td { text-align: left; vertical-align: top; padding: 7px 12px; border-bottom: 1px solid #2c2c2f; }
+.tbl th { font: 600 11px var(--mono); letter-spacing: .08em; color: #8f8b84; }
+.tbl td:first-child { color: #d8d4cc; white-space: nowrap; }
+.tbl tr:last-child td { border-bottom: 0; }
+@media (max-width: 720px) { .phone { margin: 10px 0; } .phones { justify-content: center; } }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <h1>Files · 主窗口右边的文件栏</h1>
+  <p class="lede">配 <code>docs/files-v0.md</code>。文件栏是<b>窗口自己的一栏</b>，在所有终端之上：换终端、换页、分屏它都在。像素外观是 <code>tree</code> 式的目录树，经典外观是 Finder 式的文件夹（一次一层）；顶上是绝对路径，每一层可点。入口有三个：左边列表的右键 <code>Show in Files</code>、顶栏的文件夹图标（焦点那一块）、分屏时每块标题栏上的同一个图标。选中的文件 <code>Add to Reply</code> 或拖到某一块，落成回复框里的 <code>[File #n]</code>。下面的窗口和手机都能点：树的 <code>▸</code>、行（⌘ 点多选、⇧ 点连选、双击文件夹进入）、路径的每一层、<code>⌂</code>、<code>⋯</code>、<code>×</code>、顶栏和标题栏的文件夹图标、左边列表的右键；焦点在文件列表里时 <code>↑ ↓ ← →</code>、<code>空格</code>（Quick Look）、<code>esc</code>。路径与文件都是编的。</p>
+  <div class="tools">
+    <span>外观 <span class="seg" data-opt="look"><button data-v="pixel" class="on">Pixel</button><button data-v="classic">Classic</button></span></span>
+    <span><span class="seg" data-opt="theme"><button data-v="dark" class="on">Dark</button><button data-v="light">Light</button></span></span>
+  </div>
+</div>
+
+<div class="sec">1 · MAC — 主窗口</div>
+<div class="stage">
+  <div class="ctl" id="ctlMac">
+    <button data-mac="home" class="on">① 第一次打开</button><button data-mac="list">② 左边右键进入项目</button><button data-mac="pane">③ 分屏标题栏的图标</button>
+    <button data-mac="preview">④ 选中看预览</button><button data-mac="reply">⑤ 两个给 agent</button><button data-mac="ql">⑥ 空格 Quick Look</button><button data-mac="narrow">⑦ 窗口窄时</button>
+  </div>
+  <div class="fit" id="fitMac"><div class="scaled"><div class="win" id="win"></div></div></div>
+</div>
+<div class="cap" id="capMac"></div>
+
+<div class="sec">2 · IPHONE — 终端页 + › Files on Mac</div>
+<div class="stage">
+  <div class="ctl" id="ctlPhone">
+    <button data-ph="browse" class="on">① + 菜单</button><button data-ph="open">② 打开在终端的文件夹</button><button data-ph="down">③ 往下一层</button><button data-ph="preview">④ 预览</button><button data-ph="select">⑤ Select 两项</button><button data-ph="reply">⑥ 回到回复框</button>
+  </div>
+  <div class="phones" id="phones"></div>
+</div>
+<div class="cap" id="capPhone"></div>
+
+<div class="sec">3 · 查到的规范，用了什么</div>
+<div class="docs">
+  <div class="tbl"><table>
+    <tr><th>来源</th><th>说的</th><th>这里</th></tr>
+    <tr><td>HIG · Path controls</td><td>磁盘、上层文件夹、所选项一串，每项图标加名字；放不下时隐去首尾之间的名字；放在窗口内容里，不放工具栏、状态栏</td><td>路径行在文件栏内容的顶上；经典照标准样式；太长时中间收成 <code>…</code>（点开是被收起的几层）</td></tr>
+    <tr><td>HIG · Outline views</td><td>层级放在一列；点三角只展开自己、⌥ 点展开全部；记住展开到哪；长名字中间省略</td><td>像素的树：<code>▸ ▾</code> 只管展开；⌥ 点全部展开；展开状态按节点记住</td></tr>
+    <tr><td>HIG · Column views</td><td>深的层级、常在层间来回时用分栏；根在第一栏；选中没有下层的项时显示它的信息与预览</td><td>经典的“文件夹”一次一层，根在路径最左；选中文件时下半是信息与预览（Finder 预览栏竖着放）</td></tr>
+    <tr><td>HIG · Sidebars / Split views</td><td>窄时自动收起；按钮、菜单、快捷键都能开关；1 点分隔线可拖，合理的最小最大宽度</td><td>顶栏图标、<code>⌘⇧F</code>、菜单三处；240–560 点；页面不足 520 点时浮在页面上（⑦）</td></tr>
+    <tr><td>HIG · File management、Quick Look</td><td>打开时显示最相关的位置，也能去别处；用 Quick Look 预览打不开的文件</td><td>打开在这一块的文件夹 / 上次 / 家目录；预览一律交给 Quick Look（Mac 嵌在栏里、空格放大；iPhone 下载后 <code>QLPreviewController</code>）</td></tr>
+    <tr><td>WAI-ARIA APG · Tree View</td><td>↑↓ 移动，→ 展开 / 进子项，← 收起 / 回上层，Home / End，打字跳转，<code>*</code> 展开同层；多选空格、⇧↑↓</td><td>键盘照它；网页版标 <code>tree / treeitem / group</code>、<code>aria-expanded</code>、<code>aria-selected</code></td></tr>
+    <tr><td>VS Code Explorer</td><td>文件夹在前；Reveal、Copy Path / Copy Relative Path、Reveal in Finder；拖进聊天或终端是引用 / 路径</td><td>文件夹在前；右键 <code>Copy Path</code>、<code>Copy Relative Path</code>、<code>Show in Finder</code>、<code>New Terminal Here</code>；拖到回复框是占位符、拖到终端是路径</td></tr>
+    <tr><td><code>tree</code>、iOS“文件”</td><td><code>├── └── │</code>，<code>-a</code> 才列隐藏文件；iOS 一次一层往下钻，长按返回键列出上面各层</td><td>像素用两格树线 <code>├─ └─ │</code>、文件夹加 <code>/</code>，隐藏文件默认不列；手机两种外观都是往下钻</td></tr>
+  </table></div>
+</div>
+
+<div class="sec">4 · 待拍板（files-v0 §10）</div>
+<div class="docs"><ol>
+  <li>默认开还是关（这一稿默认关，从入口打开以后记住开着）。</li>
+  <li>快捷键：<code>⌘⇧F</code> 开关、<code>⌥↩</code> Add to Reply，其余照 Finder（<code>⌘⇧H</code> <code>⌘⇧G</code> <code>⌘⇧.</code> <code>⌥⌘C</code>）。</li>
+  <li>经典的文件夹看法拉宽时要不要变成 Finder 的分栏。</li>
+  <li>扩展名一律显示；<code>.env</code> 这类给手机预览前要不要提醒。</li>
+  <li>手机要不要单独一个 <code>Files</code> 标签页（这一稿没有）。</li>
+  <li>手机、别的节点读这台 Mac 的文件内容，要不要有节点自己的开关。</li>
+  <li>预览放在栏的下半，还是只在空格时弹出。</li>
+</ol></div>
+<div style="height:60px"></div>
+
+<script src="pixel.js"></script>
+<script src="files-data.js"></script>
+<script>
+const P = window.Pixel;
+const D = window.FILES_DATA;
+document.getElementById("gcss").textContent = P.GLITCH_CSS;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const attr = (s) => esc(s).replace(/'/g, "&#39;");
+
+// ---------- the made-up file system ----------
+const HOME = D.HOME;
+const byPath = new Map();
+(function index(node, path) {
+  node.path = path;
+  byPath.set(path, node);
+  for (const c of node.children ?? []) index(c, `${path}/${c.name}`);
+})(D.root, HOME);
+for (const [p, names] of Object.entries(D.ABOVE)) {
+  if (!byPath.has(p)) byPath.set(p, { name: p === "/" ? "" : p.split("/").pop(), kind: "dir", path: p, children: [] });
+  const dir = byPath.get(p);
+  dir.children = names.map((n) => { const cp = (p === "/" ? "" : p) + "/" + n; return byPath.get(cp) ?? (byPath.set(cp, { name: n, kind: "dir", path: cp, children: [], mtime: "9/12" }), byPath.get(cp)); });
+}
+const node = (p) => byPath.get(p) ?? null;
+const resolve = (n) => n && n.kind === "link" ? node(n.target) : n;
+const isDir = (n) => { const r = resolve(n); return !!r && r.kind === "dir"; };
+const parentOf = (p) => p === "/" ? null : (p.slice(0, p.lastIndexOf("/")) || "/");
+const baseName = (p) => p === "/" ? "/" : p.slice(p.lastIndexOf("/") + 1);
+const kids = (p, hidden) => {
+  const n = resolve(node(p));
+  if (!n || n.locked) return [];
+  return [...(n.children ?? [])].filter((c) => hidden || !c.hidden)
+    .sort((a, b) => (isDir(b) - isDir(a)) || a.name.replace(/^\./, "").localeCompare(b.name.replace(/^\./, ""), "en", { sensitivity: "base" }));
+};
+const size = (n) => {
+  if (n.kind !== "file") return "";
+  const b = n.size;
+  if (b < 1000) return `${b}B`;
+  if (b < 1e6) return `${(b / 1024).toFixed(b < 10240 ? 1 : 0)}K`;
+  if (b < 1e9) return `${(b / 1048576).toFixed(b < 10485760 ? 1 : 0)}M`;
+  return `${(b / 1073741824).toFixed(1)}G`;
+};
+const sizeWords = (b) => b < 1000 ? `${b} bytes` : b < 1e6 ? `${(b / 1000).toFixed(1)} KB` : `${(b / 1e6).toFixed(1)} MB`;
+const kindWord = (n) => {
+  if (isDir(n)) return "Folder";
+  if (n.lang) return n.lang;
+  return { image: "PNG Image", pdf: "PDF Document", archive: "ZIP Archive", binary: "Document", text: "Plain Text" }[n.type] ?? "Document";
+};
+const fileCount = (p, hidden) => kids(p, hidden).length;
+
+// ---------- state ----------
+const S = {
+  look: "pixel", light: false,
+  mac: "home",
+  open: true, root: HOME, expanded: new Set(), sel: [], anchor: null, view: null, hidden: false, back: [], fwd: [],
+  panes: 1, focus: 0, viewOf: ["simple", "terminal"], reply: [[], []], typed: ["", ""],
+  menu: null, ql: false, narrow: false, sideW: 300,
+  ph: { step: "browse", root: HOME + "/Projects/lumen", expanded: new Set(), select: false, sel: [], preview: null, added: [] },
+};
+const C = () => S.look === "classic";
+const look = () => `${C() ? "classic" : ""} ${S.light ? "light" : ""}`;
+const viewNow = () => S.view ?? (C() ? "folders" : "tree");
+const PANES = [
+  { term: "t1", name: "排序改成最近使用", ag: "cc", st: "busy", cwd: HOME + "/Projects/lumen", short: "~/Projects/lumen", git: "main ±2" },
+  { term: "t2", name: "refreshToken 字段", ag: "codex", st: "idle", cwd: HOME + "/Projects/harbor-api/src", short: "~/Projects/harbor-api/src", git: "auth ±1" },
+];
+const paneOf = (i) => S.panes === 1 ? PANES[0] : PANES[i];
+const showsPane = (i) => S.open && S.root === paneOf(i).cwd;
+
+function goTo(path, { history = true } = {}) {
+  if (path === S.root) return;
+  if (history) { S.back.push(S.root); S.fwd = []; }
+  S.root = path; S.sel = []; S.anchor = null; S.ql = false;
+}
+function preset(name) {
+  S.mac = name; S.menu = null; S.ql = false; S.narrow = false; S.open = true; S.view = null; S.hidden = false; S.back = []; S.fwd = [];
+  S.expanded = new Set(); S.sel = []; S.anchor = null; S.panes = 1; S.focus = 0; S.reply = [[], []]; S.typed = ["", ""]; S.viewOf = ["simple", "terminal"];
+  const lumen = HOME + "/Projects/lumen";
+  if (name === "home") { S.root = HOME; }
+  if (name === "list") { S.root = lumen; S.menu = { kind: "list", cwd: lumen, id: "g0", hi: "files" }; }
+  if (name === "pane") { S.panes = 2; S.focus = 1; S.root = PANES[1].cwd; S.expanded = new Set([PANES[1].cwd + "/routes"]); }
+  if (name === "preview") { S.root = lumen; S.expanded = new Set([lumen + "/src"]); S.sel = [lumen + "/src/app.ts"]; }
+  if (name === "reply") { S.root = lumen; S.expanded = new Set([lumen + "/src", lumen + "/docs"]); S.sel = [lumen + "/src/store.ts", lumen + "/docs/design.md"]; S.reply[0] = [...S.sel]; }
+  if (name === "ql") { S.root = lumen; S.expanded = new Set([lumen + "/docs"]); S.sel = [lumen + "/docs/logo.png"]; S.ql = true; }
+  if (name === "narrow") { S.narrow = true; S.root = lumen; S.expanded = new Set([lumen + "/src"]); }
+  // Folders, one level at a time: the level the selection is in (what was added before stays in the reply).
+  if (viewNow() === "folders" && S.sel.length) { S.root = parentOf(S.sel.at(-1)); S.sel = S.sel.filter((p) => parentOf(p) === S.root); }
+}
+
+// ---------- icons: pixel sprites, and the classic look's line drawings ----------
+const PX = {
+  folder: ["###......", "#########", "#.......#", "#.......#", "#.......#", "#########"],
+  list: ["#########", "#..#....#", "#..#....#", "#..#....#", "#..#....#", "#########"],
+  record: ["#########", "#.......#", "#.#####.#", "#.......#", "#.###...#", "#.......#", "#########"],
+  terminal: ["#########", "#.......#", "#.#.....#", "#..#....#", "#.#..##.#", "#.......#", "#########"],
+  right: ["#########", "#...#####", "#...#####", "#...#####", "#...#####", "#########"],
+  down: ["#########", "#.......#", "#.......#", "#########", "#########", "#########"],
+  plus: ["....#....", "....#....", "#########", "....#....", "....#...."],
+  home: ["....#....", "...###...", "..##.##..", ".##...##.", "#########", ".#.....#.", ".#.##..#.", ".#.##..#."],
+};
+const RAIL = {
+  dispatch: ["......###", ".....#...", "....#....", "###.#####", "###......", "....#....", ".....#...", "......###"],
+  terminals: ["#########", "#.......#", "#.#.....#", "#..#....#", "#.#..##.#", "#.......#", "#########"],
+  browser: [".#####.", "#..#..#", "#######", "#..#..#", "#######", "#..#..#", ".#####."],
+  clash: ["#.....#", "##...##", "#######", "#.#.#.#", "#######", ".#####."],
+  settings: ["#........", "#####....", "#........", "....#....", "#########", "....#....", "..#......", "#########", "..#......"],
+};
+const LINE = {
+  dispatch: '<circle cx="4.5" cy="12" r="2"/><path d="M6.5 12H19M6.5 12c5 0 5-6 10-6H19M6.5 12c5 0 5 6 10 6H19"/>',
+  terminals: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 10l3 2-3 2M12.5 15H17"/>',
+  terminal: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 10l3 2-3 2M12.5 15H17"/>',
+  browser: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c3.2 3 3.2 14 0 17M12 3.5c-3.2 3-3.2 14 0 17"/>',
+  clash: '<path d="M5 10l1-5 3.5 3h5L18 5l1 5v3.5a7 7 0 0 1-14 0z"/><path d="M9.5 13h.01M14.5 13h.01"/>',
+  settings: '<path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="1.9"/><circle cx="15" cy="12" r="1.9"/><circle cx="8" cy="17" r="1.9"/>',
+  folder: '<path d="M3.5 7.5V17.5a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2V9.5a2 2 0 0 0-2-2h-6.8l-2-2.5H5.5a2 2 0 0 0-2 2z"/>',
+  doc: '<path d="M7 3.5h6.5L18.5 8.5v10a2 2 0 0 1-2 2h-9.5a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2z"/><path d="M13.5 3.5v5h5"/>',
+  code: '<path d="M7 3.5h6.5L18.5 8.5v10a2 2 0 0 1-2 2h-9.5a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2z"/><path d="M10.2 12.2l-1.8 1.8 1.8 1.8M13.8 12.2l1.8 1.8-1.8 1.8"/>',
+  image: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M5 18l5-5 4 4 2.5-2.5L20 18"/>',
+  pdf: '<path d="M7 3.5h6.5L18.5 8.5v10a2 2 0 0 1-2 2h-9.5a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2z"/><path d="M13.5 3.5v5h5M8.5 13.5h7M8.5 16.5h5"/>',
+  archive: '<rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M12 4v3M12 9v2M11 13h2v3h-2z"/>',
+  lock: '<rect x="5.5" y="10.5" width="13" height="9" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>',
+  link: '<path d="M10 14l4-4M8.5 11.5l-1.8 1.8a3 3 0 0 0 4.2 4.2l1.8-1.8M15.5 12.5l1.8-1.8a3 3 0 0 0-4.2-4.2l-1.8 1.8"/>',
+  home: '<path d="M4 11l8-6.5 8 6.5"/><path d="M6.5 9.5V19h11V9.5"/>',
+  more: '<circle cx="6" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="18" cy="12" r="1.2" fill="currentColor"/>',
+  x: '<path d="M7 7l10 10M17 7L7 17"/>',
+  chevR: '<path d="M9.5 6l6 6-6 6"/>', chevL: '<path d="M14.5 6l-6 6 6 6"/>', chevD: '<path d="M6 9.5l6 6 6-6"/>',
+  list: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M9 5v14"/>',
+  record: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h5"/>',
+  right: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M12 5v14"/><path fill="currentColor" stroke="none" opacity=".4" d="M12 5h6a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-6z"/>',
+  down: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 12h18"/><path fill="currentColor" stroke="none" opacity=".4" d="M3 12h18v4a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  laptop: '<rect x="5" y="5" width="14" height="10" rx="1.5"/><path d="M3 18.5h18"/>',
+  camera: '<path d="M4 8.5a2 2 0 0 1 2-2h2l1.5-2h5L16 6.5h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.2"/>',
+  clip: '<rect x="6" y="4.5" width="12" height="16" rx="2"/><path d="M9.5 4.5V3.5h5v1M9 10h6M9 13.5h6M9 17h4"/>',
+  keys: '<rect x="3" y="6.5" width="18" height="11" rx="2"/><path d="M7 10h.01M10.5 10h.01M14 10h.01M17.5 10h.01M8 14h8"/>',
+};
+const line = (k, size = 16, w) => `<svg class="li" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w ?? (size < 15 ? 2.1 : 1.6)}" stroke-linecap="round" stroke-linejoin="round">${LINE[k]}</svg>`;
+const tbIcon = (k) => C() ? line(k, 16) : P.sprite(PX[k], { px: 1.5 });
+const railIcon = (k) => C() ? line(k, 20) : P.sprite(RAIL[k], { px: 2 });
+const fileIcon = (n) => {
+  if (n.locked) return line("lock", 15);
+  if (n.kind === "link") return line("link", 15);
+  if (isDir(n)) return line("folder", 17);
+  if (n.type === "image") return line("image", 16);
+  if (n.type === "pdf") return line("pdf", 16);
+  if (n.type === "archive") return line("archive", 16);
+  return line(n.lang ? "code" : "doc", 16);
+};
+const AGENT_LINE = { cc: "✳", codex: "›_", oc: "▢", pi: "π" };
+const agent = (a) => C() ? `<span class="cag">${AGENT_LINE[a]}</span>` : P.sprite(P.AGENT_PX[a], { px: 2 });
+const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+let frame = 0;
+const spin = () => C() ? `<span class="cspin"></span>` : `<span class="spin" data-spin>${SPIN[frame % SPIN.length]}</span>`;
+const mark = (st) => st === "busy" ? spin() : `<span class="sq" style="background:${st === "waiting" ? "var(--amber)" : "var(--green)"}"></span>`;
+const B = (word, kind = "", act = "", extra = "") => C() ? `<button class="cbtn ${kind}" ${act ? `data-act="${act}"` : ""} ${extra}>${word}</button>` : `<button class="btn ${kind}" ${act ? `data-act="${act}"` : ""} ${extra}>[ ${word} ]</button>`;
+const tb = (k, act, tip, { on = false, data = "" } = {}) => `<button class="tb ${on ? "on" : ""}" data-act="${act}" ${data} aria-label="${attr(tip)}">${tbIcon(k)}<span class="tip">${esc(tip)}</span></button>`;
+
+// ---------- 1. the window ----------
+function drawMac() {
+  const win = document.getElementById("win");
+  win.className = `win ${look()} ${S.narrow ? "narrow" : ""}`;
+  const floated = S.open && S.narrow;
+  win.style.setProperty("--fw", S.open && !floated ? `${S.sideW}px` : "0px");
+  const f = paneOf(S.focus);
+  const head = S.panes === 1 ? PANES[0] : f;
+  const viewTip = S.viewOf[S.panes === 1 ? 0 : S.focus] === "simple" ? "Terminal View ⌘⇧E" : "Simple View ⌘⇧E";
+  const viewIcon = S.viewOf[S.panes === 1 ? 0 : S.focus] === "simple" ? "terminal" : "record";
+  const filesTip = showsPane(S.focus) ? "Hide Files ⌘⇧F" : "Show in Files ⌘⇧F";
+  const bar = `<div class="bar"><div class="lights"><i></i><i></i><i></i></div>
+    ${tb("list", "", "List ⌘B")}
+    <span class="ttl">${esc(head.name)} <small>${esc(head.git)}</small></span>
+    <div class="end">${tb("folder", "barfiles", filesTip, { on: showsPane(S.focus) })}${tb(viewIcon, "view", viewTip)}${tb("right", "split", "Split Right ⌘D")}${tb("down", "", "Split Down ⌘⇧D")}${tb("plus", "", "New Terminal ⌘T")}</div></div>`;
+  const rail = `<div class="rail">${["dispatch", "terminals", "browser", "clash"].map((k) => `<span class="ic ${k === "terminals" ? "on" : ""}">${railIcon(k)}</span>`).join("")}<span class="gap"></span><span class="ic" style="margin-bottom:12px">${railIcon("settings")}</span></div>`;
+  const center = `<div class="center" style="--panes:${S.panes}">${Array.from({ length: S.panes }, (_, i) => paneHtml(i)).join("")}${S.ql ? qlHtml() : ""}</div>`;
+  const files = S.open ? filesHtml({ float: floated }) : "";
+  const selInfo = S.open && S.sel.length ? `<span>${S.sel.length} Selected${S.sel.length > 1 ? ` · ${sizeWords(S.sel.reduce((a, p) => a + (node(p)?.size ?? 0), 0))}` : ""}</span>` : "";
+  const status = `<div class="status"><span><span class="sq" style="background:var(--green)"></span> ${C() ? "Gateway OK" : "Gateway"}</span><span>iPhone Online</span><span class="sp"></span>${selInfo}<span>${f.ag === "cc" ? "Claude Code · Opus 5.5" : "Codex · GPT-6 Astra"}</span><span>${S.viewOf[S.panes === 1 ? 0 : S.focus] === "simple" ? "Simple" : "120×38"}</span></div>`;
+  win.innerHTML = `${bar}<div class="body">${rail}${listHtml()}${center}${files}${S.menu ? menuHtml() : ""}</div>${status}`;
+  const anchor = win.querySelector(".menu[data-anchor]");
+  if (anchor) { const el = win.querySelector(`[data-ctx-id="${anchor.dataset.anchor}"]`); if (el) anchor.style.top = `${el.offsetTop + el.offsetHeight - 2}px`; }
+  document.getElementById("capMac").innerHTML = capMac();
+  fitAll();
+}
+
+function listHtml() {
+  const out = [`<div class="list"><div class="hd">${C() ? "Terminals" : "// TERMINALS"}</div>`];
+  D.LIST.forEach((g, gi) => {
+    const ctx = S.menu?.kind === "list" && S.menu.id === `g${gi}`;
+    out.push(C()
+      ? `<div class="ldir ${ctx ? "ctx" : ""}" data-ctx="${attr(g.cwd)}" data-ctx-id="g${gi}"><span class="chev">${line("chevD", 11, 2.4)}</span><span style="color:var(--accent)">${line("folder", 15)}</span><span class="name">${esc(g.short.split("/").pop())}</span><span class="count">${esc(g.git)}</span></div>`
+      : `<div class="ldir ${ctx ? "ctx" : ""}" data-ctx="${attr(g.cwd)}" data-ctx-id="g${gi}"><span class="chev">▾</span><span class="name">${esc(g.short)}</span><span class="count">${esc(g.git)}</span></div>`);
+    g.rows.forEach((r, i) => {
+      const last = i === g.rows.length - 1;
+      const on = r.kind === "term" && (S.panes === 1 ? r.id === "t1" : r.id === paneOf(S.focus).term);
+      const id = `g${gi}r${i}`, rc = S.menu?.kind === "list" && S.menu.id === id ? "ctx" : "";
+      const meta = r.kind === "term" ? agent(r.ag) : `${agent(r.ag)}<span>${C() ? `${r.at} ago` : r.at}</span>`;
+      out.push(C()
+        ? `<div class="row ${r.kind} ${on ? "sel" : ""} ${rc}" data-ctx="${attr(r.workdir ?? g.cwd)}" data-ctx-id="${id}"><span>${r.kind === "term" ? mark(r.st) : `<span style="color:var(--ink3)">${line("doc", 13)}</span>`}</span><span></span><span class="nm">${esc(r.name)}</span><span class="mt">${meta}</span></div>`
+        : `<div class="row ${r.kind} ${on ? "sel" : ""} ${rc}" data-ctx="${attr(r.workdir ?? g.cwd)}" data-ctx-id="${id}"><span class="ix">${r.n ?? ""}</span><span class="tr">${last ? "└─" : "├─"}</span><span>${r.kind === "term" ? mark(r.st) : ""}</span><span class="nm">${esc(r.name)}</span><span class="mt">${meta}</span></div>`);
+    });
+  });
+  out.push(`</div>`);
+  return out.join("");
+}
+
+function paneHtml(i) {
+  const p = paneOf(i), view = S.viewOf[i];
+  const title = S.panes > 1 ? `<div class="sph"><span>${i + 1}</span>${mark(p.st)}<b>${esc(p.name)}</b><span class="pth">${esc(p.short)}</span>${agent(p.ag)}
+      <span class="end">${tb("folder", "panefiles", showsPane(i) ? "Hide Files" : "Show in Files", { on: showsPane(i), data: `data-pane="${i}"` })}${tb(view === "simple" ? "terminal" : "record", "", view === "simple" ? "Terminal View" : "Simple View")}<button class="tb" aria-label="Close Pane">${C() ? line("x", 12) : "×"}</button></span></div>` : "<div></div>";
+  const body = view === "simple" ? recordHtml(i) : ttyHtml(i);
+  return `<div class="pane ${S.panes > 1 && S.focus === i ? "focus" : ""}" data-pane-body="${i}">${title}${body.main}${body.foot}</div>`;
+}
+function recordHtml(i) {
+  const files = S.reply[i];
+  const work = C() ? `<span>${line("chevR", 11, 2.4)}</span>` : "▸";
+  const main = `<div class="rec">
+    <div class="ub">把列表的排序改成按最近使用，置顶的仍然在最前。</div>
+    <div class="work">${work}<span>Worked 1m 12s · Read 3 · Edited 2</span><span class="d">+15 <i>−7</i></span></div>
+    <div class="md"><p>改好了：列表现在按最近使用排，置顶的仍然在最前。</p><ul><li>排序放在 <code class="c">store.ts</code> 里做，界面只读结果；</li><li>从没用过的排在最后，按名字。</li></ul></div>
+    <div class="ub">顺便看看规则写的和代码是不是一致。</div>
+    <div class="now">${spin()}<span>Read</span><code>docs/design.md</code><span class="t">0:08</span></div>
+  </div>`;
+  const chips = files.length ? `<div class="chips">${files.map((p, k) => `<span class="fchip">${C() ? `<span style="color:var(--ink2)">${fileIcon(node(p))}</span>` : `<i>[File #${k + 1}]</i>`}${esc(baseName(p))}<button data-act="unreply" data-pane="${i}" data-k="${k}" aria-label="Remove">${C() ? line("x", 11) : "×"}</button></span>`).join("")}</div>` : "";
+  const text = files.length ? `对照一下 ${files.map((_, k) => `<b>[File #${k + 1}]</b>`).join(" ")}，规则和代码有没有不一致的地方<span class="caret"></span>` : `<span class="tx ph">回复…</span>`;
+  const foot = `<div class="reply">${chips}<div class="box"><span style="font:16px var(--mono); color:var(--ink2)">+</span><span class="tx">${files.length ? text : "<span style='color:var(--ink3)'>回复…</span>"}</span>${B("Send", "pri")}</div></div>`;
+  return { main, foot };
+}
+function ttyHtml(i) {
+  const typed = S.typed[i];
+  const main = `<pre class="tty"><span class="d">╭──────────────────────────────────────────╮</span>
+<span class="d">│</span> <span class="u">&gt;_ OpenAI Codex</span>                          <span class="d">│</span>
+<span class="d">│</span> <span class="d">directory: ~/Projects/harbor-api/src</span>     <span class="d">│</span>
+<span class="d">╰──────────────────────────────────────────╯</span>
+
+<span class="u">› 登录接口的返回加上 refreshToken 字段</span>
+
+<span class="k">•</span> 已在 routes/auth.ts 的登录返回里加了
+  refreshToken，过期时间取配置里的
+  REFRESH_TTL。
+
+  <span class="d">└</span> npm test  <span class="g">12 passed</span>
+
+<span class="u">› ${esc(typed)}</span>▌
+
+
+
+<span class="d">  gpt-6-astra medium · ~/Projects/harbor-api/src</span></pre>`;
+  return { main, foot: "" };
+}
+
+// ---------- Files ----------
+function filesHtml({ float = false } = {}) {
+  const hd = C()
+    ? `<div class="fhd"><span class="lb">Files</span><span class="acts"><button class="ib" data-act="home" aria-label="Home">${line("home", 15)}</button><button class="ib ${S.menu?.kind === "more" ? "on" : ""}" data-act="more" aria-label="More">${line("more", 16)}</button><button class="ib" data-act="close" aria-label="Close">${line("x", 13)}</button></span></div>`
+    : `<div class="fhd"><span class="lb">// FILES</span><span class="acts"><button class="ib" data-act="home" aria-label="Home ⌘⇧H">${P.sprite(PX.home, { px: 1.5 })}</button><button class="ib ${S.menu?.kind === "more" ? "on" : ""}" data-act="more" aria-label="More">⋯</button><button class="ib" data-act="close" aria-label="Close">×</button></span></div>`;
+  const list = viewNow() === "tree" ? (C() ? classicTreeHtml() : treeHtml()) : foldersHtml();
+  const hiddenHere = kids(S.root, true).length - kids(S.root, false).length;
+  const foot = S.sel.length ? previewHtml() : `<div class="ffoot"><span>${fileCount(S.root, S.hidden)} Items</span>${!S.hidden && hiddenHere ? `<span>${hiddenHere} Hidden</span>` : ""}</div>`;
+  return `<div class="files ${float ? "float" : ""}" role="region" aria-label="Files"><span class="drag" data-act="drag" title="Drag to resize"></span>${hd}${crumbsHtml()}<div class="fl" tabindex="0" id="fl" role="tree" aria-label="${attr(S.root)}" aria-multiselectable="true">${list}</div>${foot}</div>`;
+}
+/** The absolute path, every level a button; the middle folded into `…` when it does not fit. */
+function crumbsHtml() {
+  const parts = S.root === "/" ? [] : S.root.split("/").slice(1);
+  const levels = [{ name: "/", path: "/" }, ...parts.map((n, i) => ({ name: n, path: "/" + parts.slice(0, i + 1).join("/") }))];
+  // Points, roughly: a level's name and what goes with it (the classic look's folder icon, padding and chevron).
+  const budget = (S.open && S.narrow ? 300 : S.sideW) - (C() ? 70 : 26);
+  let shown = levels, folded = [];
+  const width = (ls) => ls.reduce((a, l) => a + (C() ? (l.path === "/" ? 30 : l.name === "…" ? 30 : 7 * l.name.length + 34) : 7.3 * ((l.path === "/" ? 1 : l.name.length) + 3)), 0);
+  if (width(levels) > budget && levels.length > 3) {
+    let cut = 1;
+    while (cut < levels.length - 2 && width([levels[0], { name: "…" }, ...levels.slice(cut + 1)]) > budget) cut++;
+    folded = levels.slice(1, cut + 1);
+    shown = [levels[0], { name: "…", fold: true }, ...levels.slice(cut + 1)];
+  }
+  const nav = C() ? `<span class="nav"><button data-act="back" ${S.back.length ? "" : "disabled"} aria-label="Back">${line("chevL", 13, 2.2)}</button><button data-act="fwd" ${S.fwd.length ? "" : "disabled"} aria-label="Forward">${line("chevR", 13, 2.2)}</button></span>` : "";
+  const segs = shown.map((l, i) => {
+    const cur = l.path === S.root;
+    const sep = i === 0 ? "" : C() ? `<span class="sl">${line("chevR", 10, 2.4)}</span>` : "";
+    if (l.fold) return `${sep}<button class="seg2" data-act="fold" aria-label="${attr(folded.map((x) => x.name).join(" / "))}">…</button>${C() ? "" : `<span class="sl">/</span>`}`;
+    if (C()) return `${sep}<button class="seg2 ${cur ? "cur" : ""}" data-act="crumb" data-path="${attr(l.path)}" ${l.path === "/" ? 'aria-label="Macintosh HD" title="Macintosh HD" style="min-width:0"' : ""}>${l.path === "/" ? line("laptop", 13) : line("folder", 13) + `<span class="t">${esc(l.name)}</span>`}</button>`;
+    return `<button class="seg2 ${cur ? "cur" : ""}" data-act="crumb" data-path="${attr(l.path)}">${l.path === "/" ? "/" : esc(l.name)}</button>${l.path === "/" ? "" : `<span class="sl">/</span>`}`;
+  }).join("");
+  S.folded = folded;
+  return `<div class="crumbs">${nav}${segs}</div>`;
+}
+/** Pixel: the tree, `tree -F` in two-cell lines (ui-v0 §7.2 1); ▸ ▾ only open and close (§7.2 6). */
+function treeHtml() {
+  const rows = [];
+  const walk = (p, stems) => {
+    const list = kids(p, S.hidden);
+    list.forEach((n, i) => {
+      const last = i === list.length - 1;
+      const dir = isDir(n);
+      const open = dir && S.expanded.has(n.path);
+      rows.push({ n, stems, last, dir, open, depth: stems.length });
+      if (open && !n.locked) walk(n.kind === "link" ? n.target : n.path, [...stems, last]);
+    });
+  };
+  walk(S.root, []);
+  S.visible = rows.map((r) => r.n.path);
+  const up = parentOf(S.root);
+  const out = up ? [`<div class="fr up" data-act="up"><span class="tr"></span><span class="nm">../</span><span class="mt"></span></div>`] : [];
+  if (!rows.length) out.push(`<div class="note">${C() ? "" : ""}此文件夹为空。</div>`);
+  for (const r of rows) {
+    const { n } = r;
+    const stem = r.stems.map((l) => (l ? "   " : "│  ")).join("") + (r.last ? "└─" : "├─");
+    const tw = r.dir && !n.locked ? `<span class="tw" data-act="twist" data-path="${attr(n.path)}">${r.open ? "▾" : "▸"}</span>` : "─";
+    const cls = ["fr", r.dir ? "dir" : "file", n.hidden || n.dim ? "dim" : "", n.locked ? "locked" : "", S.sel.includes(n.path) ? "sel" : ""].join(" ");
+    const name = `${esc(n.name)}${r.dir ? "/" : ""}${n.kind === "link" ? `<span class="to"> → ${esc(n.target.replace(HOME, "~"))}</span>` : ""}${n.locked ? `<span class="lk" title="此处存放 AgentSwitch 的凭据，无法在此打开。">⌧</span>` : ""}`;
+    const meta = n.locked ? "" : r.dir ? `<span>${esc(n.mtime ?? "")}</span>` : `<span class="sz">${size(n)}</span><span>${esc(n.mtime ?? "")}</span>`;
+    out.push(`<div class="${cls}" data-row="${attr(n.path)}" role="treeitem" aria-level="${r.depth + 1}" ${r.dir ? `aria-expanded="${r.open}"` : ""} aria-selected="${S.sel.includes(n.path)}" ${n.locked ? 'title="此处存放 AgentSwitch 的凭据，无法在此打开。"' : ""}><span class="tr">${stem}${tw}</span><span class="nm">${name}</span><span class="mt">${meta}</span></div>`);
+  }
+  return out.join("");
+}
+/** Classic: Finder's folders, one level at a time; or, by ⋯ › As Tree, an outline with disclosure chevrons. */
+function foldersHtml() {
+  const list = kids(S.root, S.hidden);
+  S.visible = list.map((n) => n.path);
+  const out = [];
+  if (!list.length) out.push(`<div class="note">此文件夹为空。</div>`);
+  for (const n of list) {
+    const dir = isDir(n);
+    const cls = [C() ? "cr" : "fr", dir ? "dir" : "file", n.hidden || n.dim ? "dim" : "", n.locked ? "locked" : "", S.sel.includes(n.path) ? "sel" : ""].join(" ");
+    if (C()) {
+      out.push(`<div class="${cls}" data-row="${attr(n.path)}" role="treeitem" aria-selected="${S.sel.includes(n.path)}" ${n.locked ? 'title="此处存放 AgentSwitch 的凭据，无法在此打开。"' : ""}><span class="ic">${fileIcon(n)}</span><span class="nm">${esc(n.name)}${n.kind === "link" ? ` <span class="to">→ ${esc(baseName(n.target))}</span>` : ""}</span><span class="mt">${n.locked ? "" : dir ? esc(n.mtime ?? "") : `${esc(n.mtime ?? "")} · ${size(n)}`}</span><span class="go" ${dir && !n.locked ? `data-act="enter" data-path="${attr(n.path)}"` : ""}>${dir && !n.locked ? line("chevR", 12, 2.2) : ""}</span></div>`);
+    } else {
+      out.push(`<div class="${cls}" data-row="${attr(n.path)}" role="treeitem" aria-selected="${S.sel.includes(n.path)}"><span class="tr"></span><span class="nm" style="padding-left:0">${esc(n.name)}${dir ? "/" : ""}${n.locked ? `<span class="lk">⌧</span>` : ""}</span><span class="mt">${dir ? "" : `<span class="sz">${size(n)}</span>`}<span>${esc(n.mtime ?? "")}</span>${dir && !n.locked ? `<span class="go" data-act="enter" data-path="${attr(n.path)}">›</span>` : ""}</span></div>`);
+    }
+  }
+  return out.join("");
+}
+function classicTreeHtml() {
+  const rows = [];
+  const walk = (p, depth) => kids(p, S.hidden).forEach((n) => {
+    const dir = isDir(n), open = dir && S.expanded.has(n.path);
+    rows.push({ n, depth, dir, open });
+    if (open && !n.locked) walk(n.kind === "link" ? n.target : n.path, depth + 1);
+  });
+  walk(S.root, 0);
+  S.visible = rows.map((r) => r.n.path);
+  return rows.map(({ n, depth, dir, open }) => `<div class="ct ${dir ? "dir" : "file"} ${n.hidden || n.dim ? "dim" : ""} ${n.locked ? "locked" : ""} ${S.sel.includes(n.path) ? "sel" : ""}" data-row="${attr(n.path)}" role="treeitem" aria-level="${depth + 1}" style="padding-left:${8 + depth * 16}px">
+      <span class="tw" ${dir && !n.locked ? `data-act="twist" data-path="${attr(n.path)}"` : ""}>${dir && !n.locked ? line(open ? "chevD" : "chevR", 11, 2.4) : ""}</span><span class="ic">${fileIcon(n)}</span><span class="nm">${esc(n.name)}</span><span class="mt">${n.locked ? "" : dir ? "" : size(n)}</span></div>`).join("");
+}
+
+// The preview: Quick Look in the column's lower part (one file), or what is selected (several).
+function previewHtml() {
+  const target = paneOf(S.focus);
+  const canReply = S.sel.every((p) => !node(p)?.locked);
+  const acts = `<div class="acts">${B("Add to Reply", "pri", "addreply", canReply ? "" : "disabled")}${S.sel.length === 1 && isDir(node(S.sel[0])) ? B("Open as Current Folder", "", "enter", `data-path="${attr(S.sel[0])}"`) + B("New Terminal Here") : B("Open") + B("Show in Finder")}</div>`;
+  if (S.sel.length > 1) {
+    const total = S.sel.reduce((a, p) => a + (node(p)?.size ?? 0), 0);
+    return `<div class="pv" style="height:150px"><div class="h"><b>${S.sel.length} Items</b><span>${sizeWords(total)} · 给 ${esc(target.name)}</span></div><div class="cnt" style="border:0; background:none; margin:0 12px"><div style="font:12px/1.7 var(--code); color:var(--ink2)">${S.sel.map((p) => esc(p.replace(HOME, "~"))).join("<br>")}</div></div>${acts}</div>`;
+  }
+  const n = node(S.sel[0]);
+  if (!n) return "";
+  const dir = isDir(n);
+  const meta = dir ? `Folder · ${fileCount(n.kind === "link" ? n.target : n.path, true)} Items · ${n.mtime ?? ""}` : `${kindWord(n)} · ${size(n)}${n.text ? ` · ${n.lines ?? n.text.split("\n").length - 1} Lines` : ""} · ${n.mtime ?? ""}`;
+  return `<div class="pv" style="${dir ? "height:140px" : ""}"><div class="h"><b>${esc(n.name)}</b><span>${esc(meta)}</span></div><div class="cnt">${dir ? "" : contentHtml(n, false)}</div>${acts}</div>`;
+}
+function contentHtml(n, big) {
+  if (n.text) {
+    const lines = n.text.replace(/\n$/, "").split("\n");
+    const shown = lines.slice(0, big ? 40 : 18);
+    return `<pre class="code ${big ? "big" : ""}">${shown.map((l, i) => `<span class="ln">${i + 1}</span>${esc(l)}`).join("\n")}</pre>${n.truncated ? `<div class="trunc">仅显示前 64 KB（共 ${sizeWords(n.size)}）。</div>` : ""}`;
+  }
+  if (n.type === "image") return `<div class="pic">${picSvg(n.pic, big)}</div>`;
+  if (n.type === "pdf") return `<div class="pic">${pdfSvg(big)}</div>`;
+  return `<div class="nopv"><div><div class="big">${C() ? line(n.type === "archive" ? "archive" : "doc", 34, 1.2) : "▤"}</div>${esc(kindWord(n))} · ${sizeWords(n.size)}<br>无法预览此类文件。</div></div>`;
+}
+function picSvg(kind, big) {
+  const w = big ? 360 : 200, h = big ? 240 : 132;
+  if (kind === "logo") return `<svg width="${w}" height="${h}" viewBox="0 0 120 80"><rect width="120" height="80" fill="#151515"/>${[[34, 18, 52, "#ff2e88"], [34, 30, 40, "#e9e6df"], [34, 42, 28, "#8d8a84"]].map(([x, y, w, c]) => `<rect x="${x}" y="${y}" width="${w}" height="7" fill="${c}"/>`).join("")}<text x="60" y="68" fill="#e9e6df" font-family="Menlo, monospace" font-size="8" text-anchor="middle">lumen</text></svg>`;
+  return `<svg width="${w}" height="${h}" viewBox="0 0 120 80"><rect width="120" height="80" fill="#2a2a2e"/><rect x="10" y="10" width="100" height="60" rx="4" fill="#0b0b0b"/><circle cx="17" cy="16" r="2" fill="#ff5f57"/><circle cx="23" cy="16" r="2" fill="#febc2e"/><circle cx="29" cy="16" r="2" fill="#28c840"/><rect x="18" y="28" width="50" height="3" fill="#8d8a84"/><rect x="18" y="36" width="70" height="3" fill="#4d4b48"/><rect x="18" y="44" width="38" height="3" fill="#2ee6ff"/></svg>`;
+}
+function pdfSvg(big) {
+  const w = big ? 220 : 110, h = big ? 290 : 140;
+  return `<svg width="${w}" height="${h}" viewBox="0 0 85 110"><rect x="2" y="2" width="81" height="106" fill="#fff" stroke="#ccc"/><rect x="10" y="12" width="44" height="5" fill="#222"/>${[24, 30, 36, 42, 48, 58, 64, 70, 76, 82].map((y, i) => `<rect x="10" y="${y}" width="${i % 4 === 3 ? 40 : 64}" height="2" fill="#999"/>`).join("")}<text x="42" y="102" font-size="5" fill="#999" text-anchor="middle" font-family="-apple-system">1 / 6</text></svg>`;
+}
+function qlHtml() {
+  const n = node(S.sel[0]);
+  if (!n) return "";
+  const head = C()
+    ? `<div class="h"><button class="x" data-act="qlclose" aria-label="Close">${line("x", 13)}</button><span>${esc(n.name)}</span><span class="op">${B("Open")}</span></div>`
+    : `<div class="h"><span>${esc(n.name)}</span><span style="opacity:.6">${esc(kindWord(n))} · ${sizeWords(n.size)}</span><span class="sp"></span><button data-act="qlclose">esc</button></div>`;
+  return `<div class="ql" role="dialog" aria-label="Quick Look">${head}<div class="bd">${contentHtml(n, true)}</div></div>`;
+}
+
+// System menus: the list's right click, ⋯, and the path's folded levels.
+function menuHtml() {
+  const m = S.menu;
+  if (m.kind === "list") {
+    const it = (label, key, hi, isNew) => `<div class="it ${hi ? "hi" : ""}" ${key === "files" ? `data-act="showin" data-path="${attr(m.cwd)}"` : ""}>${label}${isNew ? `<span class="new">New</span>` : ""}</div>`;
+    const [, gi, ri] = /^g(\d+)(?:r(\d+))?$/.exec(m.id) ?? [];
+    const kind = ri === undefined ? "dir" : D.LIST[Number(gi)].rows[Number(ri)].kind;
+    const files = it("Show in Files", "files", m.hi === "files", true);
+    // A terminal's and a session's own menus as they are (TerminalSidebar.swift), with the one new item; a folder row
+    // has had no menu (its `+` is New Terminal Here).
+    const items = kind === "term" ? [it("Rename"), it("Open in New Window"), files, "<hr>", it("Close")]
+      : kind === "session" ? [it("Resume"), files, "<hr>", it("Delete")]
+      : [it("New Terminal Here"), files];
+    return `<div class="menu" data-anchor="${m.id}" style="left:132px; top:0">${items.join("")}</div>`;
+  }
+  if (m.kind === "more") {
+    const right = 8, v = viewNow();
+    return `<div class="menu" style="right:${right}px; top:30px; width:236px">
+      <div class="it ${v === "tree" ? "chk" : ""}" data-act="viewas" data-v="tree">As Tree</div><div class="it ${v === "folders" ? "chk" : ""}" data-act="viewas" data-v="folders">As Folders</div><hr>
+      <div class="it ${S.hidden ? "chk" : ""}" data-act="hidden">Show Hidden Files<span class="k">⌘⇧.</span></div>
+      <div class="it off">Sort By<span class="k">›</span></div><hr>
+      <div class="it" data-act="home">Home<span class="k">⌘⇧H</span></div><div class="it off">Go to Folder…<span class="k">⌘⇧G</span></div><div class="it off">Places<span class="k">›</span></div></div>`;
+  }
+  if (m.kind === "fold") {
+    return `<div class="menu" style="left:${(S.narrow ? 900 : 1200) - (S.open && S.narrow ? 300 : S.sideW) + 14}px; top:52px; min-width:150px">${(S.folded ?? []).map((l) => `<div class="it" data-act="crumb" data-path="${attr(l.path)}">${esc(l.name)}</div>`).join("")}</div>`;
+  }
+  return "";
+}
+
+function capMac() {
+  const v = viewNow() === "tree" ? "目录树" : "文件夹";
+  const say = {
+    home: `<b>第一次打开</b>：在家目录 <code>/Users/you</code>。路径行从 <code>/</code> 开始，每一层可点；${C() ? "经典外观默认是文件夹看法：一次一层，文件夹行尾 <code>›</code>，单击选中、双击或点 <code>›</code> 进去，路径左边 <code>‹ ›</code> 前进后退" : "像素外观默认是目录树：<code>▸</code> 展开一层（只管展开），点名字选中，双击文件夹把它当作当前文件夹，<code>../</code> 到上一层"}。隐藏文件（<code>.</code> 开头）默认不列，底部写着有几项没列；<code>⋯</code> › <code>Show Hidden Files</code> 打开后能看到 <code>.secret-gate</code>、<code>.agentswitch/nodes</code> 这些受保护的地方——照列，带锁，点不开。`,
+    list: `<b>从左边进入</b>：在左边列表的文件夹行（或它下面的终端、会话）上右键，系统菜单里多一项 <code>Show in Files</code>，文件栏到那个文件夹（终端是它此刻所在的文件夹）。演示里右键左边任意一行都能弹出这个菜单。标着 <code>New</code> 的是这一稿新加的项。`,
+    pane: `<b>分屏时</b>：每块标题栏上一个文件夹图标，到那一块的文件夹（这里是右边 Codex 所在的 <code>harbor-api/src</code>）；顶栏的同一个图标管焦点那一块——和顶栏、标题栏上的终端 / 简略切换一样。<b>图标亮着</b>表示文件栏正显示这一块的文件夹，再点一下收起；点另一块的图标就换到那一块的文件夹。试试点左边那块标题栏上的图标。`,
+    preview: `<b>选中看预览</b>：选中一个文件，栏的下半是 Quick Look 画的预览（本机文件由系统画；别的节点上的由服务给前 64 KB 或缩略图）。一行信息：类型、大小、修改时间、行数。下面 <code>Add to Reply</code>（主）、<code>Open</code>、<code>Show in Finder</code>。⌘ 点、⇧ 点多选；选中文件夹时按钮是 <code>Open as Current Folder</code>、<code>New Terminal Here</code>。`,
+    reply: `<b>两个给 agent</b>：选两个文件 <code>Add to Reply</code>（或拖到某一块上），焦点那一块的回复框里多两个占位符 <code>[File #1] [File #2]</code>，上面一排小条可以 <code>×</code> 拿掉——和今天拖文件、<code>+</code> › <code>Files…</code> 是同一条路：发送时输入路径，文件不拷贝。状态栏写着选了几个、多大。终端视图的那一块没有回复框：给它就是把路径打进光标处（③ 里选右边那块再点 <code>Add to Reply</code> 试试）。`,
+    ql: `<b>空格</b>：Quick Look 的面板，和在 Finder 里按空格一样（原生是 <code>QLPreviewPanel</code>）；<code>esc</code> 或再按空格关上。焦点在文件列表里时 <code>↑ ↓</code> 换一项，面板跟着换。`,
+    narrow: `<b>窗口窄时</b>：打开文件栏后页面剩不到 520 点，文件栏浮在页面右边${C() ? "（圆角、投影）" : "（1 点墨色框、抖动的硬阴影）"}，不挤页面；<code>esc</code> 或点页面收起。窗口拉宽后回到一栏。`,
+  }[S.mac];
+  return `${say} 现在是<b>${v}</b>看法（<code>⋯</code> 里能换）。`;
+}
+
+// ---------- 2. the phone ----------
+function phoneTerm({ menu = false, added = [] } = {}) {
+  const chips = added.length ? `<div class="chips" style="margin:0 0 6px">${added.map((p, k) => `<span class="fchip">${C() ? `<span style="color:var(--ink2)">${fileIcon(node(p))}</span>` : `<i>[File #${k + 1}]</i>`}${esc(baseName(p))}<i>on Mac</i><button aria-label="Remove">×</button></span>`).join("")}</div>` : "";
+  const text = added.length ? `<span class="tx">看一下 ${added.map((_, k) => `<b>[File #${k + 1}]</b>`).join(" ")} <span class="caret"></span></span>` : `<span class="tx ph">回复…</span>`;
+  return `<div class="pscr"><div class="pnav"><span class="nb">${C() ? "‹" : "‹"}</span><span class="t"><b>排序改成最近使用</b><span>~/Projects/lumen · ${C() ? "Working" : "Busy"}</span></span><span class="nb r">${C() ? line("terminal", 18) : "▤"}</span></div>
+    <div class="pbody"><div class="ub" style="max-width:90%">把列表的排序改成按最近使用，置顶的仍然在最前。</div><div class="md"><p>改好了：列表现在按最近使用排，置顶的仍然在最前。排序放在 <code class="c">store.ts</code> 里做。</p></div><div class="now">${spin()}<span>Read</span><code>docs/design.md</code></div></div>
+    <div class="pfoot">${chips}<div class="pbox"><span class="plus">+</span>${text}</div></div>
+    ${menu ? `<div class="pmenu"><div class="it"><span>Camera</span>${line("camera", 18)}</div><div class="it"><span>Photos</span>${line("image", 18)}</div><div class="it"><span>Files</span>${line("folder", 18)}</div><div class="it hi"><span>Files on Mac<span class="new">New</span></span>${line("laptop", 18)}</div><div class="it"><span>Paste Image</span>${line("clip", 18)}</div><div class="it" style="border:0"><span>Keys</span>${line("keys", 18)}</div></div>` : ""}
+  </div>`;
+}
+function phoneSheet() {
+  const ph = S.ph;
+  const parts = ph.root.split("/").slice(1);
+  const levels = [{ name: "/", path: "/" }, ...parts.map((n, i) => ({ name: n, path: "/" + parts.slice(0, i + 1).join("/") }))];
+  const crumbs = `<div class="pcrumbs">${levels.slice(-4).map((l, i, a) => `${i ? `<span class="sl">/</span>` : (levels.length > 4 ? `<button data-act="phcrumb" data-path="${attr(levels[levels.length - 5].path)}">…</button><span class="sl">/</span>` : "")}<button class="${i === a.length - 1 ? "cur" : ""}" data-act="phcrumb" data-path="${attr(l.path)}">${esc(l.name)}</button>`).join("")}</div>`;
+  const rows = [];
+  const list = kids(ph.root, false);
+  list.forEach((n, i) => {
+    const dir = isDir(n), last = i === list.length - 1;
+    const checked = ph.sel.includes(n.path);
+    if (C()) {
+      rows.push(`<div class="pr ${dir ? "dir" : ""} ${n.dim ? "dim" : ""} ${checked ? "on" : ""}" data-act="${ph.select ? "phpick" : dir ? "phenter" : "phopen"}" data-path="${attr(n.path)}">${ph.select ? `<span class="cb2 ${checked ? "on" : ""}">${checked ? "✓" : ""}</span>` : "<span></span>"}<span class="ic">${fileIcon(n)}</span><span class="nm">${esc(n.name)}<small>${esc(n.mtime ?? "")}${dir ? "" : ` · ${size(n)}`}</small></span><span class="go">${dir && !ph.select ? line("chevR", 13, 2.2) : ""}</span></div>`);
+    } else {
+      const open = dir && ph.expanded.has(n.path);
+      rows.push(`<div class="pr ${dir ? "dir" : ""} ${n.dim ? "dim" : ""} ${checked ? "on" : ""}" data-act="${ph.select ? "phpick" : dir ? "phenter" : "phopen"}" data-path="${attr(n.path)}">${ph.select ? `<span class="cb ${checked ? "on" : ""}">${checked ? "[x]" : "[ ]"}</span>` : "<span></span>"}<span class="tr">${last ? "└─" : "├─"}${dir ? `<span class="tw" data-act="phtwist" data-path="${attr(n.path)}">${open ? "▾" : "▸"}</span>` : "─"}</span><span class="nm">${esc(n.name)}${dir ? "/" : ""}</span><span class="mt">${dir ? "" : size(n)}</span></div>`);
+      if (open) kids(n.path, false).forEach((c, k, all) => {
+        const cl = k === all.length - 1, cd = isDir(c);
+        rows.push(`<div class="pr ${cd ? "dir" : ""}" data-act="${ph.select ? "phpick" : cd ? "phenter" : "phopen"}" data-path="${attr(c.path)}"><span></span><span class="tr">${last ? "   " : "│  "}${cl ? "└─" : "├─"}${cd ? "▸" : "─"}</span><span class="nm">${esc(c.name)}${cd ? "/" : ""}</span><span class="mt">${cd ? "" : size(c)}</span></div>`);
+      });
+    }
+  });
+  const title = baseName(ph.root);
+  const nav = `<div class="pnav"><span class="nb">${ph.select ? "" : C() ? "Done" : "Done"}</span><span class="t"><b>${esc(title)}</b><span>${C() ? "On Mac" : "@ Mac"}</span></span><span class="nb r" data-act="phselect">${ph.select ? (C() ? "Cancel" : "Cancel") : "Select"}</span></div>`;
+  const foot = ph.select ? `<div class="pbar"><span style="color:var(--ink2)">${ph.sel.length} Selected</span>${B(`Add to Reply (${ph.sel.length})`, "pri", "phadd", ph.sel.length ? "" : "disabled")}</div>` : `<div class="pbar" style="color:var(--ink3); font-size:12px"><span>${list.length} Items · 给 01 · 排序改成最近使用</span></div>`;
+  return `<div class="dimmer"></div><div class="sheet"><div class="grab"></div>${nav}${crumbs}<div class="plist">${rows.join("")}</div>${foot}</div>`;
+}
+function phonePreview() {
+  const n = node(S.ph.preview);
+  const lines = (n.text ?? "").replace(/\n$/, "").split("\n").slice(0, 22);
+  return `<div class="pscr"><div class="pnav"><span class="nb" data-act="phback">‹ ${esc(baseName(parentOf(n.path)))}</span><span class="t"><b>${esc(n.name)}</b><span>${esc(kindWord(n))} · ${sizeWords(n.size)}</span></span><span class="nb r"></span></div>
+    <div class="pbody" style="padding:0">${n.text ? `<pre class="code" style="font-size:11.5px; padding:10px 12px">${lines.map((l, i) => `<span class="ln">${i + 1}</span>${esc(l)}`).join("\n")}</pre>` : `<div class="pic">${picSvg(n.pic, false)}</div>`}</div>
+    <div class="pbar" style="justify-content:flex-start; gap:16px">${B("Add to Reply", "pri", "phaddone")}${B("Copy Path")}</div></div>`;
+}
+function drawPhones() {
+  const ph = S.ph;
+  const el = document.getElementById("phones");
+  const left = ph.step === "browse" ? phoneTerm({ menu: true }) : `${phoneTerm()}${phoneSheet()}`;
+  const right = ph.preview ? phonePreview() : phoneTerm({ added: ph.added });
+  const sb = `<div class="sbar"><span>13:06</span><span>●●●</span></div>`;
+  el.innerHTML = `<div class="phonebox"><span class="lbl">${ph.step === "browse" ? "终端页 · + 菜单" : "Files on Mac · sheet"}</span><div class="phone ${look()}">${sb}${left}</div></div>
+    <div class="phonebox"><span class="lbl">${ph.preview ? "点一个文件 · 预览" : "回到终端页"}</span><div class="phone ${look()}">${sb}${right}</div></div>`;
+  document.getElementById("capPhone").innerHTML = capPhone();
+}
+function phPreset(name) {
+  const lumen = HOME + "/Projects/lumen";
+  S.ph = { step: name, root: lumen, expanded: new Set(), select: false, sel: [], preview: null, added: [] };
+  if (name === "down") S.ph.root = lumen + "/src";
+  if (name === "preview") { S.ph.root = lumen + "/src"; S.ph.preview = lumen + "/src/app.ts"; }
+  if (name === "select") { S.ph.root = lumen + "/src"; S.ph.select = true; S.ph.sel = [lumen + "/src/app.ts", lumen + "/src/store.ts"]; }
+  if (name === "reply") { S.ph.root = lumen + "/src"; S.ph.select = true; S.ph.sel = [lumen + "/src/app.ts", lumen + "/src/store.ts"]; S.ph.added = [...S.ph.sel]; }
+}
+function capPhone() {
+  return {
+    browse: `<b>入口</b>：终端页 <code>+</code> 菜单多一项 <code>Files on Mac</code>（<code>Files</code> 是从手机的“文件”App 选，图标各是各的）。另外两个入口：终端列表导航栏的文件夹按钮、终端行长按的 <code>Show in Files</code>。`,
+    open: `<b>打开在这个终端的文件夹</b>：一张大的 sheet，标题是当前文件夹，下面一行路径每层可点（横向可滑；长按返回键是系统列出的上面各层）。${C() ? "经典：iOS“文件”的列表，一次一层往下钻。" : "像素：这一层画成树线，<code>▸</code> 就地展开一层，点名字进去——手机屏窄，往深处还是进页。"}底部写着选的会落进哪个终端。`,
+    down: `<b>往下一层</b>：点文件夹进去（${C() ? "行尾 <code>›</code>" : "或先点 <code>▸</code> 就地看一眼"}）。点路径里的 <code>lumen</code> 回去。`,
+    preview: `<b>预览</b>：点一个文件推进一页。文字由应用自己显示前 64 KB（等宽、行号）；图片、PDF 和其他点 <code>Open Preview</code> 下载后交给系统的 <code>QLPreviewController</code>，超过 25 MB 的不下载。底部 <code>Add to Reply</code>、<code>Copy Path</code>。`,
+    select: `<b>Select</b>：勾几项，底栏 <code>Add to Reply (2)</code>。点它回到终端页。`,
+    reply: `<b>回到回复框</b>：光标处是 <code>[File #1] [File #2]</code>，上面一排小条写着 <code>on Mac</code>：文件在 Mac 上，发送时附件是路径（<code>{path}</code>），不上传。`,
+  }[S.ph.step] ?? "";
+}
+
+// ---------- interaction ----------
+function draw() { drawMac(); drawPhones(); }
+function select(path, e) {
+  const n = node(path);
+  if (!n || n.locked) return;
+  if (e && (e.metaKey || e.ctrlKey)) S.sel = S.sel.includes(path) ? S.sel.filter((p) => p !== path) : [...S.sel, path];
+  else if (e && e.shiftKey && S.anchor && S.visible) {
+    const a = S.visible.indexOf(S.anchor), b = S.visible.indexOf(path);
+    if (a >= 0 && b >= 0) S.sel = S.visible.slice(Math.min(a, b), Math.max(a, b) + 1).filter((p) => !node(p)?.locked);
+  } else S.sel = [path];
+  if (!e?.shiftKey) S.anchor = path;
+}
+function addToReply() {
+  const files = S.sel.filter((p) => !node(p)?.locked);
+  if (!files.length) return;
+  const i = S.panes === 1 ? 0 : S.focus;
+  if (S.viewOf[i] === "simple") S.reply[i] = [...S.reply[i], ...files.filter((p) => !S.reply[i].includes(p))].slice(0, 10);
+  else S.typed[i] = files.map((p) => p.replace(/ /g, "\\ ")).join(" ") + " ";
+}
+document.addEventListener("click", (e) => {
+  const opt = e.target.closest("[data-opt] button");
+  if (opt) {
+    const k = opt.parentElement.dataset.opt;
+    opt.parentElement.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === opt));
+    if (k === "look") { S.look = opt.dataset.v; preset(S.mac); } else S.light = opt.dataset.v === "light";
+    draw(); return;
+  }
+  const mc = e.target.closest("[data-mac]");
+  if (mc) { document.querySelectorAll("#ctlMac button").forEach((b) => b.classList.toggle("on", b === mc)); preset(mc.dataset.mac); drawMac(); return; }
+  const pc = e.target.closest("[data-ph]");
+  if (pc) { document.querySelectorAll("#ctlPhone button").forEach((b) => b.classList.toggle("on", b === pc)); phPreset(pc.dataset.ph); drawPhones(); return; }
+  const inMac = e.target.closest("#win"), inPhone = e.target.closest("#phones");
+  const a = e.target.closest("[data-act]");
+  const act = a?.dataset.act;
+  if (inPhone) { phoneAct(act, a); return; }
+  if (!inMac) return;
+  const menuWas = S.menu;
+  if (!e.target.closest(".menu")) S.menu = null;
+  const paneEl = e.target.closest("[data-pane-body]");
+  if (paneEl && !act) { S.focus = Number(paneEl.dataset.paneBody); }
+  switch (act) {
+    case "barfiles": case "panefiles": {
+      const i = act === "panefiles" ? Number(a.dataset.pane) : S.focus;
+      if (showsPane(i)) S.open = false; else { S.open = true; goTo(paneOf(i).cwd); S.focus = i; }
+      break;
+    }
+    case "view": { const i = S.panes === 1 ? 0 : S.focus; S.viewOf[i] = S.viewOf[i] === "simple" ? "terminal" : "simple"; break; }
+    case "split": if (S.panes === 1) { S.panes = 2; S.focus = 1; } break;
+    case "home": goTo(HOME); S.menu = null; break;
+    case "more": S.menu = menuWas?.kind === "more" ? null : { kind: "more" }; break;
+    case "close": S.open = false; break;
+    case "crumb": goTo(a.dataset.path); S.menu = null; break;
+    case "fold": S.menu = menuWas?.kind === "fold" ? null : { kind: "fold" }; break;
+    case "back": if (S.back.length) { S.fwd.push(S.root); goTo(S.back.pop(), { history: false }); } break;
+    case "fwd": if (S.fwd.length) { S.back.push(S.root); goTo(S.fwd.pop(), { history: false }); } break;
+    case "up": goTo(parentOf(S.root)); break;
+    case "twist": {
+      const p = a.dataset.path;
+      if (e.altKey) { const all = (q) => kids(q, S.hidden).filter(isDir).forEach((c) => { S.expanded.add(c.path); all(c.kind === "link" ? c.target : c.path); }); if (S.expanded.has(p)) S.expanded.delete(p); else { S.expanded.add(p); all(p); } }
+      else if (S.expanded.has(p)) S.expanded.delete(p); else S.expanded.add(p);
+      break;
+    }
+    case "enter": { const n = node(a.dataset.path); if (n && !n.locked) goTo(n.kind === "link" ? n.target : n.path); break; }
+    case "viewas": S.view = a.dataset.v; S.menu = null; break;
+    case "hidden": S.hidden = !S.hidden; S.menu = null; break;
+    case "addreply": addToReply(); break;
+    case "unreply": S.reply[Number(a.dataset.pane)].splice(Number(a.dataset.k), 1); break;
+    case "qlclose": S.ql = false; break;
+    case "showin": S.open = true; goTo(a.dataset.path); S.menu = null; break;
+    default: {
+      const row = e.target.closest("[data-row]");
+      if (row && e.target.closest(".files")) select(row.dataset.row, e);
+      else if (S.narrow && S.open && e.target.closest(".center")) S.open = false;
+    }
+  }
+  drawMac();
+  if (e.target.closest(".files")) document.getElementById("fl")?.focus({ preventScroll: true });
+});
+document.addEventListener("dblclick", (e) => {
+  const row = e.target.closest("#win [data-row]");
+  if (!row) return;
+  const n = node(row.dataset.row);
+  if (n && isDir(n) && !n.locked) { goTo(n.kind === "link" ? n.target : n.path); drawMac(); }
+});
+document.addEventListener("contextmenu", (e) => {
+  const r = e.target.closest("#win [data-ctx]");
+  if (!r) return;
+  e.preventDefault();
+  S.menu = { kind: "list", cwd: r.dataset.ctx, id: r.dataset.ctxId, hi: null };
+  drawMac();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { if (S.menu || S.ql) { S.menu = null; S.ql = false; drawMac(); } else if (S.narrow && S.open) { S.open = false; drawMac(); } return; }
+  if (!e.target.closest || !e.target.closest("#fl")) return;
+  const vis = S.visible ?? [];
+  const cur = S.sel.at(-1) ?? null;
+  const at = cur ? vis.indexOf(cur) : -1;
+  const move = (k) => { let j = at; do { j += k; } while (j >= 0 && j < vis.length && node(vis[j])?.locked); if (j >= 0 && j < vis.length) { S.sel = [vis[j]]; S.anchor = vis[j]; } };
+  const n = cur ? node(cur) : null;
+  if (e.key === "ArrowDown") { move(at < 0 ? 1 : 1); }
+  else if (e.key === "ArrowUp") { move(-1); }
+  else if (e.key === "Home") { S.sel = vis.length ? [vis[0]] : []; }
+  else if (e.key === "End") { S.sel = vis.length ? [vis[vis.length - 1]] : []; }
+  else if (e.key === "ArrowRight" && n && isDir(n)) { if (viewNow() === "tree") { if (!S.expanded.has(n.path)) S.expanded.add(n.path); else move(1); } else goTo(n.kind === "link" ? n.target : n.path); }
+  else if (e.key === "ArrowLeft") { if (viewNow() === "tree" && n && S.expanded.has(n.path)) S.expanded.delete(n.path); else if (viewNow() === "tree" && n && parentOf(n.path) !== S.root) { S.sel = [parentOf(n.path)]; } else { const p = parentOf(S.root); if (p) goTo(p); } }
+  else if (e.key === " ") { if (n && !isDir(n)) S.ql = !S.ql; }
+  else if (e.key === "Enter") { if (n && isDir(n) && !n.locked) goTo(n.kind === "link" ? n.target : n.path); else if (e.altKey) addToReply(); }
+  else if (e.key.length === 1 && /\S/.test(e.key)) { const k = e.key.toLowerCase(); const from = at + 1; const hit = [...vis.slice(from), ...vis.slice(0, from)].find((p) => baseName(p).replace(/^\./, "").toLowerCase().startsWith(k)); if (hit) S.sel = [hit]; else return; }
+  else return;
+  e.preventDefault();
+  drawMac();
+  document.getElementById("fl")?.focus({ preventScroll: true });
+  document.querySelector("#fl .sel")?.scrollIntoView({ block: "nearest" });
+});
+function phoneAct(act, a) {
+  const ph = S.ph;
+  switch (act) {
+    case "phcrumb": ph.root = a.dataset.path; ph.expanded = new Set(); break;
+    case "phenter": ph.root = a.dataset.path; ph.expanded = new Set(); ph.step = "down"; break;
+    case "phtwist": if (ph.expanded.has(a.dataset.path)) ph.expanded.delete(a.dataset.path); else ph.expanded.add(a.dataset.path); break;
+    case "phopen": ph.preview = a.dataset.path; ph.step = "preview"; break;
+    case "phback": ph.preview = null; break;
+    case "phselect": ph.select = !ph.select; ph.sel = []; ph.added = []; ph.step = ph.select ? "select" : "down"; break;
+    case "phpick": { const p = a.dataset.path; ph.sel = ph.sel.includes(p) ? ph.sel.filter((x) => x !== p) : [...ph.sel, p]; break; }
+    case "phadd": ph.added = [...ph.sel]; ph.preview = null; ph.step = "reply"; break;
+    case "phaddone": ph.added = [...new Set([...ph.added, ph.preview])]; ph.preview = null; ph.step = "reply"; break;
+    default: return;
+  }
+  drawPhones();
+}
+// the column's width: its left edge dragged (240–560 points)
+document.addEventListener("pointerdown", (e) => {
+  if (!e.target.closest("#win .drag")) return;
+  e.preventDefault();
+  const x0 = e.clientX, w0 = S.sideW, k = document.querySelector("#fitMac .scaled").getBoundingClientRect().width / document.getElementById("win").offsetWidth;
+  const move = (m) => { S.sideW = Math.max(240, Math.min(560, Math.round(w0 - (m.clientX - x0) / k))); drawMac(); };
+  const up = () => { document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up); };
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", up);
+});
+
+// ---------- fitting the window to a narrow page ----------
+function fitAll() {
+  const box = document.getElementById("fitMac");
+  const inner = box.firstElementChild, win = document.getElementById("win");
+  const w = win.offsetWidth, h = win.offsetHeight;
+  const avail = box.clientWidth;
+  const k = Math.min(1, avail / (w + 2));
+  inner.style.transform = `scale(${k})`;
+  box.style.height = `${Math.ceil(h * k) + 4}px`;
+}
+window.addEventListener("resize", fitAll);
+// the spinners turn (ui-v0 §7.2 4); they stop while the page is hidden
+setInterval(() => { if (document.hidden) return; frame++; document.querySelectorAll("[data-spin]").forEach((s) => { s.textContent = SPIN[frame % SPIN.length]; }); }, 90);
+
+// ?look=classic&theme=light&mac=reply&ph=select
+const q = new URLSearchParams(location.search);
+if (q.get("look") === "classic") S.look = "classic";
+if (q.get("theme") === "light") S.light = true;
+document.querySelectorAll('[data-opt="look"] button').forEach((b) => b.classList.toggle("on", b.dataset.v === S.look));
+document.querySelectorAll('[data-opt="theme"] button').forEach((b) => b.classList.toggle("on", (b.dataset.v === "light") === S.light));
+const mac0 = q.get("mac") ?? "home", ph0 = q.get("ph") ?? "browse";
+preset(mac0); phPreset(ph0);
+document.querySelectorAll("#ctlMac button").forEach((b) => b.classList.toggle("on", b.dataset.mac === mac0));
+document.querySelectorAll("#ctlPhone button").forEach((b) => b.classList.toggle("on", b.dataset.ph === ph0));
+draw();
+</script>
+</body>
+</html>
