@@ -4,6 +4,7 @@
  *  companion beside it (OpenCode's own server), else from output activity. Permission requests from a hook wait here until a screen answers (or the wait runs out and the agent asks
  *  in the terminal). */
 
+import type { Writing } from "../core/writing.js";
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { chmodSync, existsSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -164,7 +165,10 @@ export type TerminalEvent =
    *  shows the record, beside what it is doing. */
   | { readonly type: "progress"; readonly progress: TurnProgress | null }
   /** Its session's record changed (the stream's own, not the host's: it watches the agent's file). */
-  | { readonly type: "record"; readonly rev: string };
+  | { readonly type: "record"; readonly rev: string }
+  /** What it is writing now (docs/simple-view-v0.md §5.14): the part of its answer being written, its text so far;
+   *  null once it is not (the part is in its record, the turn ended). For a screen that shows the record. */
+  | { readonly type: "writing"; readonly writing: Writing | null };
 
 /** What a launcher gets: the new terminal's id and hook token go into the agent's env. */
 export type LaunchRequest = {
@@ -230,6 +234,8 @@ export type CompanionLink = {
   /** Its sub-agents at work now, all of them each time (OpenCode's sub-agent sessions that run), by their sessions'
    *  ids: `type` is the agent's kind, `name` what it was sent to do. */
   subagents?(list: readonly { readonly id: string; readonly type: string; readonly name: string }[]): void;
+  /** What it is writing now, where the companion hears it (Codex's server, OpenCode's): null once it is not. */
+  writing?(writing: Writing | null): void;
 };
 
 /** pi's built-in tools under the names and fields the protected-path floor reads (Claude Code's); anything else, an
@@ -360,6 +366,8 @@ export function meaningfulTitle(title: string, harness: TerminalHarness): string
 export function terminalName(custom: string | null, title: string, harness: TerminalHarness, cwd: string, given: string | null = null): string {
   return custom ?? meaningfulTitle(title, harness) ?? given ?? (basename(cwd) || AGENT_LABELS[harness]);
 }
+/** What is being written is cut at this many characters (an answer is seldom longer; a screen shows its end). */
+const MAX_WRITING = 60_000;
 const MAX_SUMMARY = 400;
 /** How long after a screen asked for a model its change goes through without Claude Code's own question. */
 const MODEL_ASK_MS = 20_000;
@@ -716,6 +724,8 @@ class Session {
   status: TerminalStatus = "idle";
   statusSince: number;
   activity: { tool: string; target: string; note?: string } | null = null;
+  /** What it is writing now (docs/simple-view-v0.md §5.14): never stored, gone when it rests. */
+  writing: Writing | null = null;
   /** The folder the agent last said it works in (a hook call's `cwd`); null before it says. */
   agentCwd: string | null = null;
   /** The model the agent says it is on now (PostModelSwitch); and one a screen asked for a moment ago. */
@@ -921,6 +931,7 @@ export class TerminalHost {
       ask: async (tool, input, signal) => (await this.ask(s, tool, input, signal))?.decision ?? null,
       session: (id) => { if (id && id !== s.agentSessionId) this.reported(s, id); },
       subagents: (list) => this.subagentsAre(s, list),
+      writing: (w) => this.writes(s, w),
     });
     const daybreak = s.companion?.daybreak?.bind(s.companion);
     if (daybreak) {
@@ -1325,6 +1336,11 @@ export class TerminalHost {
       case "PiSession": return null;
       case "PiAgentStart": this.setStatus(s, "working"); return null;
       case "PiAgentEnd": this.turnEnded(s, true, null); this.setStatus(s, "idle"); return null;
+      // What it is writing: its extension's pieces of the part being written, the text so far; `done` once its
+      // message ends (docs/simple-view-v0.md §5.14).
+      case "PiWriting":
+        this.writes(s, p.done === true || typeof p.text !== "string" ? null : { text: p.text.slice(0, MAX_WRITING), ...(p.thinking === true ? { thinking: true } : {}) });
+        return null;
       // pi blocks on a question of its own (a confirm or a choice in its screen): the terminal waits for you.
       case "PiWaiting": this.setStatus(s, "waiting"); return null;
       case "CodexNotify": {
@@ -1767,12 +1783,23 @@ export class TerminalHost {
     if (s.status === status || s.status === "exited") return;
     s.status = status;
     s.statusSince = this.o.now();
-    if (status === "idle" || status === "exited") { s.activity = null; s.compactFrom = null; this.progressed(s, null); }
+    if (status === "idle" || status === "exited") { s.activity = null; s.compactFrom = null; this.progressed(s, null); this.writes(s, null); }
     s.emit({ type: "status", status });
     this.sentRests(s);
     this.suggests(s);
     this.doing(s);
   }
+
+  /** What it is writing now, for the screens that show its record. */
+  private writes(s: Session, writing: Writing | null): void {
+    if (!writing && !s.writing) return;
+    if (writing && s.writing && writing.text === s.writing.text && !!writing.thinking === !!s.writing.thinking) return;
+    s.writing = writing;
+    s.emit({ type: "writing", writing });
+  }
+
+  /** What terminal `id` is writing now (a screen that has just come). */
+  writingOf(id: string): Writing | null { return this.sessions.get(id)?.writing ?? null; }
 
   /** Tells the screens what it is doing now. */
   private doing(s: Session): void {

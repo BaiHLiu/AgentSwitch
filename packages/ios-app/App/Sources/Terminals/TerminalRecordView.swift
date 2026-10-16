@@ -94,6 +94,12 @@ struct TerminalRecordView: View {
                                       changes: canShowChanges ? { changes = ChangesRequest(work: item.id) } : nil,
                                       pictures: terminal.agentSessionId.map { RecordPictureSource(harness: terminal.harness, session: $0) })
                     }
+                    // What it is writing now, as its answer will read (docs/simple-view-v0.md §5.14).
+                    if let writing = page.writing {
+                        MarkdownView(text: writing.text + " ▍").opacity(writing.thinking ? 0.62 : 1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityLabel(writing.thinking ? "Thinking" : "Writing")
+                    }
                     if working && page.permissions.isEmpty {
                         NowLine(activity: page.activity ?? terminal.activity, subagents: page.activityKnown ? page.subagents : terminal.subagents, since: page.activitySince, progress: page.progress)
                     }

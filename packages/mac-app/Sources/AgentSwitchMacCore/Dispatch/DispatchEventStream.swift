@@ -109,10 +109,14 @@ extension DaemonClient {
         taskEvents(taskId: taskId, after: after, policy: .standard)
     }
 
+    public func taskEvents(taskId: String, after: Int64, writing: @escaping @Sendable (AgentWriting?) -> Void) -> AsyncThrowingStream<DispatchTaskEvent, Error> {
+        taskEvents(taskId: taskId, after: after, policy: .standard, writing: writing)
+    }
+
     /// The stream with its own reconnect timing (tests use a fast one). Replays everything after `after`, then follows;
     /// on a dropped connection it reconnects from the last seq it delivered, so nothing is missed or repeated. Ends after
     /// a terminal event, or when the task is already over; throws on an answer that is not a stream (401, 404).
-    public func taskEvents(taskId: String, after: Int64, policy: DispatchReconnectPolicy) -> AsyncThrowingStream<DispatchTaskEvent, Error> {
+    public func taskEvents(taskId: String, after: Int64, policy: DispatchReconnectPolicy, writing: (@Sendable (AgentWriting?) -> Void)? = nil) -> AsyncThrowingStream<DispatchTaskEvent, Error> {
         let streamer = (transport as? DispatchStreamingTransport) ?? URLSessionStreamTransport.shared
         let client = self
         let (stream, sink) = AsyncThrowingStream<DispatchTaskEvent, Error>.makeStream()
@@ -122,7 +126,7 @@ extension DaemonClient {
             while !Task.isCancelled {
                 do {
                     switch try await client.followEvents(taskId: taskId, after: last, policy: policy, streamer: streamer,
-                                                         deliver: { sink.yield($0) }) {
+                                                         deliver: { sink.yield($0) }, writing: writing) {
                     case .ended:
                         sink.finish()
                         return
@@ -155,7 +159,9 @@ extension DaemonClient {
 
     /// One connection's worth of the stream.
     func followEvents(taskId: String, after: Int64, policy: DispatchReconnectPolicy, streamer: DispatchStreamingTransport,
-                      deliver: (DispatchTaskEvent) -> Void) async throws -> DispatchFollowResult {
+                      deliver: (DispatchTaskEvent) -> Void, writing: (@Sendable (AgentWriting?) -> Void)? = nil) async throws -> DispatchFollowResult {
+        // What was being written is not, once this connection is over (another one says again what is).
+        defer { writing?(nil) }
         let route = "/tasks/\(Self.segment(taskId))/events"
         let request = try dispatchRequest("GET", route + "?after=\(after)", accept: "text/event-stream", timeout: policy.idleTimeout)
         var last = after
@@ -170,6 +176,8 @@ extension DaemonClient {
             var parser = SSEParser()
             for try await chunk in Self.idleGuarded(body, limit: .milliseconds(Int64(policy.idleTimeout * 1000))) {
                 for message in parser.feed(chunk) {
+                    // What its run is writing: in no sequence, never replayed (docs/simple-view-v0.md §5.14).
+                    if message.event == "writing" { writing?(AgentWriting.decode(message.data)); continue }
                     guard let event = Self.taskEvent(from: message.data, taskId: taskId), event.seq > last else { continue }
                     last = event.seq
                     delivered = true

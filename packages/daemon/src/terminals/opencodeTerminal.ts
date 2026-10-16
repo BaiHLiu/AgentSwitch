@@ -17,9 +17,13 @@
 import type { PermissionRequest } from "../executors/opencodeServeMap.js";
 import { basicAuth, startStdioServe, stopStdioServe, type StdioServe, type StdioServeOptions } from "../harness/opencodeStdio.js";
 import type { Companion, CompanionLink } from "./host.js";
+import { WritingFeed, WritingText, type Writing } from "../core/writing.js";
+import { followEventStream, openCodeWriting } from "../harness/opencodeEvents.js";
 
 /** Between two looks at the server: the status a screen shows is at most this late. */
 const POLL_MS = 500;
+/** How long after its event stream ended it is opened again. */
+const FOLLOW_AGAIN_MS = 2_000;
 const CALL_TIMEOUT_MS = 5_000;
 /** Failed looks in a row before the companion gives up (the server is gone). */
 const MAX_FAILURES = 10;
@@ -80,6 +84,8 @@ export class OpenCodeCompanion implements Companion {
   private told: string | null = null;
   private toldAgents = "";
   private server: StdioServe | null = null;
+  /** The event stream followed for what it writes. */
+  private watching: AbortController | null = null;
   private link: CompanionLink | null = null;
   private timer: NodeJS.Timeout | null = null;
   private stopped = false;
@@ -114,12 +120,38 @@ export class OpenCodeCompanion implements Companion {
   attach(link: CompanionLink): void {
     this.link = link;
     this.schedule(0);
+    if (link.writing) void this.followWriting(link.writing.bind(link));
+  }
+
+  /** What it is writing (docs/simple-view-v0.md §5.14): its server's event stream, whose pieces of an answer are there
+   *  alone (its messages have a part once it is written). The TUI's own session's — a sub-agent's is not shown — at
+   *  most every WRITING_MS. A stream that ends is opened again while the terminal runs. */
+  private async followWriting(writing: (w: Writing | null) => void): Promise<void> {
+    const feed = new WritingFeed(writing);
+    const written = new WritingText();
+    while (!this.stopped && this.server) {
+      const ctl = new AbortController();
+      this.watching = ctl;
+      try {
+        await followEventStream(`${this.server.url}/api/event`, basicAuth(this.server.password), (event) => {
+          const sid = String(((event.data ?? {}) as Json).sessionID ?? "");
+          if (!sid || this.known.get(sid)?.parent) return;
+          const w = openCodeWriting(event, sid, written);
+          if (w === null) feed.clear(); else if (w) feed.set(w);
+          // A step ended: what it wrote is in its messages, and so in the record.
+          if (event.type === "session.step.ended" || event.type === "session.execution.succeeded" || event.type === "session.execution.failed") { feed.clear(); written.reset(); }
+        }, ctl.signal);
+      } catch { /* the server went, or the stream broke: looked at again */ }
+      feed.clear();
+      if (!this.stopped) await new Promise((r) => setTimeout(r, FOLLOW_AGAIN_MS).unref());
+    }
   }
 
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
     if (this.timer) clearTimeout(this.timer);
+    this.watching?.abort();
     for (const ctl of this.open.values()) ctl.abort();
     this.open.clear();
     if (this.server) void stopStdioServe(this.server.child);

@@ -442,7 +442,7 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
       let wake: (() => void) | null = null;
       let open = true;
       const unsubscribe = host.subscribe(id, record ? null : after, (ev) => {
-        if (record ? ev.type === "snapshot" || ev.type === "output" : ev.type === "activity" || ev.type === "progress" || ev.type === "sent" || ev.type === "choices" || ev.type === "notices") return;
+        if (record ? ev.type === "snapshot" || ev.type === "output" : ev.type === "activity" || ev.type === "progress" || ev.type === "sent" || ev.type === "choices" || ev.type === "notices" || ev.type === "writing") return;
         queue.push(ev);
         if (queue.length > MAX_QUEUED) open = false;
         wake?.();
@@ -458,13 +458,18 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
           if (now.sent.length) queue.push({ type: "sent", replies: now.sent });
           if (now.choices) queue.push({ type: "choices", choices: now.choices });
           if (now.notices.length) queue.push({ type: "notices", notices: now.notices });
+          const writing = host.writingOf(id);
+          if (writing) queue.push({ type: "writing", writing });
         }
       }
       try {
         while (open) {
           for (const ev of coalesce(queue.splice(0))) {
             // Sub-agents as the list gives them: each with what it is doing in words.
-            const said = ev.type === "activity" ? { ...ev, subagents: ev.subagents.map((a) => ({ ...a, doing: subagentDoing(a.activity, host.get(id)?.cwd ?? "") })) } : ev;
+            const said = ev.type === "activity" ? { ...ev, subagents: ev.subagents.map((a) => ({ ...a, doing: subagentDoing(a.activity, host.get(id)?.cwd ?? "") })) }
+              // What it is writing: `{text, thinking?}`, or `{done: true}` once it is not (as a task's stream says it).
+              : ev.type === "writing" ? (ev.writing ?? { done: true })
+              : ev;
             await stream.writeSSE({ event: ev.type, data: JSON.stringify(said), ...("seq" in ev ? { id: String(ev.seq) } : {}) });
             if (ev.type === "removed") open = false;
           }

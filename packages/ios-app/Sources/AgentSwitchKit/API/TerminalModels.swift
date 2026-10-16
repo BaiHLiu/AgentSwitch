@@ -710,6 +710,8 @@ public enum TerminalEvent: Sendable, Equatable {
     case suggestion(String?)
     /// Codex's Daybreak switch stands otherwise now.
     case daybreak(Bool)
+    /// What it is writing now (docs/simple-view-v0.md §5.14; nil: nothing is).
+    case writing(AgentWriting?)
 
     /// The SSE frame: the event name, the JSON data. Anything unknown or broken is skipped (nil), not fatal.
     public static func parse(event: String, data: String) -> TerminalEvent? {
@@ -717,6 +719,8 @@ public enum TerminalEvent: Sendable, Equatable {
         let int = { (k: String) in (obj[k] as? NSNumber)?.intValue }
         let seq = { (obj["seq"] as? NSNumber)?.int64Value }
         switch event {
+        case "writing":
+            return .writing(AgentWriting.decode(data))
         case "snapshot":
             guard let s = seq(), let cols = int("cols"), let rows = int("rows"), let d = obj["data"] as? String else { return nil }
             return .snapshot(seq: s, cols: cols, rows: rows, data: d)

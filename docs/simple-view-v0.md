@@ -372,7 +372,32 @@
   - 更正：此前写“OpenCode 每次问到的就是已经写出的部分”是错的。它的消息接口只给写完的段落，逐字只在事件流里。
   - 所以默认就开：Claude Code 调度打开 `includePartialMessages`，Codex 接上 delta，OpenCode 订阅 `/api/event`，pi 的扩展转发 `message_update`。几十到几百段，合并成每 100～200 毫秒一次再发给页面；不进库，写完以完整的那段为准。
   - 片段的速度看模型：先想很久、再一口气写完的（这次的 Codex），边写边出的效果就小，但“正在想”的那段时间也能显示它想的内容（Codex 的 `item/reasoning/*`、OpenCode 的 `session.reasoning.delta`）。
-- 只在打开着这个简略视图时做：没人看就不订阅、不读屏。手机一样（经同一条事件流，多一种 `writing` 事件：`{text, done}`）。
+- 线上：一种新事件 `writing`，`{text, thinking?}` 是这一段到此刻的全文（不是最后一小段，漏一次也不乱），`{done: true}` 是这一段写完了、或这一轮结束了。每 100～200 毫秒至多一次（服务里是 150 毫秒）。不进库，没有序号，不重放；新连上的先补发此刻的那一段。
+
+**做了的（2026-10-16，用户：可以，做吧）**：
+
+- 服务：
+  - 共用：`src/core/writing.ts`（`WritingFeed` 每 150 毫秒至多发一次最新的、写完立刻说；`WritingText` 把片段拼成这一段的全文，换段重来）。
+  - 调度：执行器多一个回调 `writing`。
+    - Claude Code 打开 `includePartialMessages`，读 `stream_event` 的 `text_delta`、`thinking_delta`；子代理的流不算。
+    - Codex 读 `item/agentMessage/delta` 与 `item/reasoning/summaryTextDelta`。
+    - OpenCode 在发话之前订阅 `/api/event`，只读这个会话的 `session.text.*`、`session.reasoning.*`（`src/harness/opencodeEvents.ts`）。
+    - 这一段进了任务的事件（`text`）就清。总线上另开一条只发不存的通道（`Bus.publishWriting`），任务的事件流 `/tasks/:id/events` 把它作为 `writing` 发出，不带 `id`。每次执行结束再清一次。
+    - 开发用的 echo 执行器可以照着写：`@echo {"writing":[…],"writingMs":…}`。
+  - 终端：`TerminalEvent` 多一种 `writing`，只给看记录的屏幕（`view=record`），终端视图收不到。它一歇下来就清。
+    - Codex 的伴随程序以第二个客户端跟着 TUI 的会话（`thread/resume`；第一轮开始前会被拒，每 1.5 秒再试；TUI 换了会话就跟新的）。
+    - OpenCode 的伴随程序订阅它私有服务的 `/api/event`，子代理会话的不算，流断了 2 秒后重连。
+    - pi：AgentSwitch 的扩展收 `message_update`，每 150 毫秒至多一次报 `PiWriting`，消息写完报 `done`。
+- Mac：
+  - 简略视图在记录末尾、“正在做什么”那一行之前画这一段（`RecordWriting`），用回答自己的排版，末尾一个光标；思考字色淡一级。
+  - 写完的信号到了以后，等记录里最后一段回答以同样的话开头再清，最多再留 1.5 秒，免得中间空一下。
+  - 调度的任务页画在过程下面。
+- 手机：终端简略视图（写完后留 1.5 秒）和任务详情页，同样的画法。
+- 测试：`tests/writing.test.ts`；终端的 `PiWriting` 和 pi 扩展的发送（`tests/terminals.test.ts`）；Codex 伴随程序跟着会话收逐字（`tests/codexTerminal.test.ts`，假的 app-server 推通知）；任务事件流里的 `writing`（`tests/contextSave.test.ts`，echo 执行器）。Mac 的样子由简略视图探针的 `writing` 场景画出来，两种外观都看过。
+- **还没做的**：
+  - Claude Code 的终端：网络旁路（上面）还没写，它的终端暂时仍是写完才出现。
+  - 设计里说的“只在打开着简略视图时才订阅”没做：订阅一直开着。它们只在本机，没人看时服务收下就丢。
+  - 装好的应用里还没在真的 agent 上看过。
 
 ### 5.15 后台任务（2026-10-16）
 

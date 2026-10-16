@@ -20,7 +20,7 @@ type Rpc = { id?: number; method?: string; params?: Record<string, unknown> };
 
 /** A WebSocket server by hand: the upgrade (401 without the token), text frames in (masked) and out. `answer` gets
  *  each request and says its result, or throws. */
-async function wsServer(token: string | null, answer: (method: string, params: Record<string, unknown>) => unknown) {
+async function wsServer(token: string | null, answer: (method: string, params: Record<string, unknown>, notify: (method: string, params: Record<string, unknown>) => void) => unknown) {
   const seen: Rpc[] = [];
   const sockets = new Set<Socket>();
   const server = createServer((_req, res) => res.writeHead(404).end());
@@ -57,7 +57,8 @@ async function wsServer(token: string | null, answer: (method: string, params: R
         const msg = JSON.parse(payload.toString("utf8")) as Rpc;
         seen.push(msg);
         if (msg.id === undefined) continue;
-        try { send(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: answer(msg.method!, msg.params ?? {}) ?? {} }), msg.method === "model/list"); }
+        const notify = (method: string, params: Record<string, unknown>) => send(JSON.stringify({ jsonrpc: "2.0", method, params }));
+        try { send(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: answer(msg.method!, msg.params ?? {}, notify) ?? {} }), msg.method === "model/list"); }
         catch (err) { send(JSON.stringify({ jsonrpc: "2.0", id: msg.id, error: { code: -32000, message: (err as Error).message } })); }
       }
     });
@@ -132,9 +133,10 @@ describe("Codex terminal companion", () => {
     { id: "gpt-6-sol", model: "gpt-6-sol", defaultReasoningEffort: "medium", supportedReasoningEfforts: [{ reasoningEffort: "low" }, { reasoningEffort: "medium" }, { reasoningEffort: "high" }] },
     { id: "gpt-6-astra", model: "gpt-6-astra", defaultReasoningEffort: "low", supportedReasoningEfforts: [{ reasoningEffort: "low" }, { reasoningEffort: "ultra" }] },
   ];
-  async function companion(threads: string[], thread: Record<string, unknown>, more: { daybreak?: boolean; config?: Record<string, unknown> } = {}) {
+  async function companion(threads: string[], thread: Record<string, unknown>, more: { daybreak?: boolean; config?: Record<string, unknown>; resumed?: (notify: (method: string, params: Record<string, unknown>) => void) => void } = {}) {
     const updates: Record<string, unknown>[] = [];
-    const { url, seen } = await wsServer("secret", (method, params) => {
+    const { url, seen } = await wsServer("secret", (method, params, notify) => {
+      if (method === "thread/resume") { setTimeout(() => more.resumed?.(notify), 20); return { thread: { id: params.threadId } }; }
       if (method === "thread/loaded/list") return { data: threads };
       // A helper of Codex's own keeps no record (`th-helper`); the others are the same thread's settings here.
       if (method === "thread/read") return { thread: params.threadId === "th-helper" ? { ephemeral: true } : thread };
@@ -226,6 +228,26 @@ describe("Codex terminal companion", () => {
     expect(fresh.seen.filter((m) => m.method?.startsWith("thread/metadata") || m.method === "config/batchWrite" || m.method === "config/value/write")).toEqual([]);
     // The feature goes to both: the TUI holds the switch, its server the program it sends.
     expect(splitCodexArgs(["-c", "features.cli_daybreak=true", "-m", "gpt-6-sol"])).toEqual({ server: ["-c", "features.cli_daybreak=true"], tui: ["-c", "features.cli_daybreak=true", "-m", "gpt-6-sol"] });
+  });
+
+  it("follows the TUI's thread and says what it is writing: the part's text so far, at most every 150 ms, nothing once it is done", async () => {
+    const { c } = await companion(["th-helper", "th1"], { model: "gpt-6-sol" }, {
+      resumed: (notify) => {
+        notify("item/reasoning/summaryTextDelta", { threadId: "th1", itemId: "r1", delta: "先看看" });
+        notify("item/completed", { threadId: "th1", item: { type: "reasoning" } });
+        notify("item/agentMessage/delta", { threadId: "th1", itemId: "m1", delta: "终端" });
+        // Another thread's (a helper of Codex's own) is not the TUI's.
+        notify("item/agentMessage/delta", { threadId: "th-helper", itemId: "h1", delta: "别的" });
+        setTimeout(() => notify("item/agentMessage/delta", { threadId: "th1", itemId: "m1", delta: "怎样画字" }), 30);
+        setTimeout(() => notify("item/completed", { threadId: "th1", item: { type: "agentMessage" } }), 400);
+      },
+    });
+    await c.start();
+    const got: unknown[] = [];
+    c.attach({ status: () => undefined, ask: async () => null, writing: (w) => got.push(w) });
+    for (const end = Date.now() + 3000; got.length < 4 && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
+    // The two pieces within 150 ms of the last send go as one, the latest.
+    expect(got).toEqual([{ text: "先看看", thinking: true }, null, { text: "终端怎样画字" }, null]);
   });
 
   it("a server that does not start leaves the TUI to run on its own", async () => {

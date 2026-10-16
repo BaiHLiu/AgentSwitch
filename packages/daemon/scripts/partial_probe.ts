@@ -97,6 +97,11 @@ async function opencode(): Promise<void> {
           if (!data) continue;
           let e: Json; try { e = JSON.parse(data) as Json; } catch { continue; }
           const type = String(e.type ?? "?");
+          // `PROBE_SHAPE=1`: the first event of each text or reasoning type, by its keys alone (no value but ids' presence).
+          if (process.env.PROBE_SHAPE === "1" && !events.has(type) && /session\.(text|reasoning)\./.test(type)) {
+            const keys = (o: unknown, depth = 0): string => o && typeof o === "object" && depth < 3 ? `{${Object.entries(o as Json).map(([k, v]) => `${k}${v && typeof v === "object" ? keys(v, depth + 1) : `:${typeof v}`}`).join(",")}}` : "";
+            console.log(`  shape ${type}: ${keys(e)}`);
+          }
           events.set(type, (events.get(type) ?? 0) + 1);
           // A piece of text: wherever the event keeps it (`delta`, or a part's `text` growing), its length only.
           const props = (e.properties ?? e.data ?? e) as Json;

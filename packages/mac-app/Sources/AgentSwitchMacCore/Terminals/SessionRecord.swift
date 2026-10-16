@@ -218,6 +218,15 @@ public struct SessionRecord: Decodable, Sendable, Hashable {
     /// the service's word that it is there do not arrive together. Held: a message of yours no older than the reply
     /// (a moment's slack) that begins with the same words; one that went with files reads otherwise in the record, so
     /// for it the time decides.
+    /// Whether the record's last answer is what was being written (it begins with the same words): the part is in the
+    /// record, and what was shown of it as it was written can go.
+    public static func holds(_ items: [RecordItem], written: String) -> Bool {
+        let words = { (text: String) -> String in String(text.split(whereSeparator: \.isWhitespace).joined(separator: " ").prefix(40)) }
+        let head = words(written)
+        guard !head.isEmpty else { return true }
+        return items.suffix(4).contains { $0.kind == .answer && words($0.text).hasPrefix(head) }
+    }
+
     /// The record with what the agent's screen said to commands, each a note where its time puts it.
     public static func withNotices(items: [RecordItem], notices: [ScreenNotice]) -> [RecordItem] {
         guard !notices.isEmpty else { return items }
@@ -486,6 +495,8 @@ public enum TerminalRecordEvent: Equatable, Sendable {
     case suggestion(String?)
     /// Codex's Daybreak switch stands otherwise now.
     case daybreak(Bool)
+    /// What it is writing now (nil: nothing is).
+    case writing(AgentWriting?)
 
     public static func decode(event: String, data: String) -> TerminalRecordEvent? {
         let bytes = Data(data.utf8)
@@ -496,6 +507,8 @@ public enum TerminalRecordEvent: Equatable, Sendable {
         case "record":
             struct Body: Decodable { let rev: String }
             return (try? JSONDecoder().decode(Body.self, from: bytes)).map { .record(rev: $0.rev) }
+        case "writing":
+            return .writing(AgentWriting.decode(data))
         case "model":
             struct Body: Decodable { let model: String }
             return (try? JSONDecoder().decode(Body.self, from: bytes)).map { .model($0.model) }

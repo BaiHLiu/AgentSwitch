@@ -164,6 +164,11 @@ struct TaskDetailView: View {
                             ToolGroupRow(calls: calls, results: results, active: active, ongoing: active && item.id == items.last?.id)
                         }
                     }
+                    // What its run is writing now, as its answer will read (docs/simple-view-v0.md §5.14).
+                    if active, let writing = detail.writing {
+                        MarkdownView(text: writing.text + " ▍").opacity(writing.thinking ? 0.62 : 1)
+                            .accessibilityLabel(writing.thinking ? "Thinking" : "Writing")
+                    }
                     // Not for a task a restart stopped: its end is when the service went down, not when it finished.
                     if let task = detail.task, !task.isInterrupted, let seconds = TaskDuration.seconds(task, events: detail.events) {
                         HStack(spacing: 10) {

@@ -80,6 +80,24 @@ final class TerminalPageModel {
     private(set) var activitySince: Date?
     /// How far the turn has come, as the agent's own screen counts it (nil: it says nothing).
     private(set) var progress: TurnProgress?
+    /// What it is writing now (docs/simple-view-v0.md §5.14), drawn at the record's end. Once the service says the part
+    /// is done it stays a moment (`writingKeep`): the record has it by then, and nothing goes blank between the two.
+    private(set) var writing: AgentWriting?
+    @ObservationIgnored private var writingTimer: Task<Void, Never>?
+    static let writingKeep: Duration = .milliseconds(1500)
+
+    /// What it is writing now; nil: the part is done, kept a moment.
+    private func writes(_ now: AgentWriting?) {
+        writingTimer?.cancel()
+        writingTimer = nil
+        if let now { if writing != now { writing = now }; return }
+        guard writing != nil else { return }
+        writingTimer = Task { [weak self] in
+            try? await Task.sleep(for: Self.writingKeep)
+            guard !Task.isCancelled else { return }
+            self?.writing = nil
+        }
+    }
     /// Replies sent that the record does not hold yet: shown at its end meanwhile.
     private(set) var sent: [SentReply] = []
     /// The list the agent's own screen shows to choose from (nil: none).
@@ -253,6 +271,8 @@ final class TerminalPageModel {
                 if status == .working, s == .idle { effortAsked = nil }
             }
             status = s
+        case .writing(let now):
+            writes(now)
         case .activity(let now, let agents):
             activityKnown = true
             if now != activity { activity = now; activitySince = Date() }
@@ -319,6 +339,7 @@ final class TerminalPageModel {
             activity = nil
             subagents = []
             progress = nil
+            writingTimer?.cancel(); writingTimer = nil; writing = nil
             sent = []
             choices = nil
             if !showsScreen { return }

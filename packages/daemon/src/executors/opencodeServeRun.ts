@@ -12,6 +12,8 @@
  *  admitted returns `fallback`, and the caller runs `opencode run --standalone`, whose private server never sees this
  *  server's runtime state. Rules that say "ask" become engine approvals; the question tool becomes engine questions. */
 
+import { WritingFeed, WritingText } from "../core/writing.js";
+import { openCodeWriting } from "../harness/opencodeEvents.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -116,6 +118,10 @@ class ServeExecution {
   private inflight = 0;
   private stopCause: StopCause | null = null;
   private truncated = false;
+
+  private writing: WritingFeed | null = null;
+  private watching: AbortController | null = null;
+  private readonly written = new WritingText();
 
   constructor(private readonly server: OpenCodeExecServer, private readonly input: ExecutionInput, private readonly opts: ServeRunOptions) {
     this.gate = opts.gate ?? null;
@@ -273,10 +279,13 @@ class ServeExecution {
     if (input.signal.aborted) return cancelledOutcome();
     const sentAt = Date.now();
     let since: number;
+    this.watchWriting(sid);
     try {
       const sent = await this.call<{ data?: Json }>("POST", `/api/session/${enc(sid)}/prompt`, { text: prompt }, { signal: input.signal });
       since = Number((sent.data?.time as Json | undefined)?.created ?? sentAt);
     } catch (err) {
+      this.watching?.abort();
+      this.writing?.clear();
       // An HTTP answer means the prompt was refused, not admitted: the run can still go standalone.
       if (err instanceof OpenCodeApiError && err.status !== null) throw new SetupFailure(err.message);
       await this.interrupt();
@@ -285,7 +294,24 @@ class ServeExecution {
     this.prompted = true;
     for (const text of this.notes) input.emit("text", { text });
     reportTransfer(input, this.wiring, "opencode", !!this.gate, this.browser);
-    return this.follow(sid, since);
+    try {
+      return await this.follow(sid, since);
+    } finally {
+      this.watching?.abort();
+      this.writing?.clear();
+    }
+  }
+
+  /** The answer as it is written (docs/simple-view-v0.md §5.14): the server's event stream, followed from before the
+   *  prompt is sent (its pieces are there alone), for the run's root session. */
+  private watchWriting(sid: string): void {
+    if (!this.input.writing || this.watching) return;
+    const writing = (this.writing = new WritingFeed(this.input.writing));
+    const watching = (this.watching = new AbortController());
+    void this.server.events((event) => {
+      const w = openCodeWriting(event, sid, this.written);
+      if (w === null) writing.clear(); else if (w) writing.set(w);
+    }, AbortSignal.any([watching.signal, this.input.signal])).catch(() => undefined);
   }
 
   /** Poll the turn until its idle marker: emit text and tool calls, adopt sub-agent sessions, answer approvals and
@@ -384,7 +410,12 @@ class ServeExecution {
     for (const item of items) {
       if (emitted.has(item.key)) continue;
       emitted.add(item.key);
-      if (item.kind === "text") { if (item.text) this.input.emit("text", { text: item.text }); continue; }
+      if (item.kind === "text") {
+        if (item.text) this.input.emit("text", { text: item.text });
+        // The part written is in the task's events now.
+        this.writing?.clear(); this.written.reset();
+        continue;
+      }
       this.input.emit("tool_call", { tool: item.tool, input: clipInput(item.input), ...(item.output !== undefined ? { output: clipOutput(item.output) } : {}), ...(item.error ? { error: item.error } : {}) });
       if (SUBAGENT_TOOL.test(item.tool)) this.input.emit("agent", { harness: "opencode", agentId: "", status: item.error ? "failed" : "completed", description: String((item.input as { description?: string } | null)?.description ?? "sub-agent") });
     }

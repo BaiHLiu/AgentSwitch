@@ -337,6 +337,17 @@ enum RecordTurnProbe {
                 text.deleteBackward(nil)
                 await watch("one more key back")
             }
+        case .writing:
+            // What it is writing now at the record's end, as it grows: what it thinks first, then its answer.
+            pane.record.stageWriting(AgentWriting(text: "先看看现在的列表是怎么排的：模型里有一个 `sortedRows`，", thinking: true))
+            await pause(300)
+            try await mark("what it thinks, being written")
+            let answer = "改好了：列表现在按最近使用排，置顶的仍然在最前。\n\n- 排序放在模型里做，界面只读结果；\n- 从没用过的排在最后，按名字。\n\n测试 `ListTests` 全过，下面是"
+            for n in [20, 60, answer.count] {
+                pane.record.stageWriting(AgentWriting(text: String(answer.prefix(n))))
+                await pause(200)
+            }
+            try await mark("its answer, being written")
         case .peer:
             // Another session's message in the record, by the name it gave and by none, and the answer to it.
             idle()
@@ -392,7 +403,7 @@ enum RecordTurnProbe {
 
     private static let began = Int64(Date().timeIntervalSince1970 * 1000)
 
-    enum Scene: String, CaseIterable { case ends, statusFirst, unknown, reread, renamed, shorter, up, earlier, opens, typing, grows, shrinks, tab, peer }
+    enum Scene: String, CaseIterable { case ends, statusFirst, unknown, reread, renamed, shorter, up, earlier, opens, typing, grows, shrinks, tab, peer, writing }
 
     /// A made-up session of `turns` turns: what was asked, a run of work, an answer of some length. `working`: the last
     /// turn is still going (its run of work open, no answer yet). `grown`: how much of the last answer is written.

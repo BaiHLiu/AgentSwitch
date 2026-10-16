@@ -103,6 +103,8 @@ struct TerminalRecordPane: View {
                                         if let session = record.sessionId { changes = ChangesRequest(harness: record.agent, session: session, work: item.id) }
                                     }
                                 }
+                                // What it is writing now (docs/simple-view-v0.md §5.14), as its answer will read.
+                                if let writing = record.writing { RecordWriting(writing: writing) }
                                 if working, requests.isEmpty {
                                     RecordNowLine(activity: record.activity, subagents: record.subagents, since: record.activitySince, progress: record.progress)
                                 }
@@ -893,5 +895,18 @@ struct RecordFileDiff: View {
             .padding(.horizontal, 10).padding(.vertical, 1.5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(ground)
+    }
+}
+
+/// The part of its answer it is writing now: the answer's own type, a caret at its end; what it thinks quieter.
+struct RecordWriting: View {
+    let writing: AgentWriting
+    @Environment(\.interfaceLook) private var look
+
+    var body: some View {
+        MarkdownBlocks(text: writing.text + " ▍", size: Look.prose(look).size, color: writing.thinking ? Look.ink2 : Look.ink,
+                       lineSpacing: Look.prose(look).lineSpacing, blockSpacing: Look.prose(look).blockSpacing)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityLabel(writing.thinking ? "Thinking" : "Writing")
     }
 }

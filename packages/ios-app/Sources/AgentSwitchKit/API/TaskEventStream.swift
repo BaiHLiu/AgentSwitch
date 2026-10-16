@@ -29,14 +29,15 @@ extension AgentSwitchAPI {
     /// Replays everything after `after`, then follows. On a dropped connection it reconnects from the last seq it
     /// delivered, so nothing is missed or repeated. Ends after a terminal event (done, partial, blocked, failed,
     /// cancelled) or when the task is already terminal; throws on 401/404.
-    public func events(taskId: String, after: Int64 = 0, policy: ReconnectPolicy = .standard) -> AsyncThrowingStream<TaskEvent, Error> {
+    /// `writing`: what its run is writing as it comes (docs/simple-view-v0.md §5.14), nil once nothing is.
+    public func events(taskId: String, after: Int64 = 0, policy: ReconnectPolicy = .standard, writing: (@Sendable (AgentWriting?) -> Void)? = nil) -> AsyncThrowingStream<TaskEvent, Error> {
         let (stream, sink) = AsyncThrowingStream<TaskEvent, Error>.makeStream()
         let worker = Task {
             var last = after
             var failures = 0
             while !Task.isCancelled {
                 do {
-                    switch try await followOnce(taskId: taskId, after: last, policy: policy, deliver: { ev in sink.yield(ev) }) {
+                    switch try await followOnce(taskId: taskId, after: last, policy: policy, deliver: { ev in sink.yield(ev) }, writing: writing) {
                     case .ended:
                         sink.finish()
                         return
@@ -68,7 +69,9 @@ extension AgentSwitchAPI {
     }
 
     /// One connection's worth of the stream.
-    func followOnce(taskId: String, after: Int64, policy: ReconnectPolicy, deliver: (TaskEvent) -> Void) async throws -> FollowResult {
+    func followOnce(taskId: String, after: Int64, policy: ReconnectPolicy, deliver: (TaskEvent) -> Void, writing: (@Sendable (AgentWriting?) -> Void)? = nil) async throws -> FollowResult {
+        // What was being written is not, once this connection is over (another one says again what is).
+        defer { writing?(nil) }
         let endpoint = try await endpoints.endpoint()
         let query = [URLQueryItem(name: "after", value: String(after))]
         let req = request("GET", endpoint, ["tasks", taskId, "events"], query: query, body: nil,
@@ -85,6 +88,8 @@ extension AgentSwitchAPI {
             var parser = SSEParser()
             for try await chunk in Self.idleGuarded(body, limit: .milliseconds(Int64(policy.idleTimeout * 1000))) {
                 for message in parser.feed(chunk) {
+                    // What its run is writing: in no sequence, never replayed.
+                    if message.event == "writing" { writing?(AgentWriting.decode(message.data)); continue }
                     guard let event = Self.taskEvent(from: message, taskId: taskId), event.seq > last else { continue }
                     last = event.seq
                     delivered = true

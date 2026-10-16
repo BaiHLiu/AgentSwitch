@@ -78,6 +78,29 @@ describe("PUT /context", () => {
   });
 });
 
+describe("what a task's run is writing", () => {
+  it("is in the task's event stream as it is written, in no sequence, and done once its text is there", async () => {
+    const { d } = daemon();
+    const task = d.engine.submit({ task: 'go @echo {"writing":["终端","终端怎样"],"writingMs":120,"delayMs":200}', cwd: tmpdir() });
+    const res = await d.app.request(`/tasks/${task.id}/events`);
+    const reader = res.body!.getReader();
+    let text = "";
+    while (!/event: (succeeded|failed)/.test(text)) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      text += new TextDecoder().decode(value);
+    }
+    await reader.cancel();
+    const blocks = text.split("\n\n").filter((b) => b.includes("event: writing"));
+    expect(blocks.map((b) => JSON.parse(b.split("\n").find((l) => l.startsWith("data:"))!.slice(5)))).toEqual([
+      { taskId: task.id, text: "终端" }, { taskId: task.id, text: "终端怎样" }, { taskId: task.id, done: true }]);
+    // Not a stored event: no id, and not in what the task's events replay.
+    expect(blocks.every((b) => !/^id:/m.test(b))).toBe(true);
+    expect(d.store.eventsSince(task.id, 0).some((e) => (e.type as string) === "writing")).toBe(false);
+    await d.engine.idle();
+  });
+});
+
 describe("SSE heartbeat", () => {
   it("a quiet task's event stream carries comment pings", async () => {
     const { d } = daemon(undefined, { sseHeartbeatMs: 20 });

@@ -1877,6 +1877,60 @@ describe("terminal pieces", () => {
     expect(host.get(info.id)!.status).toBe("working");
   });
 
+  it("says what a terminal is writing to the screens that show its record, and stops at rest", async () => {
+    const host = new TerminalHost({ launcher: fakeLauncher(() => "http://127.0.0.1:9", true) });
+    closers.push(() => host.closeAll());
+    const info = await host.spawn({ harness: "pi", cwd: tmpdir() });
+    const token = (host as unknown as { sessions: Map<string, { hookToken: string }> }).sessions.get(info.id)!.hookToken;
+    const events: TerminalEvent[] = [];
+    host.subscribe(info.id, null, (e) => events.push(e));
+    const writings = () => events.filter((e): e is Extract<TerminalEvent, { type: "writing" }> => e.type === "writing").map((e) => e.writing);
+    await host.hook(info.id, token, { event: "PiAgentStart", payload: {} });
+    await host.hook(info.id, token, { event: "PiWriting", payload: { text: "先看", thinking: true } });
+    await host.hook(info.id, token, { event: "PiWriting", payload: { text: "终端" } });
+    await host.hook(info.id, token, { event: "PiWriting", payload: { text: "终端" } });   // the same again: nothing new
+    expect(host.writingOf(info.id)).toEqual({ text: "终端" });
+    await host.hook(info.id, token, { event: "PiWriting", payload: { done: true } });
+    await host.hook(info.id, token, { event: "PiWriting", payload: { text: "又一段" } });
+    // At rest it writes nothing.
+    await host.hook(info.id, token, { event: "PiAgentEnd", payload: {} });
+    expect(writings()).toEqual([{ text: "先看", thinking: true }, { text: "终端" }, null, { text: "又一段" }, null]);
+    expect(host.writingOf(info.id)).toBeNull();
+  });
+
+  it("pi's extension says what pi is writing, at most every 150 ms, and that it is done when its message ends", async () => {
+    const { default: extension } = await import("../src/terminals/piExtension.js");
+    const handlers = new Map<string, (event: Record<string, unknown>, ctx?: object) => unknown>();
+    extension({ on: (event, handler) => handlers.set(event, handler) });
+    const calls: { event: string; payload: Record<string, unknown> }[] = [];
+    const server = createServer((req, res) => {
+      let body = "";
+      req.on("data", (d) => { body += d; });
+      req.on("end", () => { calls.push(JSON.parse(body)); res.setHeader("content-type", "application/json"); res.end("{}"); });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    closers.push(() => server.close());
+    const saved = { ...process.env };
+    closers.push(() => { process.env = saved; });
+    Object.assign(process.env, { AGENTSWITCH_TERMINAL_URL: `http://127.0.0.1:${(server.address() as { port: number }).port}`, AGENTSWITCH_TERMINAL_ID: "p1", AGENTSWITCH_TERMINAL_HOOK_TOKEN: "tok" });
+    const update = (type: string, delta: string, contentIndex = 0) => handlers.get("message_update")!({ type: "message_update", assistantMessageEvent: { type, contentIndex, delta } });
+    update("thinking_delta", "先想", 0);
+    update("text_delta", "终端", 1);
+    update("text_delta", "怎样", 1);
+    update("toolcall_delta", "{", 2);   // not text: nothing
+    await until(() => calls.some((c) => c.event === "PiWriting" && c.payload.text === "终端怎样"));
+    const writing = calls.filter((c) => c.event === "PiWriting");
+    // The first piece at once, the rest together once 150 ms are past.
+    expect(writing.map((c) => c.payload)).toEqual([{ text: "先想", thinking: true }, { text: "终端怎样" }]);
+    handlers.get("message_end")!({ type: "message_end" });
+    await until(() => calls.some((c) => c.event === "PiWriting" && c.payload.done === true));
+    // A message that wrote nothing says nothing at its end.
+    const before = calls.length;
+    handlers.get("message_end")!({ type: "message_end" });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(calls.length).toBe(before);
+  });
+
   it("pi's extension blocks what the service refuses, and everything when the service does not answer", async () => {
     const { default: extension } = await import("../src/terminals/piExtension.js");
     const handlers = new Map<string, (event: Record<string, unknown>, ctx?: { sessionManager?: { getSessionId?: () => unknown } }) => unknown>();

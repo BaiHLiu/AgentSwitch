@@ -48,6 +48,13 @@ final class PaneRecord {
     private(set) var suggestion: String?
     /// The thinking level just asked for here, until the record says one of its own.
     private(set) var effortAsked: String?
+    /// What it is writing now (docs/simple-view-v0.md §5.14), drawn at the record's end. Once the service says the part
+    /// is done it stays until the record has it — the next read of the record, or `writingKeep` — so nothing goes blank
+    /// between the two.
+    private(set) var writing: AgentWriting?
+    @ObservationIgnored private var writingDone = false
+    @ObservationIgnored private var writingTimer: Task<Void, Never>?
+    static let writingKeep: Duration = .milliseconds(1500)
     /// A change of model or level is on its way to the agent.
     private(set) var changing = false
     private(set) var error: String?
@@ -156,6 +163,7 @@ final class PaneRecord {
         items = []; plan = []; usage = nil; mode = nil; more = false; cursor = 0; loaded = false; error = nil; start = nil
         activity = nil; subagents = []; activitySince = nil; modelNow = nil; effortAsked = nil; modeNow = nil; suggestion = nil; daybreakNow = nil
         progress = nil; sent = []; choices = nil; notices = []
+        writingTimer?.cancel(); writingTimer = nil; writing = nil; writingDone = false
         draft = ""
         draftFiles = []
         insert = nil
@@ -193,6 +201,8 @@ final class PaneRecord {
             suggestion = text
         case .daybreak(let on):
             daybreakNow = on
+        case .writing(let now):
+            writes(now)
         case nil:
             // A turn began or ended: its clock starts over, and what the record holds may have moved on.
             if event == "status" { activitySince = Date(); refresh() }
@@ -260,7 +270,28 @@ final class PaneRecord {
         }
     }
 
+    /// What it is writing now; nil: the part is done, kept until the record has it.
+    private func writes(_ now: AgentWriting?) {
+        writingTimer?.cancel()
+        writingTimer = nil
+        if let now {
+            writingDone = false
+            if writing != now { writing = now }
+            return
+        }
+        guard writing != nil else { return }
+        writingDone = true
+        writingTimer = Task { [weak self] in
+            try? await Task.sleep(for: Self.writingKeep)
+            guard !Task.isCancelled, let self, self.writingDone else { return }
+            self.writing = nil
+            self.writingDone = false
+        }
+    }
+
     private func take(_ page: SessionRecord) {
+        // The part that was being written is in the record now: its last answer begins as it did.
+        if writingDone, let w = writing, SessionRecord.holds(page.items, written: w.text) { writingTimer?.cancel(); writingTimer = nil; writing = nil; writingDone = false }
         if plan != page.plan { plan = page.plan }
         // The record names a level of its own again (changed on the agent's own screen): that is the one in force.
         if usage?.effort != page.usage?.effort, usage != nil { effortAsked = nil }
@@ -642,6 +673,9 @@ final class PaneRecord {
 
     /// The design preview's: what it offers as the next message.
     func stageSuggestion(_ text: String?) { suggestion = text }
+
+    /// The design preview's: what it is writing now.
+    func stageWriting(_ now: AgentWriting?) { writing = now }
 
     /// The design preview's: the box offering rows for what is typed.
     func stageHints(_ rows: [ReplyHintRow], pick: Int = 0, mark: ReplyHints.Mark? = nil) {
