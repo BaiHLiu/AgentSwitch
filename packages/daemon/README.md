@@ -291,6 +291,11 @@ service would type a command of its own — idle, nothing waiting for you, no li
 and empty (`inputEmpty` and `choicesOnScreen` on the screen rebuilt from the terminal's stream) — and never answers
 a question. It writes each message and each screen; `use`/`resume` pick a trial up again in its terminals.
 
+`node --import tsx scripts/stream_probe.ts claude|codex <out dir>` measures what the simple view could show while an
+answer is written (docs/simple-view-v0.md §5.14; a real model turn each): every 250 ms, how much of a long answer is on
+the agent's screen and how much in its record; for Codex, how much a second client of its private app-server is sent
+(`thread/resume` once the turn has begun, `item/agentMessage/delta`) and what `thread/backgroundTerminals/list` says.
+
 `node --import tsx scripts/carry_probe.ts claude|codex <out dir>` tries how a message reaches an agent already at
 work without being typed in (docs/talk-v0.md §10.6; a real model turn each, not in the running service): a terminal
 started as the service starts one (`agentLauncher`, its hooks pointed at the script's own stand-in for the service);
