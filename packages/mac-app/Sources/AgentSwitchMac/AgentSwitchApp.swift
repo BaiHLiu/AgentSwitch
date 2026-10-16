@@ -181,6 +181,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.instanceLock?.release()
             self?.instanceLock = nil
         }
+        model.keepWindows = { [weak self] in
+            guard let self else { return }
+            UpdateWindows.write(UpdateWindows(nodes: self.mainWindows.nodeWindows, terminals: Array(self.windows.ids)), home: self.model.paths.agentswitchHome)
+        }
         model.exitApp = { [weak self] in
             self?.shutdownDone = true   // the children were stopped before the switch
             NSApp.terminate(nil)
@@ -201,6 +205,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !atLogin, defaults.string(forKey: "openSettings") == nil, defaults.string(forKey: "snapshotDir") == nil,
            settings.navigation.wizardStore.load()?.isClosed == true {
             showMainWhenReady()
+        }
+        reopenAfterUpdate()
+    }
+
+    /// Started by an update (`AppModel.installUpdate`): the windows the copy before it had open on other nodes, and the
+    /// terminals out in windows of their own, open again once the service answers and knows the nodes (2026-10-16,
+    /// user: 帮我装上…然后重新打开现有窗口). The main window opens as at any start.
+    private func reopenAfterUpdate() {
+        guard let kept = UpdateWindows.take(home: model.paths.agentswitchHome) else { return }
+        Task { [weak self] in
+            for _ in 0..<120 {
+                guard let self else { return }
+                if self.model.daemonReady { break }
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            guard let self, self.model.daemonReady else { return }
+            for _ in 0..<20 where kept.nodes.contains(where: { self.model.nodes.node($0) == nil }) {
+                await self.model.nodes.refresh(self.model)
+                try? await Task.sleep(for: .seconds(1))
+            }
+            for id in kept.nodes { if let node = self.model.nodes.node(id) { self.mainWindows.open(node) } }
+            for id in kept.terminals { self.windows.show(id) }
         }
     }
 
@@ -426,5 +452,29 @@ struct MenuBarIcon: View {
 
     var body: some View {
         Image(nsImage: MenuBarGlyph.image(level, waiting: waiting, look: InterfaceLook.load(appearance)))
+    }
+}
+
+/// The windows an update found open (beside the main window, which opens at every start): written by the copy that
+/// installs, read once by the copy it starts — no older than a quarter of an hour (`update-windows.json` in the app's
+/// home).
+struct UpdateWindows: Codable {
+    var nodes: [String]
+    var terminals: [String]
+    var at: Double = Date().timeIntervalSince1970
+
+    static func file(_ home: URL) -> URL { home.appendingPathComponent("update-windows.json") }
+
+    static func write(_ windows: UpdateWindows, home: URL) {
+        guard let data = try? JSONEncoder().encode(windows) else { return }
+        try? data.write(to: file(home), options: .atomic)
+    }
+
+    static func take(home: URL) -> UpdateWindows? {
+        let url = file(home)
+        defer { try? FileManager.default.removeItem(at: url) }
+        guard let data = try? Data(contentsOf: url), let kept = try? JSONDecoder().decode(UpdateWindows.self, from: data),
+              Date().timeIntervalSince1970 - kept.at < 15 * 60 else { return nil }
+        return kept
     }
 }

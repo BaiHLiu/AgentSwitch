@@ -22,6 +22,11 @@ APP_OUT=build/next/AgentSwitch.app scripts/build-app.sh   # same, elsewhere (the
 swift run AgentSwitchMac        # UI development without a bundle; point it at a runtime with -runtimeRoot <dir>
 ```
 
+A build in `build/next` is offered for install (the menu bar, the phone's settings, `POST /update/install`). The copy
+that installs writes down the windows it has open on other nodes and the terminals out in windows of their own
+(`update-windows.json` in the app's home); the copy it starts opens them again once its service answers — the main
+window opens at every start anyway (`UpdateWindows`, `AgentSwitchApp.reopenAfterUpdate`).
+
 `build-app.sh` downloads Node 24 darwin-arm64 and a python-build-standalone CPython 3.12 (cached in `.build-cache/`,
 SHA-256 pinned in `scripts/runtime-pins.sh`, re-hashed on every build and extracted afresh each time: an extracted
 tree is never reused), installs secret-gate's dependencies into that Python from `scripts/python-requirements.txt`
