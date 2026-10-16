@@ -291,6 +291,14 @@ service would type a command of its own — idle, nothing waiting for you, no li
 and empty (`inputEmpty` and `choicesOnScreen` on the screen rebuilt from the terminal's stream) — and never answers
 a question. It writes each message and each screen; `use`/`resume` pick a trial up again in its terminals.
 
+`node --import tsx scripts/carry_probe.ts claude|codex <out dir>` tries how a message reaches an agent already at
+work without being typed in (docs/talk-v0.md §10.6; a real model turn each, not in the running service): a terminal
+started as the service starts one (`agentLauncher`, its hooks pointed at the script's own stand-in for the service);
+then Claude Code's own inbox (`--messaging-socket-path`, a frame with its peer key), manual and bypass, or a second
+client's `turn/start` on a Codex terminal's private app-server — and the PostToolUse hook's `additionalContext`. Codex
+has its hooks only where the user's Codex already trusts the installed app's (read with `hooks/list`, never written).
+It types nothing and answers nothing, and ends everything it started; the sessions it made are listed for removal.
+
 ## Shared browser
 
 `src/browser/` (docs/browser-v0.md §5): one Google Chrome the daemon holds, started on the first tab and stopped after
