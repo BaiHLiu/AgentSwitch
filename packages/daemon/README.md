@@ -296,6 +296,11 @@ answer is written (docs/simple-view-v0.md §5.14; a real model turn each): every
 the agent's screen and how much in its record; for Codex, how much a second client of its private app-server is sent
 (`thread/resume` once the turn has begun, `item/agentMessage/delta`) and what `thread/backgroundTerminals/list` says.
 
+`node --import tsx scripts/sdk_partial_probe.ts` runs the Agent SDK as Dispatch's executor does, once with
+`includePartialMessages: false` (the executor's) and once with `true`, and says how many pieces of the answer came
+before the whole of it, and when (two turns on the cheapest model, no tools, `persistSession: false`). 2026-10-16:
+none and the whole at 14.7 s; 195 pieces from 5.8 s, the whole at 10.8 s.
+
 `node --import tsx scripts/claude_tap_probe.ts <out dir>` tries Claude Code's answer as it is written from the network
 (docs/simple-view-v0.md §5.14; one `claude -p` turn on the cheapest model): its `HTTPS_PROXY` is a proxy of the script's
 that opens api.anthropic.com alone with a throw-away authority the process trusts (`NODE_EXTRA_CA_CERTS`), passes every
