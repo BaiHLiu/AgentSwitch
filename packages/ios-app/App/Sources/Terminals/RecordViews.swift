@@ -19,6 +19,7 @@ struct RecordItemRow: View {
 
     var body: some View {
         switch item.kind {
+        case .user where item.from != nil: PeerRow(item: item)
         case .user: UserRow(item: item, pictures: pictures)
         case .answer: AnswerRow(item: item)
         case .work: WorkRow(item: item, verbose: verbose, running: running, changes: changes, source: pictures)
@@ -48,6 +49,28 @@ private struct UserRow: View {
                 }
             }
         }
+        .padding(.top, Theme.Space.s)
+    }
+}
+
+/// Another session's message (docs/talk-v0.md §10.5): not yours, so not your bubble — on the agent's side, under who
+/// sent it.
+private struct PeerRow: View {
+    let item: RecordItem
+    @Environment(\.interfaceLook) private var look
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("From \(item.from?.isEmpty == false ? item.from! : "Another Session") · \(item.date.relative)").mono(11).foregroundStyle(.tertiary)
+            TypedText(text: item.text)
+                .foregroundStyle(Theme.ink)
+                .padding(.leading, 12).padding(.trailing, 14).padding(.vertical, look.isClassic ? 9 : 10)
+                .overlay(alignment: .leading) { Rectangle().fill(Theme.signal).frame(width: look.isClassic ? 3 : 2) }
+                .grounded(Theme.raised, radius: look.isClassic ? 10 : 0)
+                .framed(look.isClassic ? Color.clear : Theme.line, radius: look.isClassic ? 10 : 0)
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, Theme.Space.s)
     }
 }

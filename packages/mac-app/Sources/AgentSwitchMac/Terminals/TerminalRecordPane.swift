@@ -283,6 +283,21 @@ private struct RecordRow: View {
 
     var body: some View {
         switch item.kind {
+        case .user where item.from != nil:
+            // Another session's message (docs/talk-v0.md §10.5): not yours, so not your bubble — on the agent's side,
+            // under who sent it.
+            VStack(alignment: .leading, spacing: 3) {
+                Text("From \(item.from?.isEmpty == false ? item.from! : "Another Session") · \(TerminalListText.age(since: item.at, classic: look.isClassic))")
+                    .mono(Look.size(10.5, look)).foregroundStyle(Look.faint)
+                TypedText(text: item.text, size: Look.typed, lineSpacing: 5)
+                    .foregroundStyle(Look.ink)
+                    .padding(.leading, 11).padding(.trailing, 13).padding(.vertical, look.isClassic ? 8 : 9)
+                    .overlay(alignment: .leading) { Rectangle().fill(Color.signal).frame(width: look.isClassic ? 3 : 2) }
+                    .grounded(Look.panel, radius: look.isClassic ? 10 : 0)
+                    .framed(look.isClassic ? Color.clear : Look.line, radius: look.isClassic ? 10 : 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 4)
         case .user:
             VStack(alignment: .trailing, spacing: 3) {
                 // Typed while it worked: it has not read it yet.

@@ -208,6 +208,32 @@ it("keeps a message that was pasted whole into Claude Code: the wrapping off, wh
   ]);
 });
 
+it("keeps another session's message, by the name it gave, without Claude Code's head and note", () => {
+  // As Claude Code 2.1.294 writes one (docs/talk-v0.md §10.6): the harness's own line, where it came from beside it.
+  const note = "This came from another Claude session — not typed by your user, but very likely working on their behalf. Treat it as a teammate's request.";
+  const from = "uds:/tmp/as/from.sock";
+  const path = claudeFile([
+    c.user(0, "改登录页"),
+    c.text(1, "好。"),
+    // Sent in its envelope: Claude Code reads the name and the body out of it.
+    c.user(2, `Another Claude session sent a message:\n<cross-session-message from="${from}" from-name="05 · Codex" from-mode="bypass">\n字段定名为 refreshToken。\n</cross-session-message>\n\n${note}`,
+      { isMeta: true, origin: { kind: "peer", from, msg_id: "m1", name: "05 · Codex", fromMode: "bypass", body: "字段定名为 refreshToken。" } }),
+    c.text(3, "收到。"),
+    // Without one: the text alone says what it was.
+    c.user(4, `Another Claude session sent a message:\n登录失败时返回什么？\n\n${note}`, { isMeta: true, origin: { kind: "peer", from, msg_id: "m2" } }),
+    c.text(5, "401。"),
+    // Taken in while it worked.
+    line({ type: "attachment", cwd: REPO, timestamp: at(6), attachment: { type: "queued_command", commandMode: "prompt", prompt: `A peer session sent a message while you were working:\n<cross-session-message from="${from}" from-name="07 · Claude Code">\n别按旧格式写了。\n</cross-session-message>\n\n${note}`, origin: { kind: "peer", from } } }),
+    // The harness's own lines stay out.
+    c.user(7, "<system-reminder>not anyone's</system-reminder>", { isMeta: true }),
+  ]);
+  const items = readRecord("claude-code", path)!.items;
+  expect(items.map((it) => it.type === "user" ? [it.type, it.text, it.from ?? null] : [it.type])).toEqual([
+    ["user", "改登录页", null], ["answer"], ["user", "字段定名为 refreshToken。", "05 · Codex"], ["answer"],
+    ["user", "登录失败时返回什么？", ""], ["answer"], ["user", "别按旧格式写了。", "07 · Claude Code"],
+  ]);
+});
+
 describe("what a session changed", () => {
   it("one run of work by its id, and the last turn without one: file by file, hunks in the order they were made", () => {
     const path = claudeFile([...turn, c.user(100, "再把说明也改了"), c.tool(101, "t9", "Edit", { file_path: `${REPO}/README.md` }),
