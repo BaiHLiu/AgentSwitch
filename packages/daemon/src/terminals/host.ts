@@ -8,7 +8,7 @@ import type { Writing } from "../core/writing.js";
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { chmodSync, existsSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import headless from "@xterm/headless";
 import serialize from "@xterm/addon-serialize";
 import * as pty from "node-pty";
@@ -165,7 +165,9 @@ export type TerminalEvent =
    *  shows the record, beside what it is doing. */
   | { readonly type: "progress"; readonly progress: TurnProgress | null }
   /** Its session's record changed (the stream's own, not the host's: it watches the agent's file). */
-  | { readonly type: "record"; readonly rev: string }
+  /** The record of `session` changed (`rev`, its file's version), or the terminal went to `session`, which has no
+   *  file yet (`rev` empty). Only to a record view (api/terminals.ts `watchRecord`). */
+  | { readonly type: "record"; readonly rev: string; readonly session: string }
   /** What it is writing now (docs/simple-view-v0.md §5.14): the part of its answer being written, its text so far;
    *  null once it is not (the part is in its record, the turn ended). For a screen that shows the record. */
   | { readonly type: "writing"; readonly writing: Writing | null };
@@ -756,6 +758,8 @@ class Session {
   givenName: string | null = null;
   exitCode: number | null = null;
   agentSessionId: string | null = null;
+  /** Where its hooks said the session is written (`transcript_path`); null when they did not, or for another session. */
+  recordFile: string | null = null;
   /** A hook call of the agent's has named its session (Codex's turn-end notice names a thread, which may be a helper's). */
   sessionByHook = false;
   /** The session this terminal started (a new one, or a fork's): the only record closing it may delete. */
@@ -1241,7 +1245,14 @@ export class TerminalHost {
     const s = this.sessions.get(id);
     if (!s || !same(token, s.hookToken)) throw new TerminalError("forbidden", "unknown terminal or hook token");
     const p = call.payload;
-    if (typeof p.session_id === "string" && p.session_id) { this.reported(s, p.session_id); s.sessionByHook = true; }
+    if (typeof p.session_id === "string" && p.session_id) {
+      this.reported(s, p.session_id);
+      s.sessionByHook = true;
+      // The file it writes the session to, which a new session has only once its first message is in: the record's
+      // watch looks at it often. Only a file named for that session (it is a hint; the watch finds it by its id).
+      const file = p.transcript_path;
+      if (typeof file === "string" && isAbsolute(file) && file.length < 4096 && basename(file).includes(p.session_id)) s.recordFile = file;
+    }
     // How it asks now: Claude Code says it with every call.
     if (typeof p.permission_mode === "string" && /^[A-Za-z]{2,40}$/.test(p.permission_mode)) this.modeIs(s, p.permission_mode);
     // Where it works now (the window's title says it): Claude Code and Codex send it with every call.
@@ -1381,11 +1392,17 @@ export class TerminalHost {
     s.device ??= this.device(s);
     if (s.agentSessionId !== sessionId) {
       this.opts.onSession?.(s.harness, sessionId, s.profile?.id ?? null);
+      s.recordFile = null;
       // What its screen said to commands belongs with the record it was said beside, not a new one (`/clear`).
       if (s.agentSessionId && s.notices.length) { s.notices = []; s.emit({ type: "notices", notices: [] }); }
     }
     s.agentSessionId = sessionId;
     if (!s.ownSessionId && (!s.resumedFrom || s.forked) && sessionId !== s.resumedFrom) s.ownSessionId = sessionId;
+  }
+
+  /** The file its agent's hooks said its session is written to (Claude Code's and Codex's `transcript_path`), if any. */
+  recordFileOf(id: string): string | null {
+    return this.sessions.get(id)?.recordFile ?? null;
   }
 
   /** The session terminal `id` started itself, if its agent has reported one. */

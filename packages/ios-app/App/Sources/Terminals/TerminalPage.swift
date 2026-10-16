@@ -71,6 +71,8 @@ struct TerminalPage: View {
     private var simple: Bool { viewMode == .simple }
     /// The terminal as the list has it now (its folder, its session once the agent has said which).
     private var listed: TerminalInfo { model.terminals.terminals.first { $0.id == page.id } ?? opened }
+    /// The session whose record the page shows: as the record's stream last said, else as the list says.
+    private var recordSession: String? { page.recordSession ?? listed.agentSessionId }
     /// The program waits on something it drew itself: the keys come out on their own.
     private var prompting: Bool { page.status == .waiting && page.permissions.isEmpty }
 
@@ -150,14 +152,14 @@ struct TerminalPage: View {
             }
         }
         .sheet(isPresented: $lastTurnChanges) {
-            if let session = listed.agentSessionId { ChangesSheet(harness: listed.harness, session: session, work: nil) }
+            if let session = recordSession { ChangesSheet(harness: listed.harness, session: session, work: nil) }
         }
         // The record of the terminal's session: read when the page opens in the simple view and when the agent says
         // which session it is; again whenever the Mac says it changed, and on a timer besides (OpenCode's sessions
         // share one database, and an older Mac says nothing).
-        .task(id: "\(listed.harness)|\(listed.agentSessionId ?? "")|\(simple)") {
+        .task(id: "\(listed.harness)|\(recordSession ?? "")|\(simple)") {
             guard simple else { return }
-            record.follow(harness: listed.harness, session: listed.agentSessionId)
+            record.follow(harness: listed.harness, session: recordSession)
             await record.refresh(model.api)
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(page.recordRev == nil ? (page.status == .working ? 3 : 10) : 20))

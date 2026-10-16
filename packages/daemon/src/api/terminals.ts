@@ -125,9 +125,10 @@ function expandCwd(cwd: string): string {
 
 /** Consecutive output events as one (a busy agent writes in many small pieces). */
 /** How often a record's stream looks at the session's file, and how often it looks for the file while there is none
- *  yet (a terminal just started has no session until the agent says which). */
+ *  yet (a terminal just started has no session until the agent says which; a new session has no file until its first
+ *  message). The file the agent's hooks named is looked at on each look. */
 const RECORD_WATCH_MS = 300;
-const RECORD_FIND_MS = 2000;
+const RECORD_FIND_MS = 1000;
 
 /** A record's user entry stands for a reply sent at `at` when it is no older than that (a moment's slack for the two
  *  clocks' rounding) and says the same — its first words, since a long one is cut short in the record; one that went
@@ -150,24 +151,32 @@ function confirmSent(host: TerminalHost, sessions: SessionMonitor, id: string): 
   } catch { /* unreadable just now: the next change looks again */ }
 }
 
-/** Calls `changed` with the version of the terminal's session file, now and each time the file changes. OpenCode keeps
- *  its sessions in one database, which says nothing of one session: its screens ask again on their own. Returns the
- *  stop. */
-export function watchRecord(host: TerminalHost, sessions: SessionMonitor, id: string, changed: (rev: string) => void, everyMs = RECORD_WATCH_MS): () => void {
-  let path: string | null = null, of: string | null = null, last: string | null = null, looked = 0;
+/** Calls `changed` with the version of the terminal's session file and the session it is of, now and each time the
+ *  file changes; a session the terminal goes to (a `/clear`, another one resumed) is told at once, with no version
+ *  while it has no file yet — a screen need not wait for the terminals' list to know it. OpenCode keeps its sessions
+ *  in one database, which says nothing of one session: its screens ask again on their own. Returns the stop. */
+export function watchRecord(host: TerminalHost, sessions: SessionMonitor, id: string, changed: (rev: string, session: string) => void, everyMs = RECORD_WATCH_MS): () => void {
+  let path: string | null = null, of: string | null = null, last: string | null = null, looked = 0, told = false, named: string | null = null;
   const look = () => {
     const t = host.get(id);
     const session = t?.agentSessionId;
     if (!t || !session || t.harness === "opencode") return;
-    if (of !== session) { of = session; path = null; last = null; looked = 0; }
+    if (of !== session) { of = session; path = null; last = null; looked = 0; told = false; named = null; }
     if (!path) {
-      if (Date.now() - looked < RECORD_FIND_MS) return;
+      // Where its hooks said it writes: there now, it is looked for at once (once for each file named).
+      const file = host.recordFileOf(id);
+      const there = file !== null && file !== named && existsSync(file);
+      if (!there && Date.now() - looked < RECORD_FIND_MS) return;
+      if (there) named = file;
       looked = Date.now();
       // Its own session, wherever it runs (the list leaves scratch folders out).
       path = sessions.locate(t.harness, session);
-      if (!path) return;
+      if (!path) {
+        if (!told) { told = true; changed("", session); }
+        return;
+      }
     }
-    try { const { rev } = fileRev(path); if (rev !== last) { last = rev; changed(rev); } } catch { path = null; }
+    try { const { rev } = fileRev(path); if (rev !== last) { last = rev; told = true; changed(rev, session); } } catch { path = null; }
   };
   look();
   const timer = setInterval(look, everyMs);
@@ -449,7 +458,7 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
       }, by);
       stream.onAbort(() => { open = false; wake?.(); });
       const heartbeat = setInterval(() => { void stream.write(": ping\n\n").catch(() => undefined); }, deps.sseHeartbeatMs ?? SSE_HEARTBEAT_MS);
-      const watch = record && deps.sessions ? watchRecord(host, deps.sessions, id, (rev) => { queue.push({ type: "record", rev }); wake?.(); confirmSent(host, deps.sessions!, id); }, deps.recordWatchMs ?? RECORD_WATCH_MS) : null;
+      const watch = record && deps.sessions ? watchRecord(host, deps.sessions, id, (rev, session) => { queue.push({ type: "record", rev, session }); wake?.(); if (rev) confirmSent(host, deps.sessions!, id); }, deps.recordWatchMs ?? RECORD_WATCH_MS) : null;
       if (record) {
         const now = host.get(id);
         if (now) {

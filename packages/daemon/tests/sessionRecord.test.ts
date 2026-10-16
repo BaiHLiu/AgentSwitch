@@ -4,7 +4,7 @@
 
 import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
@@ -676,19 +676,50 @@ describe("a terminal's record, watched", () => {
   it("says the record's version at once and again each time the agent writes; a terminal with no session yet waits for one", async () => {
     const { monitor, claudePath } = monitored();
     let session: string | null = null;
-    const host = { get: () => ({ harness: "claude-code", agentSessionId: session }) } as unknown as TerminalHost;
+    const host = { get: () => ({ harness: "claude-code", agentSessionId: session }), recordFileOf: () => null } as unknown as TerminalHost;
     const revs: string[] = [];
-    const stop = watchRecord(host, monitor, "t1", (rev) => revs.push(rev), 10);
+    const stop = watchRecord(host, monitor, "t1", (rev, of) => { expect(of).toBe("c1"); revs.push(rev); }, 10);
     try {
       await new Promise((r) => setTimeout(r, 40));
       expect(revs).toEqual([]);
       session = "c1";
       await until(() => revs.length === 1);
+      expect(revs[0]).not.toBe("");
       appendFileSync(claudePath, c.user(200, "再来") + "\n");
       await until(() => revs.length === 2);
       expect(revs[1]).not.toBe(revs[0]);
       await new Promise((r) => setTimeout(r, 40));
       expect(revs).toHaveLength(2);
+    } finally { stop(); }
+  });
+
+  it("tells a session the terminal goes to at once, before it has a file, and finds the file its hooks named as soon as it is there", async () => {
+    const { monitor, claudePath } = monitored();
+    let session = "c1";
+    let named: string | null = null;
+    const host = { get: () => ({ harness: "claude-code", agentSessionId: session }), recordFileOf: () => named } as unknown as TerminalHost;
+    const told: [string, string][] = [];
+    const stop = watchRecord(host, monitor, "t1", (rev, of) => told.push([rev, of]), 10);
+    try {
+      await until(() => told.length === 1);
+      expect(told[0]![1]).toBe("c1");
+      // `/clear`: another session, with no file until its first message.
+      session = "c2";
+      await until(() => told.length === 2);
+      expect(told[1]).toEqual(["", "c2"]);
+      // Its first message: the file its hooks named is there, and is followed long before the search's next turn.
+      const file = join(dirname(claudePath), "c2.jsonl");
+      named = file;
+      await new Promise((r) => setTimeout(r, 60));
+      const began = Date.now();
+      writeFileSync(file, turn.join("\n") + "\n");
+      await until(() => told.length === 3, 600);
+      expect(Date.now() - began).toBeLessThan(500);
+      expect(told[2]![1]).toBe("c2");
+      expect(told[2]![0]).not.toBe("");
+      // Nothing new: nothing said.
+      await new Promise((r) => setTimeout(r, 40));
+      expect(told).toHaveLength(3);
     } finally { stop(); }
   });
 });

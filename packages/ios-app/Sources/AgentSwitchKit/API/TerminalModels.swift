@@ -702,8 +702,9 @@ public enum TerminalEvent: Sendable, Equatable {
     case choices(ScreenChoices?)
     /// What its screen said to commands sent from a screen, the latest last.
     case notices([ScreenNotice])
-    /// Its session's record changed.
-    case record(rev: String)
+    /// Its session's record changed (`rev`, its file's version), or the terminal went to `session`, which has no file
+    /// yet (`rev` empty). `session`: nil from an older Mac, which does not say.
+    case record(rev: String, session: String?)
     /// The agent is on another model now.
     case model(String)
     /// What it offers as your next message changed (nil: it offers none now).
@@ -769,7 +770,7 @@ public enum TerminalEvent: Sendable, Equatable {
             let notices = obj["notices"].flatMap { try? JSONSerialization.data(withJSONObject: $0) }.flatMap { try? JSONDecoder().decode([ScreenNotice].self, from: $0) } ?? []
             return .notices(notices)
         case "record":
-            return (obj["rev"] as? String).map { .record(rev: $0) }
+            return (obj["rev"] as? String).map { .record(rev: $0, session: obj["session"] as? String) }
         case "model":
             return (obj["model"] as? String).map { .model($0) }
         case "suggestion":

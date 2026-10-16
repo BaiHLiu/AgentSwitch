@@ -112,6 +112,9 @@ final class PaneRecord {
     @ObservationIgnored private var terminal: String?
     @ObservationIgnored private var harness = ""
     @ObservationIgnored private var session: String?
+    /// The session the record's own stream last named: the terminals' list, read every few seconds, may still name the
+    /// one before it.
+    @ObservationIgnored private var toldSession: String?
     @ObservationIgnored private var cursor: Int64 = 0
     @ObservationIgnored private var reading = false
     @ObservationIgnored private var again = false
@@ -144,10 +147,17 @@ final class PaneRecord {
             }
         }
         if info.status != "working" { stillNow() }
-        // The agent says which session it writes a moment after it starts; a `/clear` or a fork changes it.
+        // The agent says which session it writes a moment after it starts; a `/clear` or a fork changes it. Once the
+        // record's stream has named one, it is the one followed (it says a change at once).
+        if let told = toldSession, told != info.agentSessionId { return }
         guard info.agentSessionId != session || info.harness != harness else { return }
-        harness = info.harness
-        session = info.agentSessionId
+        begin(harness: info.harness, session: info.agentSessionId)
+    }
+
+    /// The record of `session` from its start: what was shown of another is gone.
+    private func begin(harness: String, session id: String?) {
+        self.harness = harness
+        session = id
         items = []; plan = []; usage = nil; mode = nil; more = false; cursor = 0; error = nil; effortAsked = nil; start = nil
         openFiles = []; diffs = [:]
         loaded = session == nil
@@ -160,6 +170,7 @@ final class PaneRecord {
         following = nil
         terminal = nil
         session = nil
+        toldSession = nil
         items = []; plan = []; usage = nil; mode = nil; more = false; cursor = 0; loaded = false; error = nil; start = nil
         activity = nil; subagents = []; activitySince = nil; modelNow = nil; effortAsked = nil; modeNow = nil; suggestion = nil; daybreakNow = nil
         progress = nil; sent = []; choices = nil; notices = []
@@ -191,8 +202,10 @@ final class PaneRecord {
             if choices != now { choices = now }
         case .notices(let now):
             if notices != now { notices = now }
-        case .record:
-            refresh()
+        case .record(_, let named):
+            // Another session (a `/clear`, another one resumed): followed now, not when the list next says so.
+            if let named { toldSession = named }
+            if let named, named != session { begin(harness: harness, session: named) } else { refresh() }
         case .model(let model):
             modelNow = model
         case .mode(let mode):

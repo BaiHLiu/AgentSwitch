@@ -485,8 +485,9 @@ public enum TerminalRecordEvent: Equatable, Sendable {
     case notices([ScreenNotice])
     /// What it is doing now changed.
     case activity(TerminalActivity?, [TerminalSubagent])
-    /// Its session's record changed.
-    case record(rev: String)
+    /// Its session's record changed (`rev`, its file's version), or the terminal went to `session`, which has no file
+    /// yet (`rev` empty). `session`: nil from an older service, which does not say.
+    case record(rev: String, session: String?)
     /// The agent is on another model now.
     case model(String)
     /// It asks in another way now (its permission mode, in its own word).
@@ -505,8 +506,8 @@ public enum TerminalRecordEvent: Equatable, Sendable {
             struct Body: Decodable { let activity: TerminalActivity?; let subagents: [TerminalSubagent]? }
             return (try? JSONDecoder().decode(Body.self, from: bytes)).map { .activity($0.activity, $0.subagents ?? []) }
         case "record":
-            struct Body: Decodable { let rev: String }
-            return (try? JSONDecoder().decode(Body.self, from: bytes)).map { .record(rev: $0.rev) }
+            struct Body: Decodable { let rev: String; let session: String? }
+            return (try? JSONDecoder().decode(Body.self, from: bytes)).map { .record(rev: $0.rev, session: $0.session) }
         case "writing":
             return .writing(AgentWriting.decode(data))
         case "model":

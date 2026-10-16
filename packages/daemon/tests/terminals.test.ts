@@ -1024,6 +1024,44 @@ describe("terminals over HTTP", () => {
     expect((await call("GET", `/terminals/${id}`)).json.terminal.sizedBy ?? null).toBeNull();
   });
 
+  it("a record's screen is told the session the terminal goes to at once, and its record as soon as its file is there (2026-10-16)", async () => {
+    // User: cc和codex就修一下有的时候消息同步不及时的问题. A screen learnt a new session (a `/clear`, the first message of
+    // a terminal) only from the terminals' list, read every 3–4 s, and the service looked for its file every 2 s.
+    const home = mkdtempSync(join(tmpdir(), "agentswitch-terminals-"));
+    const cwd = mkdtempSync(join(tmpdir(), "agentswitch-terminal-cwd-"));
+    const records = mkdtempSync(join(tmpdir(), "agentswitch-records-"));
+    const project = join(records, "claude", "-w");
+    mkdirSync(project, { recursive: true });
+    let base = "";
+    const cfg: DaemonConfig = { home, targetsPath: TARGETS_PATH, port: 0, router: "echo", executors: "echo", browser: false, quotaTtlMs: 1000, maxTasks: 4, opencodePort: 0, opencodeBinary: "", watchSessions: true };
+    const daemon = buildDaemon(cfg, { terminalLauncher: fakeLauncher(() => base, true), sessionSources: { claudeProjects: join(records, "claude"), codexSessions: join(records, "codex"), opencodeDb: join(records, "none.db"), excluded: [] } });
+    const token = ensureLocalToken(home);
+    const port = await new Promise<number>((done) => {
+      const server = listenLocal(daemon, 0, (info: AddressInfo) => done(info.port), new LocalAuth(token));
+      closers.push(() => { server.close(); daemon.close(); });
+    });
+    daemon.setLocalPort(port);
+    base = `http://127.0.0.1:${port}`;
+    const created = await fetch(`${base}/terminals`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ harness: "claude-code", cwd }) });
+    const id = ((await created.json()) as { terminal: { id: string } }).terminal.id;
+    const record = follow(base, token, id, "?view=record");
+    const host = daemon.terminals!;
+    const hookToken = (host as unknown as { sessions: Map<string, { hookToken: string }> }).sessions.get(id)!.hookToken;
+    await until(() => record.some((e) => e.event === "activity"));
+    const file = join(project, "b2.jsonl");
+    const said = Date.now();
+    await host.hook(id, hookToken, { event: "SessionStart", payload: { session_id: "b2", transcript_path: file } });
+    await until(() => record.some((e) => e.event === "record" && e.data.session === "b2"), 1500);
+    expect(Date.now() - said).toBeLessThan(1000);
+    expect(record.find((e) => e.event === "record" && e.data.session === "b2")!.data.rev).toBe("");
+    // Its first message: the record follows within a look or two, not at the search's next turn.
+    await new Promise((r) => setTimeout(r, 100));
+    const wrote = Date.now();
+    writeFileSync(file, JSON.stringify({ type: "user", uuid: "u1", sessionId: "b2", cwd, timestamp: new Date().toISOString(), message: { role: "user", content: "第一句" } }) + "\n");
+    await until(() => record.some((e) => e.event === "record" && e.data.session === "b2" && e.data.rev !== ""), 1500);
+    expect(Date.now() - wrote).toBeLessThan(900);
+  });
+
   it("Claude Code's prompt suggestion is read off its screen while it rests: dim words in its empty input", async () => {
     // 2026-10-07, user: 有的时候cli会进行回复预测，这个也做出来，按tap补全. The shape is the real screen's (2.1.292).
     const dim = (text: string, from = 2): ScreenRow => ({ text, dim: [...text].map((_, x) => x >= from) });
@@ -1875,6 +1913,24 @@ describe("terminal pieces", () => {
     expect(host.get(info.id)!.status).toBe("waiting");
     await host.hook(info.id, token, { event: "PiAgentStart", payload: {} });
     expect(host.get(info.id)!.status).toBe("working");
+  });
+
+  it("keeps the file its agent's hooks name for the session, for that session only", async () => {
+    const host = new TerminalHost({ launcher: fakeLauncher(() => "http://127.0.0.1:9", true) });
+    closers.push(() => host.closeAll());
+    const info = await host.spawn({ harness: "claude-code", cwd: tmpdir() });
+    const token = (host as unknown as { sessions: Map<string, { hookToken: string }> }).sessions.get(info.id)!.hookToken;
+    expect(host.recordFileOf(info.id)).toBeNull();
+    await host.hook(info.id, token, { event: "SessionStart", payload: { session_id: "a1", transcript_path: "/u/.claude/projects/-w/a1.jsonl" } });
+    expect(host.recordFileOf(info.id)).toBe("/u/.claude/projects/-w/a1.jsonl");
+    // A file not named for the session, or not a path: not taken.
+    await host.hook(info.id, token, { event: "UserPromptSubmit", payload: { session_id: "a1", transcript_path: "/etc/passwd" } });
+    await host.hook(info.id, token, { event: "UserPromptSubmit", payload: { session_id: "a1", transcript_path: "a1.jsonl" } });
+    expect(host.recordFileOf(info.id)).toBe("/u/.claude/projects/-w/a1.jsonl");
+    // Another session (`/clear`) with no file named: none.
+    await host.hook(info.id, token, { event: "SessionStart", payload: { session_id: "b2" } });
+    expect(host.get(info.id)?.agentSessionId).toBe("b2");
+    expect(host.recordFileOf(info.id)).toBeNull();
   });
 
   it("says what a terminal is writing to the screens that show its record, and stops at rest", async () => {

@@ -106,6 +106,9 @@ final class TerminalPageModel {
     private(set) var notices: [ScreenNotice] = []
     /// Changes when the session's record does: the page reads it again.
     private(set) var recordRev: String?
+    /// The session the record's stream last named (a `/clear` or another one resumed says so at once); nil until it has,
+    /// and from an older Mac. The terminals' list, read every few seconds, may still name the one before.
+    private(set) var recordSession: String?
     /// The model the agent says it is on now (Claude Code), as the stream last said; nil until it has.
     private(set) var modelNow: String?
     /// Codex's Daybreak switch as the stream said last (nil: nothing said — the list's word stands).
@@ -285,8 +288,9 @@ final class TerminalPageModel {
             choices = now
         case .notices(let now):
             notices = now
-        case .record(let rev):
+        case .record(let rev, let session):
             recordRev = rev
+            if let session, session != recordSession { recordSession = session }
         case .model(let model):
             modelNow = model
         case .daybreak(let on):
