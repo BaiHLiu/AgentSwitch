@@ -132,6 +132,12 @@ const TSCONFIG = `{
 `;
 const ENV = `PORT=5173
 API_BASE=http://127.0.0.1:8080
+SESSION_SECRET=change-me
+`;
+// A made-up key: the demo's sensitive file under ~/.ssh (files-v0 §7.3). Not a real key.
+const KEY = `-----BEGIN OPENSSH PRIVATE KEY-----
+（示例，不是真的密钥）
+-----END OPENSSH PRIVATE KEY-----
 `;
 const AUTH_TS = `import { Router } from "./router";
 import { issueTokens } from "../tokens";
@@ -199,7 +205,12 @@ const root = d("you", [
     f("agentswitch.db", 18_400_000, "Today 13:04", "binary"),
   ], { hidden: true, mtime: "Today 13:04" }),
   d(".secret-gate", [], { hidden: true, locked: true }),
-  d(".ssh", [f("config", 320, "8/21", "text", "Host github.com\n  IdentityFile ~/.ssh/id_ed25519\n")], { hidden: true, mtime: "8/21" }),
+  d(".codex", [f("auth.json", 4_100, "10/15", "text", "{ … }", { lang: "JSON" }), f("config.toml", 380, "10/15", "text", "model = \"gpt-6-astra\"\n")], { hidden: true, mtime: "10/15" }),
+  d(".ssh", [
+    f("config", 320, "8/21", "text", "Host github.com\n  IdentityFile ~/.ssh/id_ed25519\n"),
+    f("id_ed25519", 411, "8/21", "text", KEY),
+    f("id_ed25519.pub", 98, "8/21", "text", "ssh-ed25519 AAAA…（示例） you@mac\n"),
+  ], { hidden: true, mtime: "8/21" }),
   f(".zshrc", 640, "9/30", "text", ZSHRC, { hidden: true }),
   d("Desktop", [f("screenshot.png", 412_000, "Today 11:20", "image", null, { pic: "shot" })], { mtime: "Today 11:20" }),
   d("Documents", [f("plan.pdf", 1_240_000, "10/12", "pdf", null, { pages: 6 })], { mtime: "10/12" }),
