@@ -208,7 +208,7 @@
 5. **回答自动带回**：默认开（建议：不用工具也能参加）／默认关（只有 `send` 才算说话）。
 6. **名字**：页名 `Rooms`、一个讨论叫 Room；或 `Talk`。
 7. **搬话的默认**（§10）：`Send To` 有两种送法 `Send` 与 `Interrupt`（2026-10-16 定：用户要两种）；agent 发的话默认知会（建议）／默认提问。
-8. **跳过权限的 Claude Code 收到 agent 的话**（2026-10-16 定：发送方如实声明自己的权限方式，不扣）：同类之间就此不扣；会问权限的 agent 发给跳过权限的仍被 Claude Code 扣住（§10.5），要不要在接收方的设置里改成全收，待定。
+8. **跳过权限的 Claude Code 收到 agent 的话**（2026-10-16 定：默认全收，终端自己的设置里 `crossSessionInbound: "accept"`，不做权限声明，§10.5）。
 
 ## 9. 试验（2026-10-15）
 
@@ -306,21 +306,13 @@
 | pi | AgentSwitch 扩展里的 `sendUserMessage` | 同上 | 扩展在下一步之前加一段 | — |
 
 - **退路**：上面的入口不在、或这一次没起来（例如 Codex 的私有服务没起），照 §4.2 打进终端。
-- **用它自己的信封，带上名字和权限方式**（2026-10-16，用户：他们的对话让发送方声明自己的权限方式、不扣住就行了）：
-  - 服务把 agent 的话包成 Claude Code 自己的格式：`<cross-session-message from="uds:…" from-name="05 · Codex" from-mode="…">`，换行，正文，换行，`</cross-session-message>`。它解析时要求逐字与它自己的写法一致（属性顺序 from、from-name、from-mode）。
-  - 名字是终端在列表里的称呼。它的屏幕上就成了一行 `Message from @05-Codex: …`，不再是“Another Claude session”那一大段；记录里是 `origin.name`、`origin.body`。
-  - Claude Code 把会话分两类：`bypass`（跳过权限）和 `prompting`（会问人）。声明了权限方式时，两边同类才收，不同类就扣住；不声明时，只有接收方是 `bypass` 才扣（它的代码，探针 5 逐一试过）。
-  - 所以服务只在接收方跳过权限时附上 `from-mode`，写发送方真实的那一类；接收方会问权限时不附。附了反而会让“跳过权限的发给手动的”被扣。
+- **默认全收（2026-10-16，用户：声明权限方式先别管了，默认先做全bypass权限吧）**：
+  - AgentSwitch 起的每个 Claude Code 终端，在它自己的设置文件（`--settings`，§3.2 那一份，不碰你自己的配置）里写 `crossSessionInbound: "accept"`。别的会话送来的话一律直接收下，跳过权限的会话也不再扣住、不弹它的放行框。
+  - 试过（探针 7）：跳过权限的终端，收到一句不带任何权限声明的话，直接开了一轮。
+  - 话仍包在它自己的信封里：`<cross-session-message from="uds:…" from-name="05 · Codex">`，换行，正文，换行，`</cross-session-message>`。解析时要求逐字和它自己的写法一致。这样它屏幕上是一行 `Message from @05-Codex: …`，记录里有 `origin.name`、`origin.body`。不带 `from-mode`。
+  - 代价：这个终端也会直接收下这台 Mac 上别的 Claude Code 会话发来的话（同一个用户的会话才连得上它的收件 socket）。手动的 agent 能借一个跳过权限的会话替它做事，这正是 Claude Code 原本那道检查要防的。
+  - 原来的做法记在这里备查：Claude Code 把会话分 `bypass` 与 `prompting` 两类；发送方声明权限方式时两边同类才收，不声明时只有跳过权限的一方会扣（探针 5）。如实声明解不开“手动 → 跳过权限”，所以改为全收。
 
-  | 发送方 → 接收方 | 服务附的 | 结果（探针 3、5） |
-  |---|---|---|
-  | 手动 → 手动 | 不附 | 送到 |
-  | 跳过权限 → 手动 | 不附 | 送到（附 `bypass` 会被扣：试过） |
-  | 跳过权限 → 跳过权限 | `bypass` | 送到，开了一轮 |
-  | 手动 → 跳过权限 | `prompting` | 扣住：`The sending session's permission mode class doesn't match` |
-
-  - 最后一行是 Claude Code 防止借道提权的规矩：会问权限的 agent，不能让一个不问的替它做事。如实声明解不开它。服务照回执出一张卡 `等你在 07 的终端里放行`，带 `Open Terminal`，不替你点。要让这种情况也不扣，只能在接收方这个终端自己的设置里写 `crossSessionInbound: "accept"`。那样它谁的话都收，包括这台 Mac 上别的会话，没有做。
-  - Codex 没有这一道，照常送。
 - **认出是谁说的**：服务记着自己送出去的每一条，所以简略视图能把它们画成卡，而不是你的话：
   - Claude Code：认 `origin.kind == "peer"` 加 `msg_id`。它包在外面的抬头（“Another Claude session sent a message:”）和后面那段提醒不画；钩子加的知会（记录里的 `hook_additional_context`）在那一段工作里画一小行。
     - 已做（2026-10-16，用户说的“那几个bug”之一）：在这之前，别的会话送进来的话简略视图里根本没有，它是 `isMeta` 的一行，被当成程序自己的东西扔掉了。现在读成一条带 `from` 的话，Mac 和手机画成靠左的一张卡，抬头 `From 05 · Codex`，没给名字的写 `From Another Session`。它在忙时进来的那种（记录里是 `queued_command` 附件）也一样。你发的话在记录里有没有出现，不再拿它比对。
@@ -342,9 +334,9 @@
 | 2 | 钩子加的话模型看不看得到 | 看得到。PostToolUse 回 `hookSpecificOutput.additionalContext`，两家的回答都把那条知会原样写了出来。Claude Code 的记录里多一条 `hook_additional_context` |
 | 3 | Claude Code 的收件 socket | 手动模式：一帧送进去它就开了一轮，钩子照常 `UserPromptSubmit → PreToolUse → PostToolUse → Stop`。它的回答：“这句话来自另一个 Claude 会话……它也不是你本人在这个会话里输入的。”屏幕和记录见 §10.5。没有回执发回（只有被扣时才有）。跳过权限模式：扣住，没开新的一轮，响了一次 `Notification`，回执 `held`。它退出时把自己的令牌文件删了 |
 | 4 | Codex：第二个客户端 `turn/start` | TUI 把它画成一句你打的话（`› 〔搬话 · 探针〕…`），接着照常做完这一轮、回答；钩子照常响，知会也到了。TUI 的输入框没被碰 |
-
 | 5 | Claude Code 的权限方式要两边同类（`attest`） | 用它自己的信封送：跳过权限 → 跳过权限送到，开了一轮，它答出发信人叫“05 · Codex”；手动 → 跳过权限扣住；跳过权限 → 手动、附了 `bypass` 也扣住。见 §10.5 的表 |
 | 6 | `Send To` 的两种送法在 Codex 上（`steer`） | `turn/steer`（要带这一轮的 id）：追加的一句并进了正在跑 `sleep` 的那一轮，回答照做。`turn/interrupt` 再 `turn/start`：那一轮停下，命令没跑完，新的一句答了 |
+| 7 | 默认全收（`PROBE_ACCEPT=1 … attest`） | 终端自己的设置里 `crossSessionInbound: "accept"`，跳过权限的会话收到不带权限声明的一句：直接开了一轮，简略视图里是一条 `From 05 · Codex` |
 
 **没试的**：Claude Code 的 `priority: "now"`；问分身；OpenCode 与 pi 的入口；Claude Code 收到带回信地址的话后，会不会用它自带的 `SendMessage` 回信（这次没让它回，回信地址也没收到别的）。
 

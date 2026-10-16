@@ -296,13 +296,21 @@ answer is written (docs/simple-view-v0.md §5.14; a real model turn each): every
 the agent's screen and how much in its record; for Codex, how much a second client of its private app-server is sent
 (`thread/resume` once the turn has begun, `item/agentMessage/delta`) and what `thread/backgroundTerminals/list` says.
 
+`node --import tsx scripts/claude_tap_probe.ts <out dir>` tries Claude Code's answer as it is written from the network
+(docs/simple-view-v0.md §5.14; one `claude -p` turn on the cheapest model): its `HTTPS_PROXY` is a proxy of the script's
+that opens api.anthropic.com alone with a throw-away authority the process trusts (`NODE_EXTRA_CA_CERTS`), passes every
+request and answer on as they are, and reads the text pieces out of a gunzipped copy of the main request's event
+stream (`x-claude-code-request-class: main`). It prints methods, paths, statuses and the text, never a header's value
+but those three ids'.
+
 `node --import tsx scripts/carry_probe.ts claude|codex <out dir>` tries how a message reaches an agent already at
 work without being typed in (docs/talk-v0.md §10.6; a real model turn each, not in the running service): a terminal
 started as the service starts one (`agentLauncher`, its hooks pointed at the script's own stand-in for the service);
 then Claude Code's own inbox (`--messaging-socket-path`, a frame with its peer key), manual and bypass, or a second
 client's `turn/start` on a Codex terminal's private app-server — and the PostToolUse hook's `additionalContext`. Codex
 has its hooks only where the user's Codex already trusts the installed app's (read with `hooks/list`, never written).
-`attest` sends in Claude Code's own envelope (`<cross-session-message from=… from-name=… from-mode=…>`) to see its
+`PROBE_ACCEPT=1` with `attest`: the terminal's own settings say `crossSessionInbound: "accept"` and the message says
+nothing of the sender's mode (talk-v0 §10.5's default). `attest` sends in Claude Code's own envelope (`<cross-session-message from=… from-name=… from-mode=…>`) to see its
 permission-mode parity (bypass to bypass, manual to bypass, bypass to manual); `steer` tries Send To's two ways into a
 Codex turn at work (`turn/steer`; `turn/interrupt`, then `turn/start`). It types nothing and answers nothing, and ends
 everything it started; the sessions it made are listed for removal.

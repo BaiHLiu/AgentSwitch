@@ -340,14 +340,23 @@ async function steering(t: Term, rpc: AppServerClient, thread: string): Promise<
 async function attest(): Promise<void> {
   const launch = agentLauncher({ binaries: { "claude-code": join(homedir(), ".local/bin/claude") }, hookUrl: () => hookUrl, stateDir: STATE, env });
   // Its own envelope, as it writes one (from, from-name, from-mode in this order; the body between two line breaks).
-  const envelope = (from: string, mode: "bypass" | "prompting", body: string) =>
-    `<cross-session-message from="uds:${from}" from-name="05 · Codex" from-mode="${mode}">\n${body}\n</cross-session-message>`;
+  const envelope = (from: string, mode: "bypass" | "prompting" | null, body: string) =>
+    `<cross-session-message from="uds:${from}" from-name="05 · Codex"${mode ? ` from-mode="${mode}"` : ""}>\n${body}\n</cross-session-message>`;
   const body = "07，我是 05 · Codex（管 packages/daemon）：登录接口新加的字段定名为 refreshToken。\n\n（这是一次试验：请只用一句话回答：你看到的发信人叫什么。不要运行命令，不要改任何文件。）";
-  const cases: { mode: "manual" | "bypass"; from: ("bypass" | "prompting")[] }[] = [{ mode: "bypass", from: ["bypass", "prompting"] }, { mode: "manual", from: ["bypass"] }];
+  // `PROBE_ACCEPT=1`: the terminal's own settings say `crossSessionInbound: "accept"` and nothing says the sender's
+  // mode (user, 2026-10-16: 声明权限方式先别管了，默认先做全bypass权限吧) — a bypass terminal, from an agent that
+  // asks: delivered?
+  const accept = process.env.PROBE_ACCEPT === "1";
+  const cases: { mode: "manual" | "bypass"; from: ("bypass" | "prompting" | null)[] }[] = accept ? [{ mode: "bypass", from: [null] }]
+    : [{ mode: "bypass", from: ["bypass", "prompting"] }, { mode: "manual", from: ["bypass"] }];
   for (const c of cases) {
     say(`== Claude Code, ${c.mode}`);
     const inbox = join(SOCKS, `${c.mode}.sock`), back = join(SOCKS, `${c.mode}-from.sock`);
     const plan = launch({ id: `attest-${c.mode}`, harness: "claude-code", cwd: REPO, mode: c.mode, model: "sonnet", hookToken: "probe" });
+    if (accept) {
+      const file = plan.args[plan.args.indexOf("--settings") + 1]!;
+      writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), crossSessionInbound: "accept" }, null, 2), { mode: 0o600 });
+    }
     const t = open(plan.file, [...plan.args, "--messaging-socket-path", inbox], plan.env);
     if (!await until("input box", t.ready, 45_000)) { shot(t, `attest-${c.mode}-stuck`); say("  stopped: its input is not on screen (see the screen)"); return; }
     const dir = join(homedir(), ".claude", "sessions");
@@ -360,9 +369,9 @@ async function attest(): Promise<void> {
       await send(inbox, [{ type: "auth", token }, { type: "user", message: { role: "user", content: envelope(back, from, body) }, from: `uds:${back}`, msg_id: randomUUID(), priority: "next" }]);
       const ran = await until("end of a turn", () => events.some((e) => e.event === "Stop" && e.at > sentAt), 60_000, 500);
       await sleep(2000);
-      shot(t, `attest-${c.mode}-from-${from}`);
+      shot(t, `attest-${c.mode}-from-${from ?? "none"}`);
       const got = frames.slice(seen).map((f) => f.frame as { action?: string; status?: string; cause?: string; reason?: string });
-      say(`  from ${from}: a turn ran: ${ran ? "yes" : "no"}; receipts: ${got.map((g) => `${g.status ?? g.action}${g.cause ? ` (${g.cause})` : ""}`).join(", ") || "none"}`);
+      say(`  from ${from ?? "an agent that says nothing of its mode"}: a turn ran: ${ran ? "yes" : "no"}; receipts: ${got.map((g) => `${g.status ?? g.action}${g.cause ? ` (${g.cause})` : ""}`).join(", ") || "none"}`);
       const held = t.lines().join("\n");
       if (/Held message from another session/.test(held)) {
         say(`  its own box: ${(held.match(/The sending session[^\n]*|The sender[^\n]*/) ?? [""])[0].trim()}`);

@@ -733,7 +733,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
 
 /* ---------- what the session holds ---------- */
 /** The long answer of the Writing state. */
-const WRITING = "终端程序本身不画字：它把要显示的内容连同控制序列写进伪终端，终端模拟器读到之后，按序列移动光标、换颜色、清掉一行，再把字形放到格子里。每个格子是一个字符宽，中文这样的宽字符占两格。\n\n屏幕上的内容因此是一张格子表，而不是一段文字。模拟器每收到一段输出就更新这张表，再按需要重画变了的那几行；滚动时整张表上移，最上面的一行进回滚区。\n\n简略视图读的是 agent 自己写下的记录，所以看不到这张表里正在长出来的字；要边写边出，就得从屏幕上把正在写的那一段读出来，写完再换成记录里那份完整的。";
+const WRITING = "终端程序本身不画字：它把要显示的内容连同控制序列写进伪终端，终端模拟器读到之后，按序列移动光标、换颜色、清掉一行，再把字形放到格子里。每个格子是一个字符宽，中文这样的宽字符占两格。\n\n屏幕上的内容因此是一张格子表，而不是一段文字。模拟器每收到一段输出就更新这张表，再按需要重画变了的那几行；滚动时整张表上移，最上面的一行进回滚区。\n\n简略视图读的是 agent 自己写下的记录，所以看不到这张表里正在长出来的字；要边写边出，就得在它和模型之间的那条流上把正在写的字接过来，写完再换成记录里那份完整的。";
 const EARLIER = [
   { t: "user", time: "10:12", text: "给设置加一页 Agents，四个 CLI 能装、能更新、能删。" },
   { t: "md", html: "<p>先定存放的位置：正式版留在各家的官方位置，测试版和指定版本放进 AgentSwitch 自己的版本库，互不影响。</p>" },
@@ -792,8 +792,8 @@ const PRESETS = {
                 m: "<b>Codex 的 Daybreak 开关。</b>支持它的 Codex 多一项 <code>Daybreak On</code>：点开选 On / Off，对之后的新一轮生效，Codex 会把它记成新会话的默认。模型列表跟着变：开着时没有 Daybreak 那一档的模型不列出，关着时只有那一档的不列出。当前模型用不了时，回复框上方一行提醒。" },
   compact:    { w: "Compact", n: "<b>它在压缩上下文。</b>你打了 <code>/compact</code>，或者上下文满了它自己压缩：这段时间“正在做什么”写 <code>Compact</code> 和已用时间，回复框和它工作时一样。压缩完，记录里留一行，写着前后各有多少。",
                 m: "<b>它在压缩上下文。</b>你打了 <code>/compact</code>，或者上下文满了它自己压缩：这段时间“正在做什么”写 <code>Compact</code> 和已用时间，空着的回复框按 <code>esc</code> 是取消。压缩完，记录里留一行，写着前后各有多少。" },
-  writing:    { w: "Writing", n: "<b>边写边出。</b>它在写一段长回答：字一边写一边出现在记录末尾，光标在最后。Claude Code 写完一整段才记进记录（2026-10-16 量过：屏幕上 11 秒里一点点出来，记录里最后一下整段出现），所以这段是从它自己的屏幕上读的，写完换成记录里的那段；Codex 的逐字来自它的 app-server，和它屏幕上的一样快。",
-                m: "<b>边写边出。</b>它在写一段长回答：字一边写一边出现在这一栏末尾。Claude Code 写完一整段才记进记录，这段是从它自己的屏幕上读的，写完换成记录里的那段；Codex 的逐字来自它的 app-server。" },
+  writing:    { w: "Writing", n: "<b>边写边出。</b>它在写一段长回答：字一边写一边出现在记录末尾，光标在最后。Claude Code 写完一整段才记进记录（2026-10-16 量过：屏幕上 11 秒里一点点出来，记录里最后一下整段出现），所以这段取自它和 Anthropic 之间的网络（经 AgentSwitch 在本机的转发口，原样转发、只抄下文字），写完换成记录里的那段；Codex 的逐字来自它的 app-server。两家都和它们自己的屏幕一样快。",
+                m: "<b>边写边出。</b>它在写一段长回答：字一边写一边出现在这一栏末尾。Claude Code 写完一整段才记进记录，这段取自它和 Anthropic 之间的网络（本机的转发口），写完换成记录里的那段；Codex 的逐字来自它的 app-server。" },
   background: { w: "Background", n: "<b>后台任务。</b>它在后台跑着的命令和子代理，在回复框上面一行：<code>Background 2</code> 和最先开始的那个。点开每个一行：做什么、跑了多久、它最后输出的一行；跑完的写结果。不花它的 token：Claude Code 的从它的记录和输出文件里读，Codex 的问它的 app-server。",
                 m: "<b>后台任务。</b>它在后台跑着的命令和子代理，在回复框上面一行，点开每个一行：做什么、跑了多久、最后输出的一行；跑完的写结果。Codex 的后台终端可以 <code>Stop</code>。" },
   files:      { w: "Files", n: "<b>提到文件。</b>打 <code>@</code> 列出这个文件夹里的文件，按名字找，点一下填进去。行首的 <code>!</code> 是在它的 shell 里运行这一行，上面写一句。记录里读了图片的那一步可以点开看图。",
@@ -1052,7 +1052,7 @@ function body() {
   const now = (l, sub) => `<div class="line now ${sub ? "sub" : ""}">${S.classic && (sub || l.tool !== "Working") ? `<i class="ki">${icon(sub ? "branch" : l.tool === "Compact" ? "compact" : "term", 14, 1.4)}</i>` : ""}<span class="w">${l.tool ?? l.name}</span><span class="x ${sub || l.note || !l.text ? "" : "cmd"}">${esc(l.note ?? l.text ?? l.doing)}</span>${!sub && l.tokens ? `<span class="tk">↓ ${tokens(l.tokens)} tokens</span>` : ""}<span class="tm" data-t0="${l.t0}">${since(l.t0)}</span></div>`;
   const live = S.joined && !S.card ? (S.live ? now(S.live) : "") + (S.sub ? now(S.sub, true) : "") : "";
   const writing = S.writing ? `<div class="md writing"><p>${esc(S.writing.text.slice(0, S.writing.shown)).replace(/\n\n/g, "</p><p>")}<span class="caret">▍</span></p></div>
-    <div class="wnote">${W("Writing")} · 读自它的屏幕，写完换成记录里的</div>` : "";
+    <div class="wnote">${W("Writing")} · 写完换成记录里的</div>` : "";
   return meta + earlier + S.items.map(item).join("") + writing + live + card();
 }
 
