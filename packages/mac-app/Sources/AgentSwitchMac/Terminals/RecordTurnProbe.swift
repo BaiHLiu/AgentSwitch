@@ -7,7 +7,9 @@ import SwiftUI
 /// end, while what a session does to it happens — a turn ends (the status goes still, the last run of work closes, an
 /// answer is added; in one step or two); the session not known for a moment; the record read again whole, or under
 /// other names, or much shorter; the reader a little way up, then `↓ Latest` clicked; `Earlier` clicked at its start
-/// and the session going on meanwhile; a run of work opened by a click; a long reply typed; an answer growing.
+/// and the session going on meanwhile; a run of work opened by a click; a long reply typed; an answer growing; a reply
+/// typed in the box and taken back a key at a time to one line (`shrinks`: after each key, how many states the box went
+/// through in the next 1.2 s — more than three reads `MOVING`).
 /// After each step `turn.txt` gets a line — where the record's scroller stands in its document, how much of what it
 /// shows is drawn on (a pane left blank reads 0%), how many items are shown — and the page's picture is
 /// `turn-<scene>-<step>.png`. `-probeOnScreen YES` puts the window on screen behind the others, which the clicks need
@@ -289,6 +291,51 @@ enum RecordTurnProbe {
             pane.record.stageItems(items(turns: 40, working: false))
             await pause(50)
             try await mark("the turn ended")
+        case .shrinks:
+            // Two lines typed in the reply box, then taken back a key at a time to one (2026-10-16, user: 在简略模式写两行字
+            // 然后删除的刚好只剩下一行的时候就会触发抽搐动作): after each key, what moves in the next 1.2 s.
+            guard let text = composer(host) else { log.say("shrinks: no reply box"); break }
+            host.window?.makeFirstResponder(text)
+            log.say("     scroller style \(NSScroller.preferredScrollerStyle == .legacy ? "legacy" : "overlay")")
+            func watch(_ what: String) async {
+                var seen: [String] = []
+                for _ in 0..<75 {
+                    let box = text.enclosingScrollView
+                    let record = scroller(host)
+                    let line = String(format: "box %.1f, text %.1f×%.1f, bar %@, record at %.0f of %.0f, inset %.0f, %@", box?.frame.height ?? -1, text.frame.width, text.frame.height,
+                                      box?.verticalScroller?.isHidden == false && box?.hasVerticalScroller == true ? "shown" : "hidden",
+                                      record?.documentVisibleRect.minY ?? -1, record?.documentView?.frame.height ?? -1, record?.contentInsets.bottom ?? -1, pane.record.atEnd ? "at end" : "Latest")
+                    if seen.last != line { seen.append(line) }
+                    await pause(16)
+                }
+                log.say("     \(what): \(seen.count) states\(seen.count > 3 ? " — MOVING" : "")")
+                for line in seen.prefix(8) { log.say("        \(line)") }
+            }
+            for (label, typed) in [("two lines", "第一行，写一点字\n第二行"), ("one long line wrapped", String(repeating: "这是一段很长的回复，", count: 9)),
+                                  ("eight lines, the last long", (1...7).map { "第 \($0) 行" }.joined(separator: "\n") + "\n" + String(repeating: "这是一段很长的回复，", count: 9))] {
+                text.selectAll(nil)
+                text.deleteBackward(nil)
+                await pause(300)
+                for part in typed.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+                    if part.offset > 0 { text.insertNewlineIgnoringFieldEditor(nil) }
+                    text.insertText(String(part.element), replacementRange: text.selectedRange())
+                }
+                await watch("\(label) typed")
+                try await mark("\(label) typed")
+                var lines = 2
+                var keys = 0
+                while lines > 1, keys < 120 {
+                    text.deleteBackward(nil)
+                    keys += 1
+                    await pause(30)
+                    let used = text.layoutManager.map { m in text.textContainer.map { m.usedRect(for: $0).height } ?? 0 } ?? 0
+                    lines = used > ComposeField.lineHeight * 1.5 ? 2 : 1
+                    if lines == 1 || keys % 4 == 0 { await watch("\(keys) keys back, \(lines == 1 ? "one line" : "still two")") }
+                }
+                try await mark("\(label) taken back to one line")
+                text.deleteBackward(nil)
+                await watch("one more key back")
+            }
         case .grows:
             for n in 1...12 {
                 pane.record.stageItems(items(turns: 40, working: true, grown: n), activity: TerminalActivity(tool: "Bash", target: "npm test"))
@@ -308,7 +355,7 @@ enum RecordTurnProbe {
 
     private static let began = Int64(Date().timeIntervalSince1970 * 1000)
 
-    enum Scene: String, CaseIterable { case ends, statusFirst, unknown, reread, renamed, shorter, up, earlier, opens, typing, grows }
+    enum Scene: String, CaseIterable { case ends, statusFirst, unknown, reread, renamed, shorter, up, earlier, opens, typing, grows, shrinks }
 
     /// A made-up session of `turns` turns: what was asked, a run of work, an answer of some length. `working`: the last
     /// turn is still going (its run of work open, no answer yet). `grown`: how much of the last answer is written.
@@ -343,6 +390,13 @@ enum RecordTurnProbe {
             out.append(RecordItem(id: id(2), kind: .answer, at: at + 60_000, text: text))
         }
         return out
+    }
+
+    /// The reply box's text view.
+    private static func composer(_ host: NSView) -> ComposeTextView? {
+        if let text = host as? ComposeTextView { return text }
+        for view in host.subviews { if let found = composer(view) { return found } }
+        return nil
     }
 
     /// The record's scroller: the one whose document is the tallest.

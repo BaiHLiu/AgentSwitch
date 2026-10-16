@@ -53,7 +53,7 @@ struct ComposeField: NSViewRepresentable {
         let scroll = NSScrollView()
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
-        scroll.hasVerticalScroller = true
+        scroll.hasVerticalScroller = false
         scroll.autohidesScrollers = true
         let view = ComposeTextView(usingTextLayoutManager: false)
         view.coordinator = context.coordinator
@@ -205,6 +205,12 @@ struct ComposeField: NSViewRepresentable {
             guard let view, let manager = view.layoutManager, let container = view.textContainer else { return }
             manager.ensureLayout(for: container)
             let used = manager.usedRect(for: container).height
+            // A scroller only for more than the box holds. Where scrollers take room (a mouse, or “always show”), one
+            // shown for a moment — the box a line shorter than the text until its new height comes — narrowed the text,
+            // which wrapped onto a second line and grew the box, which hid the scroller, which let it fit on one again:
+            // the box jumped between one line and two without end (2026-10-16, user: 在简略模式写两行字然后删除的刚好只剩下一行的时候就会触发抽搐动作).
+            let over = ceil(used) > ComposeField.maxHeight
+            if let scroll = view.enclosingScrollView, scroll.hasVerticalScroller != over { scroll.hasVerticalScroller = over }
             let height = min(max(ceil(used), ComposeField.minHeight), ComposeField.maxHeight)
             if abs(height - parent.height) > 0.5 {
                 let binding = parent.$height
