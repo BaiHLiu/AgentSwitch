@@ -229,10 +229,14 @@ struct ClashScreen: View {
 
     private func rules(_ view: ClashView) -> some View {
         Section {
+            Toggle("Only My Rules", isOn: Binding(get: { view.settings.ownRules }, set: { on in clash.change { $0.ownRules = on } }))
             ForEach(ClashTemplate.allCases, id: \.self) { template in
-                Toggle(isOn: Binding(get: { view.settings.templates[template].on }, set: { on in clash.change { $0.templates[template].on = on } })) {
+                // The domestic template is on while only these rules are: without it everything at home goes by Manual.
+                let held = template == .domestic && view.settings.ownRules
+                Toggle(isOn: Binding(get: { held || view.settings.templates[template].on }, set: { on in clash.change { $0.templates[template].on = on } })) {
                     Text(template.title)
                 }
+                .disabled(held)
                 NavigationLink { ClashTextScreen(clash: clash, template: template) } label: {
                     LabeledContent("Edit") { Text(detail(view, template)).mono(13) }
                 }
@@ -244,13 +248,13 @@ struct ClashScreen: View {
             if view.dns.on, view.dns.overridden {
                 Text("Clash Verge 自己的“DNS 覆写”开着：内核用的是它那一份，这里的 DNS 不起作用。").font(.footnote).foregroundStyle(Theme.waiting)
             }
-            if let group = view.defaultGroup {
+            if let group = view.defaultGroup, !view.settings.ownRules {
                 Toggle("Rename \(group) to Manual", isOn: Binding(get: { view.settings.renameDefault }, set: { on in clash.change { $0.renameDefault = on } }))
             }
         } header: {
             SectionLabel("Rules")
         } footer: {
-            Text("规则模版打开就加进 Clash，关掉就拿走，都立刻生效。DNS 改的是订阅正文，要 Clash Verge 重新取一次才生效。")
+            Text("Only My Rules：订阅的分组和规则都不要，只留它的节点，其余走 Manual；国内模版跟着打开。规则模版打开就加进 Clash，关掉就拿走，都立刻生效。Only My Rules 和 DNS 改的是订阅正文，要 Clash Verge 重新取一次才生效。")
         }
     }
 

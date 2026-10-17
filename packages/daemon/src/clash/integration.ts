@@ -5,7 +5,7 @@
 
 import { createHash } from "node:crypto";
 import { stringify } from "yaml";
-import { buildConfig, chosen, CLASH_SERVICES, CLASH_TEMPLATES, defaultGroup, DIRECT_SET, directGroup, dnsSection, dnsText, groupNames, groupsIn, nodeSet, RULE_SETS, ruleSet, running, SERVICE, templateRules, VERGE_UPDATE_HOURS, type ClashService, type ClashSettings, type ClashTemplate } from "./build.js";
+import { buildConfig, chosen, CLASH_SERVICES, CLASH_TEMPLATES, DEFAULT_GROUP, defaultGroup, DIRECT_SET, directGroup, dnsSection, dnsText, groupNames, groupsIn, nodeSet, RULE_SETS, ruleSet, templateOn, running, SERVICE, templateRules, VERGE_UPDATE_HOURS, type ClashService, type ClashSettings, type ClashTemplate } from "./build.js";
 import { rulesFrom } from "./rules.js";
 import { observe, type CheckDeps, type Observed } from "./check.js";
 import { ClashController, type ClashStatus } from "./controller.js";
@@ -108,7 +108,9 @@ export class ClashIntegration {
       const read = dnsSection(dns);
       if ("error" in read) throw new ClashRefused(read.error);
     }
-    this.o.store.save(cleanSettings(next));
+    // An app from before §7.11 says nothing of `ownRules`: it stays as it was.
+    const keep = next && typeof next === "object" && !("ownRules" in next) ? { ownRules: this.o.store.settings().ownRules } : {};
+    this.o.store.save(cleanSettings({ ...(next as object), ...keep }));
     const status = await this.status();
     await this.push(status, false);
     return this.shown(await this.status());
@@ -173,9 +175,9 @@ export class ClashIntegration {
     if (!port) throw new ClashRefused("Clash 没有开代理端口，没法从这里发连接去试");
     const settings = this.o.store.settings(), enabled = this.enabled(), document = this.o.source.document() ?? {};
     const deps: CheckDeps = { port, connections: () => controller.connections(), ...this.o.check };
-    const has = (template: ClashTemplate, rule: string): boolean => settings.templates[template].on && templateRules(template, settings).includes(rule);
+    const has = (template: ClashTemplate, rule: string): boolean => templateOn(template, settings) && templateRules(template, settings).includes(rule);
     const service = (s: ClashService, host: string) => ({ id: s, title: s === "claude" ? "Claude" : "OpenAI", host, far: true,
-      expect: enabled[s] ? { kind: "group" as const, group: groupNames(document, s).group } : null });
+      expect: enabled[s] ? { kind: "group" as const, group: groupNames(document, s, settings).group } : null });
     const ports = this.o.proxyPorts?.() ?? new Map<string, number>();
     const wanted: { id: string; title: string; host: string; port?: number; far?: boolean; expect: ClashCheckRow["expect"] }[] = [
       service("claude", "claude.ai"), service("openai", "chatgpt.com"),
@@ -183,9 +185,10 @@ export class ClashIntegration {
       { id: "china", title: "China by Address", host: "www.163.com", expect: has("domestic", "GEOIP,CN") ? { kind: "direct" } : null },
       { id: "block", title: "Ads", host: "ad.doubleclick.net", expect: has("block", "DOMAIN-SUFFIX,doubleclick.net") ? { kind: "reject" } : null },
       ...settings.direct.slice(0, 8).map((address) => ({ id: `direct:${address}`, title: address, host: address, port: ports.get(address.toLowerCase()) ?? HTTPS, expect: { kind: "direct" as const } })),
-      { id: "other", title: "Everything Else", host: "www.google.com", expect: null },
+      // With only AgentSwitch's rules the rest goes by its `Manual`; otherwise as the subscription says.
+      { id: "other", title: "Everything Else", host: "www.google.com", expect: settings.ownRules ? { kind: "group", group: DEFAULT_GROUP } : null },
     ];
-    const via = directGroup(document);
+    const via = directGroup(document, settings);
     const rows = await Promise.all(wanted.map(async ({ far, port: at, ...row }): Promise<ClashCheckRow> => {
       const observed = await observe(deps, row.host, at ?? HTTPS, far === true);
       // A `Go Direct` address need not answer on the port tried (a proxy server has its own): nothing seen says nothing.
@@ -327,7 +330,7 @@ export class ClashIntegration {
     const seen = status ? running({ enabled, groups: made ? groupsIn(made.config) : [] }, status) : { active: false, current: false };
     const state = { active: seen.active, current: seen.current && (!made || !served || served.hash === made.hash) };
     const service = (s: ClashService): ClashServiceView => {
-      const names = groupNames(document, s);
+      const names = groupNames(document, s, settings);
       const live = !!status && state.active && SERVICE[s].set in status.nodeSets;
       const now = (group: string): string | null => (live ? status!.groups.find((g) => g.name === group)?.now ?? null : null);
       const have = new Set(nodes.map((n) => n.name));
@@ -342,8 +345,8 @@ export class ClashIntegration {
       nodes: nodes.map((n) => n.name),
       profiles: (profiles?.profiles ?? []).filter((p) => p.from !== base),
       settings, services: { claude: service("claude"), openai: service("openai") },
-      templates: Object.fromEntries(CLASH_TEMPLATES.map((t) => [t, { on: settings.templates[t].on, custom: settings.templates[t].rules !== null, count: templateRules(t, settings).length }])) as ClashView["templates"],
-      defaultGroup: info ? defaultGroup(document) : null,
+      templates: Object.fromEntries(CLASH_TEMPLATES.map((t) => [t, { on: templateOn(t, settings), custom: settings.templates[t].rules !== null, count: templateRules(t, settings).length }])) as ClashView["templates"],
+      defaultGroup: info ? defaultGroup(document, settings) : null,
       dns: { on: settings.dns.on, custom: settings.dns.text !== null, overridden: vergeOwnDns(this.o.dir) },
       active: state.active, upToDate: state.current, install, fetchedAt: served?.at ?? null,
     };

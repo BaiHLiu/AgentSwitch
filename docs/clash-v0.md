@@ -338,6 +338,40 @@ Clash Verge 没有给外面“更新这个订阅”的入口：它认的链接�
 - Clash Verge 取到新的一份之后，在正在跑的内核上看一次这些连接。
 - 路由检查只试 `chatgpt.com`，这一处以前也是对的，所以没发现问题。以后可以多试一条订阅自己表里的地址，例如 `client-api.arkoselabs.com`。
 
+### 7.11 只用我的规则（2026-10-17）
+
+用户：我走as的时候上游代理规则这一堆能解决了吗；能不能把它原有的规则都去掉，只用我的；开做吧。
+
+**做什么**：一个开关 `Only My Rules`，默认关。打开后交给 Clash Verge 的那份只留订阅的节点，订阅的分组、规则、规则集全都不要，换成 AgentSwitch 自己的：
+
+- **节点**：订阅里的 `proxies` 原样，`proxy-providers` 原样（带链接的照旧改成从 AgentSwitch 取，§7.2）。
+- **分组**，共六个：
+  - `Claude`、`Claude自动选择`、`OpenAI`、`OpenAI自动选择`：选了节点的那一项才有（§7.2）。名字用 AgentSwitch 的写法，订阅里的写法随订阅的分组一起不要了。
+  - `Manual`：手选，成员是 `自动选择` 和全部节点（`proxies` 里的逐个点名，节点集用 `use`）。
+  - `自动选择`：`url-test`，全部节点里最快的那个，探测 `https://www.gstatic.com/generate_204`，间隔 300 秒。
+  - 一个节点也没有时只有 `Manual`，成员是 `DIRECT`：内核不收空的分组。
+- **规则**，从上到下：`RULE-SET,as-direct,DIRECT`、`RULE-SET,as-claude,Claude`、`RULE-SET,as-openai,OpenAI`、`RULE-SET,as-domestic,DIRECT,no-resolve`、`RULE-SET,as-block,REJECT`、`RULE-SET,as-domestic-ip,DIRECT`、`MATCH,Manual`。
+  - 国内两条直接送 `DIRECT`：订阅的直连组（§7.10）也不在了。
+  - `rule-providers` 只有 AgentSwitch 的六个，`sub-rules` 不要。
+- **国内模版跟着开**：开着这个开关时 `Domestic & Local Direct` 算作打开，页面上它的开关是开着的、不能关。没有它，国内网站会全走 `Manual`。关掉 `Only My Rules`，它回到你原来设的状态。
+- **还提到被去掉的分组的地方**：
+  - DNS 服务器后面的 `#分组`：去掉 `#分组`，直接问。
+  - 节点的 `dialer-proxy`：去掉，直接连。
+  - `nameserver-policy` 里按被去掉的规则集写的那一条：去掉。
+  - 用户现在这份订阅这三样都没有，写进去是为了别的订阅不让内核报错。
+- **不受影响的**：DNS 模版（开着就替换订阅的 `dns:`，关着用订阅自己的）、`Go Direct`、两项各自选的节点、自动更新。`Rename … to Manual` 在开着这个开关时不出现：`Manual` 是 AgentSwitch 自己的。
+- **路由检查**：`Everything Else`（`www.google.com`）这时要求经 `Manual` 出去；其余几行照旧。
+- **生效**：这是订阅正文的变化，要 Clash Verge 取一次，页面在那之前写“不是最新”。关掉后再取一次就回到 §7.2–§7.10 的样子。
+- **代价**：奈飞、油管、电报、Gemini 这些不再各有一组，都走 `Manual`；订阅里那些细分的表（GFW 列表、电报的地址段、苹果与微软的分流）也不用了，判断只剩“国内直连、其余走代理”。
+- **旧的应用**：存设置时不带 `ownRules` 的（这一版之前的 Mac、iPhone），服务保留原来的值，不当作关。
+
+**做了的（2026-10-17）**：
+
+- 服务：`build.ts` 的 `ownRules`、`templateOn`、`everyNode`、`unname`，`groupNames`、`defaultGroup`、`directGroup` 看这个开关；`store.ts`、`api/clash.ts`（可选字段）、`integration.ts`（旧应用不带时保留；路由检查；页面上的模版状态按 `templateOn`）。
+- 测试：`tests/clash.test.ts` 的 `only AgentSwitch's rules (§7.11)` 四条（只留节点、去掉的分组没有一处再被提到、节点集与没有节点、国内模版跟着开与分组的写法），HTTP 一条（打开后要重新取、旧应用不带时保留、关掉后复原）。
+- 真跑：用户现在这份订阅（47 个节点、20 个分组、43 条规则、29 个规则集）加上用户现在的设置，打开后生成的是 `Claude | Claude自动选择 | OpenAI | OpenAI自动选择 | Manual(48) | 自动选择(47)` 和上面那七条规则；Clash Verge 自带的内核 `-t` 通过。
+- Mac：`Rules` 一栏最上面一行 `Only My Rules`，开着时 `Domestic & Local Direct` 显示开着、不能点。iPhone：`Rules` 一栏同样一行。演示页 `docs/design/implemented/phone-proxies.html` 加了这一行。
+
 ## 8. 分步
 
 1. （做了）第一版：§6 末尾。

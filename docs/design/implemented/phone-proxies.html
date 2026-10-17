@@ -57,6 +57,7 @@ body.classic .r .mk.box { border-radius: 4px; } body.classic .r .mk.box.on { bac
 .dot { width: 7px; height: 7px; flex: none; box-shadow: 0 0 5px currentColor; background: currentColor; } body.classic .dot { border-radius: 50%; }
 .sw { margin-left: auto; width: 38px; height: 22px; border: 1px solid var(--ink3); border-radius: 11px; position: relative; flex: none; cursor: pointer; }
 .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--ink3); }
+.r.held .sw { opacity: 0.45; cursor: default; }
 .sw.on { background: var(--ink); border-color: var(--ink); } .sw.on::after { left: 18px; background: var(--card); }
 body.classic .sw.on { background: var(--green); border-color: var(--green); } body.classic .sw.on::after { background: #fff; }
 .f { font-size: 11.5px; color: var(--ink2); margin: 6px 4px 0; }
@@ -93,10 +94,12 @@ const S = {
   claude: { now: null, nodes: [["🇯🇵 日本家宽-01", "96 ms"], ["🇯🇵 日本家宽-02", "142 ms"], ["🇺🇸 美国家宽-01", "428 ms"]], auto: "🇯🇵 日本家宽-01" },
   openai: { now: "🇸🇬 新加坡-01", nodes: [["🇺🇸 美国家宽-01", "402 ms"], ["🇸🇬 新加坡-01", "187 ms"]], auto: "🇺🇸 美国家宽-01" },
   all: [["🇯🇵 日本家宽-01", "96 ms"], ["🇯🇵 日本家宽-02", "142 ms"], ["🇯🇵 日本-03", "118 ms"], ["🇺🇸 美国家宽-01", "428 ms"], ["🇺🇸 美国-02", "Timeout"], ["🇸🇬 新加坡-01", "187 ms"], ["🇸🇬 新加坡-02", ""], ["🇬🇧 英国-01", ""]],
-  sw: { domestic: true, block: false, dns: false, rename: false },
+  sw: { own: false, domestic: true, block: false, dns: false, rename: false },
 };
 const row = (l, v = "", o = {}) => `<div class="r ${o.cls ?? ""}" ${o.act ? `data-act="${o.act}"` : ""}>${o.pre ?? ""}<span class="nm">${l}</span>${v !== null ? `<span class="v ${o.vcls ?? ""}">${v}</span>` : ""}${o.chev ? `<span class="chev">›</span>` : ""}</div>`;
-const sw = (l, key) => `<div class="r"><span class="nm">${l}</span><span class="sw ${S.sw[key] ? "on" : ""}" data-act="sw:${key}"></span></div>`;
+// A switch held on by another (the domestic template while Only My Rules is on) is drawn on and takes no tap.
+const held = (key) => key === "domestic" && S.sw.own;
+const sw = (l, key) => `<div class="r ${held(key) ? "held" : ""}"><span class="nm">${l}</span><span class="sw ${S.sw[key] || held(key) ? "on" : ""}" ${held(key) ? "" : `data-act="sw:${key}"`}></span></div>`;
 const card = (h, rows, f = "") => `${h ? `<div class="h">${h}</div>` : ""}<div class="card">${rows.join("")}</div>${f ? `<div class="f">${f}</div>` : ""}`;
 const mk = (on, box = false) => `<span class="mk ${on ? "on" : ""} ${box ? "box" : ""}">${box ? (on ? "[x]" : "[ ]") : (on ? "&lt;x&gt;" : "&lt; &gt;")}</span>`;
 const phone = (cap, title, body, right = "") => `<div class="col"><div class="phone"><div class="nav"><span>‹</span><span>${title}</span><span>${right}</span></div><div class="scr">${body}</div></div><div class="cap">${cap}</div></div>`;
@@ -127,8 +130,8 @@ function draw() {
         row("Auto Update", "24 h ⌃"), row("Update Now", null), row("Replace…", null), row("Remove", null, { cls: "red" })], "换一个订阅会忘掉为 Claude 和 OpenAI 选过的节点。")
       + service("claude", "Claude") + service("openai", "OpenAI")),
     phone("CLASH · RULES, DIRECT, CHECK", "Clash",
-      card("Rules", [sw("Domestic & Local Direct", "domestic"), row("Edit", "169 Rules", { chev: true }), sw("Block Ads & Trackers", "block"), row("Edit", "27 Rules", { chev: true }),
-        sw("DNS", "dns"), row("Edit", "Template", { chev: true }), sw("Rename 节点选择 to Manual", "rename")], "规则模版打开就加进 Clash，关掉就拿走，都立刻生效。DNS 改的是订阅正文，要 Clash Verge 重新取一次才生效。")
+      card("Rules", [sw("Only My Rules", "own"), sw("Domestic & Local Direct", "domestic"), row("Edit", "169 Rules", { chev: true }), sw("Block Ads & Trackers", "block"), row("Edit", "27 Rules", { chev: true }),
+        sw("DNS", "dns"), row("Edit", "Template", { chev: true }), ...(S.sw.own ? [] : [sw("Rename 节点选择 to Manual", "rename")])], "Only My Rules：订阅的分组和规则都不要，只留它的节点，其余走 Manual；国内模版跟着打开。规则模版打开就加进 Clash，关掉就拿走，都立刻生效。Only My Rules 和 DNS 改的是订阅正文，要 Clash Verge 重新取一次才生效。")
       + card("Go Direct", [`<div class="r code">5.102.107.254</div>`, row(`<span class="code" style="color:var(--ink3)">host or IP</span>`, "Add")], "这些地址不经任何节点，直接连出去：配置自己的代理的地址会自己加进来。向左滑删除。")
       + card("Routing Check", [
         `<div class="chk"><b>Claude<i class="ok">OK</i></b><span class="code">claude.ai</span><span>RuleSet as-claude → Claude → Claude自动选择 → 🇯🇵 日本家宽-01</span><span class="code">JP 126.36.1.2 · 362 ms</span></div>`,
