@@ -14,7 +14,7 @@ struct AgentSwitchApp: App {
         #if DEBUG
         // Screens with sample data and no Mac: `-uiDemo YES`, optionally `-uiDemoScreen settings|task|done|onboarding|
         // stale|interrupted|mac|offline|offlinemac|tasks|search|sessions|transcript|terminals|terminal|terminalsealed|
-        // terminalslash|terminalclose|terminalmenu|terminaldelete|terminalsearch|terminalquestion|terminallink|newterminal|newterminalbypass|
+        // terminalslash|terminalclose|terminalmenu|terminaldelete|terminalsearch|terminalsmany|terminalquestion|terminallink|newterminal|newterminalbypass|
         // browser|browserpage|browsertook|browserfile|browserlocal|browserdenied|browsernew|browserclose|browserzoom|
         // browserzoomwatch|linkedpage|proxies|clash|clashservice|clashrules|clashcheck|clashnodes|clashtext|clashsource|
         // proxybrowser|proxyprofile|files|fileshome|filesopen|filespreview|filesimage|filesselect|fileschoose|filessensitive|
@@ -39,6 +39,8 @@ struct AgentSwitchApp: App {
             // The Dispatch page itself (the app opens on the terminals).
             case "home", "offline": model.tab = .tasks
             case "terminals", "terminalmenu", "terminalmenuprofile", "terminaldelete", "terminalsearch", "terminalprofiles": model.tab = .terminals
+            // A long tree read again as the Mac's is (TerminalsListProbe).
+            case "terminalsmany": model.tab = .terminals; TerminalsListProbe.start(model)
             case "terminal", "terminalsealed", "terminalslash", "terminalclose", "terminalkeyboard", "terminalquestion", "terminallink",
                  "simple", "simplebusy", "simplecompact", "simpledaybreak", "simpledaybreakclash", "simpleidle", "simpleeffort", "simplepaste", "simplestep", "simplesuggest", "simplequestion", "simpleprompt", "simplechanges":
                 model.tab = .terminals; model.openTerminalRequest = "a1b2c3d4"

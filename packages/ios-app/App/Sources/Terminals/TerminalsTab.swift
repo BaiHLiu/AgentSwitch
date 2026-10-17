@@ -59,7 +59,11 @@ struct TerminalsTab: View {
         let folders = store.folders
         NavigationStack(path: $path) {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
+                // Not a lazy stack: a top folder is one item holding all the rows under it (a home folder, everything),
+                // and with the list scrolled into such an item a line above it going away — a failed read's line, the
+                // connection's — left the lazy stack drawing nothing at all until the list was emptied (2026-10-17,
+                // user: 有的时候手机终端会白屏; TerminalsListProbe). Laziness bought nothing there: the item is built whole.
+                VStack(alignment: .leading, spacing: 0) {
                     if model.connection.endpoint == nil {
                         ConnectionBanner().padding(.bottom, Theme.Space.m)
                     }
