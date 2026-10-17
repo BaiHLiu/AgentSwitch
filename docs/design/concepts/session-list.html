@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terminals List Hierarchy</title>
+<style>
+/* The Terminals page's list (docs/terminal-v0.md §1): what is the folder and what is in it, what runs and what is
+   history, and how a session is found (2026-10-17, user: 当前目录树和session，我分不太清楚主次…找一些session的时候
+   很费劲). Not a spec: today's list beside three ways to change it. Folders, terminals and sessions are made up. */
+:root {
+  --bg: #000; --panel: #0b0b0b; --raise: #151515; --hover: #121212; --band: #161616;
+  --ink: #e9e6df; --ink2: #8d8a84; --ink3: #4d4b48; --ink4: #262524;
+  --signal: #ff2e88; --green: #9be22d; --amber: #ffb000; --cyan: #2ee6ff;
+  --mono: "MesloLGS NF", "SF Mono", ui-monospace, Menlo, "PingFang SC", monospace;
+  --ui: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+  color-scheme: dark;
+}
+.light { --bg: #f4f1ea; --panel: #ece8df; --raise: #e4dfd4; --hover: #e9e5dc; --band: #e7e2d8;
+  --ink: #16140f; --ink2: #6b675f; --ink3: #a6a196; --ink4: #d6d1c6; --signal: #e0106f; --green: #3d8a00; --amber: #b87400; color-scheme: light; }
+.classic { --signal: #0a84ff; --green: #30d158; --amber: #ff9f0a; --bg: #000; --panel: #000; --raise: #232326; --hover: #18181b; --band: #141416;
+  --ink: #ededf0; --ink2: #a2a2a8; --ink3: #6c6c72; --ink4: #2a2a2d; }
+.classic.light { --signal: #007aff; --green: #1f9d3f; --amber: #d98200; --bg: #fff; --panel: #f7f7f9; --raise: #ececf0; --hover: #f2f2f5; --band: #f1f1f4;
+  --ink: #1c1c1e; --ink2: #6e6e73; --ink3: #aeaeb2; --ink4: #e3e3e8; }
+
+* { box-sizing: border-box; }
+html, body { overflow-x: hidden; }
+body { margin: 0; background: #1b1b1d; color: #d8d4cc; font: 13px var(--ui); }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.top { max-width: 1240px; margin: 0 auto; padding: 18px 16px 4px; }
+h1 { font: 700 15px var(--mono); margin: 0 0 8px; color: #e9e6df; }
+.lede { color: #a9a6a0; font-size: 12.5px; line-height: 1.75; margin: 0 0 10px; max-width: 112ch; }
+.lede b { color: #e9e6df; font-weight: 600; }
+code { font: 12px var(--mono); color: #d8d4cc; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; font: 12px var(--mono); color: #8f8b84; }
+.seg { display: inline-flex; border: 1px solid #3a3a3e; }
+.seg button { color: #b5b1aa; font: 12px var(--mono); padding: 4px 10px; }
+.seg button.on { background: #e9e6df; color: #111; }
+.stage { max-width: 1240px; margin: 18px auto 0; padding: 0 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 24px; }
+.col h2 { font: 600 12.5px var(--mono); color: #e9e6df; margin: 0 0 4px; }
+.col p { font-size: 12px; line-height: 1.7; color: #9a968f; margin: 0 0 10px; min-height: 5.1em; }
+
+/* one window's left column, at its real size */
+.win { width: 330px; height: 660px; background: var(--bg); color: var(--ink); border-radius: 10px; overflow: hidden; position: relative;
+  box-shadow: 0 0 0 .5px rgba(255,255,255,.2), 0 20px 50px rgba(0,0,0,.55); display: grid; grid-template-rows: auto auto minmax(0, 1fr); font: 12.5px var(--mono); }
+.classic .win, .win.classic { font-family: var(--ui); }
+.search { margin: 10px 10px 6px; border: 1px solid var(--ink4); padding: 5px 8px; color: var(--ink3); display: flex; gap: 8px; }
+.classic .search { border: 0; background: var(--raise); border-radius: 8px; }
+.search .k { margin-left: auto; font-size: 11px; }
+.filters { display: flex; gap: 12px; padding: 0 14px 8px; color: var(--ink2); font-size: 12px; }
+.filters .sp { flex: 1; }
+.list { overflow-y: auto; padding-bottom: 14px; scrollbar-width: thin; position: relative; }
+
+/* rows of today's list */
+.r { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 7px; height: 26px; padding: 0 12px; white-space: nowrap; cursor: default; }
+.r:hover { background: var(--hover); }
+.r .nm { overflow: hidden; text-overflow: ellipsis; }
+.r .mt { color: var(--ink3); font-size: 11px; display: flex; gap: 6px; align-items: center; }
+.r.folder .nm { font-weight: 700; }
+.r.term .nm { color: var(--ink); }
+.r.sess .nm { color: var(--ink2); }
+.r.more .nm { color: var(--ink3); font-size: 11.5px; }
+.classic .r { height: 28px; margin: 0 6px; border-radius: 7px; }
+.classic .r.folder { height: 26px; }
+.dot { width: 8px; height: 8px; display: inline-block; flex: none; }
+.classic .dot { border-radius: 50%; }
+.spin { color: var(--cyan); }
+.ic { color: var(--ink3); width: 14px; text-align: center; font-size: 11px; }
+.ag { color: var(--ink2); font-size: 11px; min-width: 14px; text-align: center; }
+.cnt { font-size: 10.5px; min-width: 16px; height: 16px; border-radius: 8px; display: inline-grid; place-items: center; padding: 0 4px; color: #000; }
+.git { color: var(--ink3); font-weight: 400; font-size: 11px; margin-left: 6px; }
+.tw { color: var(--ink3); white-space: pre; }
+
+/* A: the folder as a group's head, kept at the top while its group scrolls; what runs, then its folders, then history */
+.grp { position: relative; }
+.head { position: sticky; top: 0; z-index: 2; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px; align-items: center;
+  height: 30px; padding: 0 12px; background: var(--band); border-top: 1px solid var(--ink4); border-bottom: 1px solid var(--ink4); white-space: nowrap; }
+.head .nm { font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+.head .up { color: var(--ink3); font-weight: 400; font-size: 11px; }
+.classic .head { border: 0; background: color-mix(in srgb, var(--bg) 82%, var(--ink) 6%); backdrop-filter: blur(8px); height: 30px; }
+.classic .head .nm { font-size: 13px; font-weight: 600; }
+.sub > .head { top: 30px; z-index: 1; height: 26px; background: var(--bg); border-top: 1px dashed var(--ink4); border-bottom: 0; }
+.classic .sub > .head { background: color-mix(in srgb, var(--bg) 90%, var(--ink) 3%); }
+.body { position: relative; padding: 2px 0 6px; }
+.body::before { content: ""; position: absolute; left: 18px; top: 0; bottom: 8px; border-left: 1px solid var(--ink4); }
+.classic .body::before { left: 20px; }
+.body > .r, .body > .hist, .body > .sub { margin-left: 14px; }
+.classic .body > .r { margin-left: 20px; }
+.hist { display: flex; gap: 6px; align-items: center; height: 22px; padding: 0 12px; color: var(--ink3); font-size: 11px; letter-spacing: .04em; cursor: pointer; }
+.classic .hist { letter-spacing: 0; font-weight: 600; margin-left: 20px !important; }
+.r.small { height: 22px; font-size: 11.5px; }
+.classic .r.small { height: 24px; font-size: 12px; }
+.r.small .nm { color: var(--ink2); }
+
+/* B: two parts */
+.part { display: flex; align-items: center; gap: 8px; padding: 10px 14px 4px; font-size: 11px; color: var(--ink3); letter-spacing: .06em; }
+.classic .part { letter-spacing: 0; font-weight: 600; font-size: 12px; color: var(--ink2); }
+.part .seg2 { margin-left: auto; display: inline-flex; border: 1px solid var(--ink4); }
+.classic .part .seg2 { border-radius: 6px; overflow: hidden; }
+.part .seg2 button { padding: 1px 7px; font-size: 11px; color: var(--ink2); }
+.part .seg2 button.on { background: var(--ink); color: var(--bg); }
+.label { padding: 6px 14px 2px; color: var(--ink3); font-size: 11px; display: flex; gap: 8px; }
+.when { padding: 10px 14px 3px; color: var(--ink2); font-size: 11px; font-weight: 700; }
+.r2 { padding: 4px 12px 5px; margin: 0 0; cursor: default; }
+.classic .r2 { margin: 0 6px; border-radius: 7px; }
+.r2:hover { background: var(--hover); }
+.r2 .l1 { display: flex; gap: 7px; align-items: center; white-space: nowrap; }
+.r2 .l1 .nm { overflow: hidden; text-overflow: ellipsis; color: var(--ink); flex: 1; min-width: 0; }
+.r2 .l2 { padding-left: 21px; color: var(--ink3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* C: ⌘P over the window */
+.scrim { position: absolute; inset: 0; background: rgba(0,0,0,.45); z-index: 5; }
+.pal { position: absolute; left: 10px; right: 10px; top: 54px; z-index: 6; background: var(--panel); border: 1px solid var(--ink); }
+.pal::after { content: ""; position: absolute; left: 6px; top: 6px; right: -7px; bottom: -7px; z-index: -1; background: repeating-conic-gradient(var(--ink3) 0 25%, transparent 0 50%) 0 0 / 2px 2px; }
+.classic .pal { border: .5px solid var(--ink4); border-radius: 12px; box-shadow: 0 22px 60px rgba(0,0,0,.55); background: var(--raise); }
+.classic .pal::after { display: none; }
+.pal input { width: 100%; background: transparent; border: 0; border-bottom: 1px solid var(--ink4); color: var(--ink); font: 13px var(--mono); padding: 10px 12px; outline: none; }
+.classic .pal input { font-family: var(--ui); font-size: 14px; }
+.pal .res { max-height: 430px; overflow-y: auto; padding: 4px 0; }
+.pal .sec { padding: 6px 12px 2px; color: var(--ink3); font-size: 10.5px; letter-spacing: .06em; }
+.pal .it { padding: 5px 12px; }
+.pal .it.on { background: var(--signal); color: #fff; }
+.pal .it.on .l1 .nm, .pal .it.on .l2 { color: #fff; }
+.pal .it:not(.on) mark { background: transparent; color: var(--signal); }
+.pal .it.on mark { background: transparent; color: #fff; text-decoration: underline; }
+.pal .foot { border-top: 1px solid var(--ink4); padding: 6px 12px; color: var(--ink3); font-size: 11px; display: flex; gap: 12px; }
+mark { background: transparent; color: var(--signal); }
+
+.notes { max-width: 1240px; margin: 34px auto 60px; padding: 0 16px; color: #a9a6a0; font-size: 12.5px; line-height: 1.8; }
+.notes h3 { font: 600 12px var(--mono); letter-spacing: .1em; color: #77746e; margin: 22px 0 6px; }
+.notes ol, .notes ul { padding-left: 1.4em; margin: 0; max-width: 112ch; }
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>Terminals 列表 · 主次与找会话</h1>
+  <p class="lede">配 <code>docs/terminal-v0.md</code> §1。左边是<b>现在</b>的列表，右边三种改法：<b>A</b> 文件夹做成组头、组内先放在跑的终端和子文件夹、历史会话收进一行；<b>B</b> 开着的和历史分成两段，历史可以按时间看；<b>C</b> <code>⌘P</code> 找会话的面板（打字筛选，演示里能输入）。文件夹、终端、会话都是编的。A 的组头在滚动时停在顶上，滚一下列表看。</p>
+  <div class="tools">
+    <span>外观 <span class="seg" data-opt="look"><button data-v="pixel">Pixel</button><button data-v="classic" class="on">Classic</button></span></span>
+    <span><span class="seg" data-opt="theme"><button data-v="dark" class="on">Dark</button><button data-v="light">Light</button></span></span>
+  </div>
+</div>
+<div class="stage" id="stage"></div>
+<div class="notes">
+  <h3>为什么分不清、难找（照现在的规则）</h3>
+  <ol>
+    <li>一个文件夹里的顺序是终端、最新 3 条会话、<code>N More</code>，<b>子文件夹排在最后</b>，只比父级多缩进 14 点：子文件夹的标题行像是会话列表的下一条，父文件夹在哪里结束看不出来。</li>
+    <li>文件夹行 26 点、终端和会话行 28 点，文件夹只是字粗一点：没有底色、没有分界，组和组挨在一起。</li>
+    <li>在跑的终端和几十条历史会话在同一层，后者占了大部分行。</li>
+    <li>每个文件夹只露 3 条会话，其余在 <code>More</code> 后面，展开了也不记住；要找就得先记得在哪个文件夹。标题是第一句话，列表宽 300 点时只剩十来个字。没有按时间找的办法。</li>
+  </ol>
+  <h3>三种改法</h3>
+  <ul>
+    <li><b>A · 组头</b>：文件夹行有底色和上下分界，<b>滚动时停在顶上</b>（子文件夹的停在它下面）；名字后面淡色写它在哪（<code>~/Projects</code>）。组内：在跑的终端 → 子文件夹 → <code>History · 7</code>（一行小标签，点它收起 / 展开），历史会话小一号、淡一档，先露 3 条，展开记住。组内一条竖线把内容连起来。改动小，结构不变。</li>
+    <li><b>B · 两段</b>：上面 <code>Open</code> 只有开着的终端，按文件夹用一行小字分组；下面 <code>Sessions</code>，<code>Folder</code> / <code>Time</code> 可切：按时间时分 <code>Today</code> <code>Yesterday</code> <code>This Week</code> <code>Earlier</code>，每条第二行写文件夹、agent、时间。主次最清楚，但“这个项目里有什么”要看两段。</li>
+    <li><b>C · ⌘P</b>：在哪一页都能按，输几个字（标题、文件夹名、说过的话）模糊匹配，最近的在前，每条带文件夹和时间；<code>↩</code> 接着那个会话（开着的就切过去），<code>⌘↩</code> 在旁边新开一块，<code>esc</code> 关掉。和 A 或 B 都能配。</li>
+  </ul>
+  <p>建议：<b>A + C</b>——主次靠 A，找靠 C；B 改动最大，看过再定。另外几样小的，哪种都可以加：<code>More</code> 记住展开；会话能改名（列表里显示改过的名字）；会话能置顶（<code>Pin</code>，在组内排在最前）。</p>
+</div>
+
+<script>
+const H = 3600e3, D = 24 * H;
+const FOLDERS = [
+  { path: "~/Projects/lumen", name: "lumen", up: "~/Projects", git: "main ±2",
+    terminals: [{ n: "01", name: "排序改成最近使用", ag: "cc", st: "working" }, { n: "02", name: "列表的空状态", ag: "codex", st: "idle" }],
+    sessions: [["给列表加一个按名字搜索", "cc", 2 * H], ["置顶的行排在最前", "cc", 26 * H], ["把 store 拆成两个文件", "codex", 30 * H], ["测试里的时间写死了", "cc", 3 * D],
+               ["README 补一节运行方式", "pi", 5 * D], ["拖拽排序的手感", "cc", 9 * D], ["升级 vite 到 7", "codex", 20 * D]],
+    children: [{ path: "~/Projects/lumen/packages/api", name: "packages/api", up: "lumen", git: "auth ±1",
+      terminals: [{ n: "03", name: "登录接口加 refreshToken", ag: "codex", st: "waiting" }],
+      sessions: [["文件接口的分页", "codex", 4 * H], ["数据库连接池", "cc", 2 * D], ["错误码统一", "cc", 12 * D], ["限流中间件", "codex", 25 * D]], children: [] }] },
+  { path: "~/Projects/harbor", name: "harbor", up: "~/Projects", git: "main", terminals: [],
+    sessions: [["部署脚本换成 compose", "cc", 6 * H], ["健康检查加缓存", "codex", 28 * H], ["日志太多了", "cc", 4 * D], ["证书续期", "pi", 15 * D]], children: [] },
+  { path: "~/Notes", name: "Notes", up: "~", git: "", terminals: [{ n: "04", name: "十月的计划", ag: "pi", st: "idle" }],
+    sessions: [["读书笔记整理", "pi", 3 * H], ["周报模板", "pi", 7 * D]], children: [] },
+  { path: "~/Worktop/靶场", name: "Worktop/靶场", up: "~", git: "", terminals: [],
+    sessions: [["扫描结果汇总", "cc", 8 * D], ["字典去重", "codex", 40 * D]], children: [] },
+];
+const AG = { cc: "✳", codex: "›_", pi: "π" };
+const S = { classic: true, light: false, open: new Set(), hist: new Set(["~/Projects/harbor"]), by: "time", q: "列表", pick: 0 };
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const age = (ms) => ms < H ? "Now" : ms < D ? `${Math.round(ms / H)}h` : ms < 30 * D ? `${Math.round(ms / D)}d` : `${Math.round(ms / D / 30)}mo`;
+const clock = (ms) => { const d = new Date(Date.now() - ms); return ms < D ? `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}` : `${d.getMonth() + 1}/${d.getDate()}`; };
+const C = () => S.classic;
+const mark = (st) => st === "working" ? (C() ? `<span class="ic" style="color:var(--ink2)">◌</span>` : `<span class="spin">⠹</span>`)
+  : `<span class="dot" style="background:${st === "waiting" ? "var(--amber)" : "var(--green)"}"></span>`;
+const folderIc = () => C() ? `<span class="ic" style="color:var(--signal)">▭</span>` : "";
+const sessIc = () => C() ? `<span class="ic">◷</span>` : `<span class="tw">  </span>`;
+const ago = (ms) => C() ? `${age(ms)} ago`.replace("Now ago", "Now") : age(ms);
+
+function counts(f) {
+  const live = f.terminals.length + f.children.reduce((a, c) => a + c.terminals.length, 0);
+  const waiting = [f, ...f.children].some((x) => x.terminals.some((t) => t.st === "waiting"));
+  return `${live ? (C() ? `<span class="cnt" style="background:${waiting ? "var(--amber)" : "var(--green)"}">${live}</span>` : `<span style="color:${waiting ? "var(--amber)" : "var(--green)"}">▪${live}</span>`) : ""}<span>${f.sessions.length}</span>`;
+}
+const termRow = (t, cls = "") => `<div class="r term ${cls}">${mark(t.st)}<span class="nm">${C() ? "" : `<span style="color:var(--ink3)">${t.n} </span>`}${esc(t.name)}</span><span class="mt">${t.st === "waiting" ? `<span style="color:var(--amber)">${C() ? "Needs You" : "Waiting"}</span>` : `<span class="ag">${AG[t.ag]}</span>`}</span></div>`;
+const sessRow = (s, cls = "") => `<div class="r sess ${cls}">${sessIc()}<span class="nm">${esc(s[0])}</span><span class="mt"><span class="ag">${AG[s[1]]}</span><span>${ago(s[2])}</span></span></div>`;
+
+// ---------- today ----------
+function now() {
+  const out = [];
+  const walk = (f, depth) => {
+    const pad = depth * (C() ? 14 : 15);
+    out.push(`<div class="r folder" style="padding-left:${12 + pad}px">${C() ? `<span style="display:inline-flex;gap:4px"><span class="ic">⌄</span>${folderIc()}</span>` : `<span class="tw">▾</span>`}<span class="nm">${esc(f.name)}${C() ? "" : "/"}<span class="git">${esc(f.git)}</span></span><span class="mt">${counts(f)}</span></div>`);
+    for (const t of f.terminals) out.push(termRow(t).replace('class="r term "', `class="r term" style="padding-left:${26 + pad}px"`));
+    for (const s of f.sessions.slice(0, 3)) out.push(sessRow(s).replace('class="r sess "', `class="r sess" style="padding-left:${26 + pad}px"`));
+    if (f.sessions.length > 3) out.push(`<div class="r more" style="padding-left:${26 + pad}px"><span class="ic">${C() ? "⌄" : "▸"}</span><span class="nm">${f.sessions.length - 3} More</span><span></span></div>`);
+    for (const c of f.children) walk(c, depth + 1);
+  };
+  FOLDERS.forEach((f) => walk(f, 0));
+  return out.join("");
+}
+
+// ---------- A: the folder as a group's head ----------
+function groupA(f, sub = false) {
+  const histOpen = !S.hist.has(f.path);
+  const shown = S.open.has(f.path) ? f.sessions : f.sessions.slice(0, 3);
+  const hist = f.sessions.length ? `<div class="hist" data-hist="${esc(f.path)}">${histOpen ? "▾" : "▸"} ${C() ? "History" : "HISTORY"} · ${f.sessions.length}</div>` +
+    (histOpen ? shown.map((s) => sessRow(s, "small")).join("") + (f.sessions.length > 3 ? `<div class="r more small" data-more="${esc(f.path)}"><span></span><span class="nm">${S.open.has(f.path) ? "Show Fewer" : `Show All ${f.sessions.length}`}</span><span></span></div>` : "") : "") : "";
+  return `<div class="grp ${sub ? "sub" : ""}"><div class="head">${C() ? folderIc() : `<span class="tw">▾</span>`}<span class="nm">${esc(f.name)}${C() ? "" : "/"} <span class="up">${esc(f.up)}</span><span class="git">${esc(f.git)}</span></span><span class="mt" style="display:flex;gap:6px;color:var(--ink3);font-size:11px">${counts(f)}</span></div>
+    <div class="body">${f.terminals.map((t) => termRow(t)).join("")}${f.children.map((c) => groupA(c, true)).join("")}${hist}</div></div>`;
+}
+const A = () => FOLDERS.map((f) => groupA(f)).join("");
+
+// ---------- B: what runs, and history ----------
+function B() {
+  const live = [];
+  const each = (f) => { if (f.terminals.length) live.push([f, f.terminals]); f.children.forEach(each); };
+  FOLDERS.forEach(each);
+  const all = [];
+  const gather = (f) => { f.sessions.forEach((s) => all.push([s, f])); f.children.forEach(gather); };
+  FOLDERS.forEach(gather);
+  const n = live.reduce((a, [, t]) => a + t.length, 0);
+  let out = `<div class="part">${C() ? "Open" : "// OPEN"} · ${n}</div>`;
+  for (const [f, ts] of live) out += `<div class="label"><span>${esc(f.name)}</span><span>${esc(f.git)}</span></div>` + ts.map((t) => termRow(t)).join("");
+  out += `<div class="part">${C() ? "Sessions" : "// SESSIONS"} · ${all.length}<span class="seg2"><button data-by="folder" class="${S.by === "folder" ? "on" : ""}">Folder</button><button data-by="time" class="${S.by === "time" ? "on" : ""}">Time</button></span></div>`;
+  if (S.by === "time") {
+    const groups = [["Today", (ms) => ms < 12 * H], ["Yesterday", (ms) => ms >= 12 * H && ms < 36 * H], ["This Week", (ms) => ms >= 36 * H && ms < 7 * D], ["Earlier", (ms) => ms >= 7 * D]];
+    for (const [w, test] of groups) {
+      const rows = all.filter(([s]) => test(s[2])).sort((a, b) => a[0][2] - b[0][2]);
+      if (!rows.length) continue;
+      out += `<div class="when">${w}</div>` + rows.map(([s, f]) => `<div class="r2"><div class="l1">${sessIc()}<span class="nm">${esc(s[0])}</span></div><div class="l2">${esc(f.name)} · ${AG[s[1]]} · ${clock(s[2])}</div></div>`).join("");
+    }
+  } else {
+    const walk = (f) => { if (f.sessions.length) out += `<div class="label" style="color:var(--ink2)">${esc(f.name)}</div>` + f.sessions.slice(0, 4).map((s) => sessRow(s)).join(""); f.children.forEach(walk); };
+    FOLDERS.forEach(walk);
+  }
+  return out;
+}
+
+// ---------- C: ⌘P ----------
+function C_() {
+  const all = [];
+  const gather = (f) => { f.terminals.forEach((t) => all.push({ kind: "t", t, f, ms: 0 })); f.sessions.forEach((s) => all.push({ kind: "s", s, f, ms: s[2] })); f.children.forEach(gather); };
+  FOLDERS.forEach(gather);
+  const q = S.q.trim().toLowerCase();
+  const hit = (x) => !q || (x.kind === "t" ? x.t.name : x.s[0]).toLowerCase().includes(q) || x.f.name.toLowerCase().includes(q);
+  const found = all.filter(hit).sort((a, b) => (a.kind === b.kind ? a.ms - b.ms : a.kind === "t" ? -1 : 1));
+  const hl = (text) => { if (!q) return esc(text); const i = text.toLowerCase().indexOf(q); return i < 0 ? esc(text) : esc(text.slice(0, i)) + `<mark>${esc(text.slice(i, i + q.length))}</mark>` + esc(text.slice(i + q.length)); };
+  S.pick = Math.min(S.pick, Math.max(0, found.length - 1));
+  let rows = "", sec = null;
+  found.forEach((x, i) => {
+    const s = x.kind === "t" ? (C() ? "Open Terminals" : "// OPEN") : (C() ? "Sessions" : "// SESSIONS");
+    if (s !== sec) { rows += `<div class="sec">${s}</div>`; sec = s; }
+    rows += x.kind === "t"
+      ? `<div class="it r2 ${i === S.pick ? "on" : ""}" data-pick="${i}"><div class="l1">${mark(x.t.st)}<span class="nm">${hl(x.t.name)}</span></div><div class="l2">${hl(x.f.name)} · ${AG[x.t.ag]} · ${x.t.st === "waiting" ? (C() ? "Needs You" : "Waiting") : C() ? "Running" : "Busy"}</div></div>`
+      : `<div class="it r2 ${i === S.pick ? "on" : ""}" data-pick="${i}"><div class="l1">${sessIc()}<span class="nm">${hl(x.s[0])}</span></div><div class="l2">${hl(x.f.name)} · ${AG[x.s[1]]} · ${clock(x.s[2])}</div></div>`;
+  });
+  return `${A()}<!--over--><div class="scrim"></div><div class="pal"><input id="q" value="${esc(S.q)}" placeholder="${C() ? "Find a session, a terminal, a folder" : "find a session · a terminal · a folder"}" autocomplete="off"><div class="res">${rows || `<div class="sec">${C() ? "Nothing Found" : "// NOTHING FOUND"}</div>`}</div>
+    <div class="foot"><span>↩ ${C() ? "Resume" : "resume"}</span><span>⌘↩ ${C() ? "Beside" : "beside"}</span><span>↑↓</span><span style="margin-left:auto">esc</span></div></div>`;
+}
+
+const VIEWS = [
+  ["现在", "文件夹、终端、会话同一种行；子文件夹在会话和 More 后面（lumen 下的 packages/api）。", now],
+  ["A · 组头", "文件夹有底色、滚动时停在顶上；组内先在跑的终端、再子文件夹、最后 History（小一号、可收起，harbor 的收着）。", A],
+  ["B · 两段", "上面只有开着的终端；下面历史，Folder / Time 可切（演示停在 Time）。", B],
+  ["C · ⌘P", "任何一页按 ⌘P：打字筛选终端、会话、文件夹，最近的在前（演示里能输入，↑↓ 选）。", C_],
+];
+
+function draw() {
+  const look = `${S.classic ? "classic" : ""} ${S.light ? "light" : ""}`;
+  const focus = document.activeElement?.id === "q";
+  document.getElementById("stage").innerHTML = VIEWS.map(([t, p, f], i) => `<div class="col"><h2>${t}</h2><p>${p}</p><div class="win ${look}" data-view="${i}">
+    <div class="search">${S.classic ? "⌕" : "/"} Search<span class="k">⌘F</span></div>
+    <div class="filters"><span>${AG.cc}</span><span>${AG.codex}</span><span>${AG.pi}</span><span class="sp"></span><span>Active</span></div>
+    ${(() => { const [list, over = ""] = f().split("<!--over-->"); return `<div class="list">${list}</div>${over}`; })()}</div></div>`).join("");
+  if (focus) { const q = document.getElementById("q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+}
+document.addEventListener("click", (e) => {
+  const opt = e.target.closest("[data-opt] button");
+  if (opt) {
+    opt.parentElement.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === opt));
+    if (opt.parentElement.dataset.opt === "look") S.classic = opt.dataset.v === "classic"; else S.light = opt.dataset.v === "light";
+    return draw();
+  }
+  const h = e.target.closest("[data-hist]"); if (h) { const p = h.dataset.hist; S.hist.has(p) ? S.hist.delete(p) : S.hist.add(p); return draw(); }
+  const m = e.target.closest("[data-more]"); if (m) { const p = m.dataset.more; S.open.has(p) ? S.open.delete(p) : S.open.add(p); return draw(); }
+  const b = e.target.closest("[data-by]"); if (b) { S.by = b.dataset.by; return draw(); }
+  const k = e.target.closest("[data-pick]"); if (k) { S.pick = Number(k.dataset.pick); return draw(); }
+});
+document.addEventListener("input", (e) => { if (e.target.id === "q") { S.q = e.target.value; S.pick = 0; draw(); } });
+document.addEventListener("keydown", (e) => {
+  if (e.target.id !== "q") return;
+  if (e.key === "ArrowDown") { S.pick++; e.preventDefault(); draw(); }
+  if (e.key === "ArrowUp") { S.pick = Math.max(0, S.pick - 1); e.preventDefault(); draw(); }
+});
+draw();
+</script>
+</body>
+</html>
