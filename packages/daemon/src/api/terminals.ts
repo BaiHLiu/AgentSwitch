@@ -7,6 +7,7 @@ import { streamSSE } from "hono/streaming";
 import { existsSync, rmSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
+import { diskSpelling, keptDiskSpelling } from "../core/paths.js";
 import { z } from "zod";
 import { remoteCaller } from "../core/caller.js";
 import { SSE_HEARTBEAT_MS } from "../core/limits.js";
@@ -63,8 +64,11 @@ export type Terminals = {
 };
 
 /** A terminal as the screens list it: each sub-agent with what it is doing in words (`doing`, as the Live Activity). */
+/** A terminal as the list gives it: its folders spelled as the disk spells them (one opened as `~/x/pi` is in the same
+ *  folder as the sessions recorded in `~/x/Pi`, and listed with them). */
 function shown(t: TerminalInfo) {
-  return { ...t, subagents: t.subagents.map((a) => ({ ...a, doing: subagentDoing(a.activity, t.cwd) })) };
+  const cwd = keptDiskSpelling(t.cwd), workdir = keptDiskSpelling(t.workdir);
+  return { ...t, cwd, workdir, subagents: t.subagents.map((a) => ({ ...a, doing: subagentDoing(a.activity, t.cwd) })) };
 }
 
 const MAX_INPUT = 20_000;
@@ -332,7 +336,9 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
         return c.json({ error: takes ? `effort: one of ${takes.join(", ")}` : "effort: this model takes no level (OpenCode: choose a model first)" }, 400);
       }
     }
-    const cwd = resolve(typed);   // `~/proj/` and `~/proj` are one folder
+    // `~/proj/` and `~/proj` are one folder; so are `~/proj` and `~/Proj` on a Mac's disk, which the agent then records
+    // and the list shows by the disk's own spelling.
+    const cwd = diskSpelling(resolve(typed));
 
     const resumed = resume ? (body.data as z.infer<typeof ResumeTerminal>) : null;
     const agentSessionId = resumed?.agentSessionId;

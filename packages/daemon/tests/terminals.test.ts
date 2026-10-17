@@ -1607,6 +1607,22 @@ describe("terminals over HTTP", () => {
     expect(text(events)).not.toContain(TOKEN);
   });
 
+  it("opens a terminal in its folder as the disk spells it, and lists it so (2026-10-17: one folder showed as two)", async () => {
+    const home = mkdtempSync(join(tmpdir(), "agentswitch-terminals-"));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "agentswitch-terminal-cwd-")));
+    mkdirSync(join(root, "Pi"));
+    const cfg: DaemonConfig = { home, targetsPath: TARGETS_PATH, port: 0, router: "echo", executors: "echo", browser: false, quotaTtlMs: 1000, maxTasks: 4, opencodePort: 0, opencodeBinary: "" };
+    const daemon = buildDaemon(cfg, { terminalLauncher: fakeLauncher(() => "http://127.0.0.1:9", false) });
+    closers.push(() => daemon.close());
+    // A Mac's disk ignores case: `pi` is `Pi`. A disk that tells them apart has no `pi` here, and the terminal is refused.
+    const asked = await daemon.api.request("/terminals", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ harness: "codex", cwd: join(root, "pi") }) });
+    if (!existsSync(join(root, "pi"))) { expect(asked.status).toBe(400); return; }
+    const made = (await asked.json()) as { terminal: { id: string; cwd: string } };
+    expect(made.terminal.cwd).toBe(join(root, "Pi"));
+    const listed = (await (await daemon.api.request("/terminals")).json()) as { terminals: { id: string; cwd: string; workdir: string }[] };
+    expect(listed.terminals.find((t) => t.id === made.terminal.id)).toMatchObject({ cwd: join(root, "Pi"), workdir: join(root, "Pi") });
+  });
+
   it("a paired device gives a path of this node's in a reply only inside its scope, and only while this node lets paired devices read files (docs/files-v0.md §7.5)", async () => {
     const home = mkdtempSync(join(tmpdir(), "agentswitch-terminals-"));
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "agentswitch-terminal-cwd-")));
