@@ -112,6 +112,9 @@ struct DemoFiles: MacFileSource {
         dir("\(project)/.git", ago(2), dim: true)
         dir("\(project)/docs", ago(60)); file("\(project)/docs/files-v0.md", ago(60), text: "# 文件 v0（示例）\n\n主窗口右侧的文件栏。\n")
         file("\(project)/docs/logo.png", ago(4000), size: 24_600)
+        // The page the demo terminal's screen names (`terminallink`, `terminalpath`).
+        dir("\(project)/docs/design", ago(90)); dir("\(project)/docs/design/concepts", ago(90))
+        file("\(project)/docs/design/concepts/split.html", ago(90), text: "<!doctype html>\n<title>Split</title>\n<p>分屏的演示页（示例）。</p>\n")
         dir("\(project)/node_modules", ago(9000), dim: true)
         dir("\(project)/src", ago(5)); file("\(project)/src/app.ts", ago(5), text: app); file("\(project)/src/store.ts", ago(12), size: 3980, text: app)
         file("\(project)/src/main.ts", ago(3000), text: "import { serve } from \"./app\";\n\nserve(8080);\n")
@@ -132,8 +135,11 @@ struct DemoFiles: MacFileSource {
 
     private func refuse(_ code: String, _ status: Int = 403) -> APIError { .http(status: status, message: code) }
 
+    /// `~` and `~/…` as the home folder, as the Mac takes them.
+    private func expanded(_ p: String) -> String { p == "~" ? Self.home : p.hasPrefix("~/") ? Self.home + p.dropFirst() : p }
+
     func folder(_ path: String?, hidden: Bool, etag: String?) async throws -> (folder: MacFolder, etag: String?)? {
-        let p = path ?? scope ?? Self.home
+        let p = path.map(expanded) ?? scope ?? Self.home
         guard let node = Self.tree[p] else { throw refuse("not-found", 404) }
         guard node.kind == .dir else { throw refuse("not-folder", 400) }
         if node.locked { throw refuse("locked") }
@@ -155,6 +161,7 @@ struct DemoFiles: MacFileSource {
     }
 
     func fileDetails(_ path: String) async throws -> MacFileDetails {
+        let path = expanded(path)
         guard let n = Self.tree[path] else { throw refuse("not-found", 404) }
         if n.locked { throw refuse("locked") }
         if !inScope(path) && !leadsIn(path) { throw refuse("scope") }
@@ -166,7 +173,7 @@ struct DemoFiles: MacFileSource {
     }
 
     func filePreview(_ path: String) async throws -> MacFilePreview {
-        guard let n = Self.tree[path], let text = n.text else { throw refuse("not-text", 415) }
+        guard let n = Self.tree[expanded(path)], let text = n.text else { throw refuse("not-text", 415) }
         return MacFilePreview(text: text, truncated: false, lines: nil, size: n.size)
     }
 

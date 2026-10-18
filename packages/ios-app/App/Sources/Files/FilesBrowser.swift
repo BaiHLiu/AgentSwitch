@@ -34,8 +34,11 @@ struct MacFilesSheet: View {
     @State private var session: FilesSession
     let onPick: ([MacPick]) -> Void
 
-    init(terminal: String, start: String, onPick: @escaping ([MacPick]) -> Void) {
-        _session = State(initialValue: FilesSession(mode: .sheet(terminal: terminal), root: start))
+    /// `file`: a file tapped on the terminal's screen, its preview on top of its folder's page (files-v0 §12.4.2).
+    init(terminal: String, start: String, file: String? = nil, onPick: @escaping ([MacPick]) -> Void) {
+        let session = FilesSession(mode: .sheet(terminal: terminal), root: start)
+        if let file { session.stack = [.file(file)] }
+        _session = State(initialValue: session)
         self.onPick = onPick
     }
 
@@ -229,7 +232,7 @@ struct FolderPage: View {
         } else if let level = folder.folder {
             if let failure = folder.failure { Text(failure).font(.footnote).foregroundStyle(Theme.failed).padding(Theme.Space.l) }
             if let gone = folder.gone {
-                Text("“\(MacPath.name(gone))”已不在 \(mac) 上，已打开它还在的上一层。").font(.footnote).foregroundStyle(.secondary)
+                Text("\(mac) 上没有“\(MacPath.name(gone))”，已打开它最近的上一层。").font(.footnote).foregroundStyle(.secondary)
                     .padding(.horizontal, Theme.Space.l).padding(.top, Theme.Space.m)
             }
             ForEach(model.files.uploads.filter { $0.dir == level.path }) { up in

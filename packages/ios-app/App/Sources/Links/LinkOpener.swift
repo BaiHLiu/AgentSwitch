@@ -58,6 +58,10 @@ extension AppModel {
         case .openInSafari:
             if let url = link.safari { await UIApplication.shared.open(url) }
             return nil
+        case .showInFiles:
+            // Where the tab bar shows (Dispatch, a task, a transcript's text): the Files tab, at the path's folder.
+            if case .file(let path) = link { showInFiles(path) }
+            return nil
         }
     }
 }
@@ -97,6 +101,7 @@ struct LinkMenuItems: View {
         case .openInBrowser: "globe"
         case .copy: "doc.on.doc"
         case .openInSafari: "safari"
+        case .showInFiles: "folder"
         }
     }
 }

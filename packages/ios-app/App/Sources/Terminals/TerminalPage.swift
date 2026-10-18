@@ -30,8 +30,10 @@ struct TerminalPage: View {
     @State private var pickingPhotos = false
     @State private var pickingFiles = false
     @State private var takingPhoto = false
-    /// `+` › Files on Mac (docs/files-v0.md §5): the Mac's files over this page, at the terminal's folder.
-    @State private var browsingMac = false
+    /// `+` › Files on Mac (docs/files-v0.md §5), the Mac's files over this page, and where: the terminal's folder, or a
+    /// path tapped on the screen (its folder, and the file).
+    /// One value, given to the sheet as its item: a flag and a place set together reached the sheet with the old place.
+    @State private var browsing: MacBrowse?
     /// Placeholders to put into the reply box where the caret is (the field puts them there: it knows the caret).
     @State private var pendingTokens: [String] = []
     /// A direct reply that looks like it holds a secret, asked about before it goes.
@@ -149,7 +151,7 @@ struct TerminalPage: View {
                     Divider()
                     // Its folder, over this page, where the agent works now; `Done` back (docs/files-v0.md §12.4.1): the
                     // `+` › Files on Mac sheet, what is picked there landing in this reply box.
-                    Button("Show in Files", systemImage: "folder") { browsingMac = true }
+                    Button("Show in Files", systemImage: "folder") { browsing = MacBrowse(start: workdir) }
                     Divider()
                     Button("Rename", systemImage: "pencil") { newName = page.name; renaming = true }
                     Button("Close", systemImage: "xmark", role: .destructive) { if page.status == .exited && !canDeleteRecord { Task { await close() } } else { confirmClose = true } }
@@ -250,9 +252,14 @@ struct TerminalPage: View {
             case "terminalkeyboard": DispatchQueue.main.asyncAfter(deadline: .now() + 2) { replying = true }
             case "terminalclose": DispatchQueue.main.asyncAfter(deadline: .now() + 2) { confirmClose = true }
             // `+` › Files on Mac, as the menu would open it; the Mac's files in the reply box (docs/files-v0.md §5).
-            case "filessheet": DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { browsingMac = true }
+            case "filessheet": DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { browsing = MacBrowse(start: workdir) }
             // A link held, as a long press on the address in the demo's screen would open its menu.
             case "terminallink": DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { holdFirstLink() }
+            // The rest of the path cut over two lines tapped (`gn/concepts/split.html`): the Files browser over the page, at
+            // the whole path's folder with its preview on top (files-v0 §12.4.2).
+            case "terminalpath": DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                if let hit = page.screen.links(workdir: workdir).last(where: { if case .file = $0.link { true } else { false } }) { page.screen.flash(hit); run(hit.link.actions[0], on: hit) }
+            }
             default: break
             }
             #endif
@@ -283,9 +290,9 @@ struct TerminalPage: View {
             case .failure(let failure): page.error = failure.localizedDescription
             }
         }
-        .sheet(isPresented: $browsingMac) {
-            MacFilesSheet(terminal: page.id, start: workdir) { picks in
-                browsingMac = false
+        .sheet(item: $browsing) { at in
+            MacFilesSheet(terminal: page.id, start: at.start, file: at.file) { picks in
+                browsing = nil
                 addMacFiles(picks)
             }
             .followsLook()
@@ -330,7 +337,7 @@ struct TerminalPage: View {
         page.userActed()
         if let hit = page.screen.link(at: point, workdir: workdir, tap: true) {
             page.screen.flash(hit)
-            run(.openInBrowser, on: hit)
+            run(hit.link.actions[0], on: hit)
         } else if let cell = page.screen.clickCell(at: point) {
             Task { await page.click(col: cell.col, row: cell.row) }
         } else {
@@ -349,9 +356,33 @@ struct TerminalPage: View {
     /// One of a link's actions. A copy is said on the screen for a moment; a link that did not open in the Mac's
     /// browser says why in the page's line.
     private func run(_ action: LinkAction, on hit: ScreenLink) {
+        if action == .showInFiles { showInFiles(hit); return }
         Task {
             guard let words = await model.perform(action, on: hit.link, alternates: hit.alternates) else { return }
             if action == .copy { say(words) } else { page.error = words }
+        }
+    }
+
+    /// A path on the screen in the Files browser over this page (docs/files-v0.md §12.4.2): of its readings (a path may
+    /// or may not go on over the next line) the first the Mac has; a folder opens as itself, a file as its folder with
+    /// its preview on top; none there, its nearest level, saying so.
+    private func showInFiles(_ hit: ScreenLink) {
+        // `~/…` as the Mac's home, when its last listing said where that is (the Mac takes `~` too).
+        let home = model.files.home
+        let paths = ([hit.link] + hit.alternates).compactMap { link -> String? in
+            guard case .file(let p) = link else { return nil }
+            guard let home, p == "~" || p.hasPrefix("~/") else { return p }
+            return home + p.dropFirst()
+        }
+        guard let first = paths.first else { return }
+        Task {
+            var at = MacBrowse(start: first)
+            for path in paths {
+                guard let d = try? await model.fileSource?.fileDetails(path) else { continue }
+                at = d.isFolder ? MacBrowse(start: path) : MacBrowse(start: MacPath.parent(path) ?? "/", file: path)
+                break
+            }
+            browsing = at
         }
     }
 
@@ -373,6 +404,13 @@ struct TerminalPage: View {
         linkMenu = LinkMenu(hit: hit, anchor: page.screen.frame(of: hit))
     }
     #endif
+
+    /// Where `+` › Files on Mac opens (docs/files-v0.md §12.4.2): a folder, and a file to show on top of it.
+    private struct MacBrowse: Identifiable {
+        let id = UUID()
+        let start: String
+        var file: String? = nil
+    }
 
     private struct LinkMenu: Equatable {
         let hit: ScreenLink
@@ -691,7 +729,7 @@ struct TerminalPage: View {
                             .disabled(!CameraPicker.isAvailable)
                         Button("Photos", systemImage: "photo.on.rectangle") { replying = false; pickingPhotos = true }
                         Button("Files", systemImage: "folder") { replying = false; pickingFiles = true }
-                        Button("Files on Mac", systemImage: "laptopcomputer") { replying = false; browsingMac = true }
+                        Button("Files on Mac", systemImage: "laptopcomputer") { replying = false; browsing = MacBrowse(start: workdir) }
                         Button("Paste Image", systemImage: "doc.on.clipboard") { pasteImages() }
                         // The keys are out of the way under the record until they are wanted.
                         if simple { Button(showKeys ? "Hide Keys" : "Keys", systemImage: "keyboard") { showKeys.toggle() } }

@@ -259,7 +259,7 @@ enum DemoData {
             "  ~/Desktop/WorkSpace/Projects/AgentSwitch/docs/desi",
             "  gn/concepts/split.html",
         ]
-        let withLinks = UserDefaults.standard.string(forKey: "uiDemoScreen") == "terminallink"
+        let withLinks = ["terminallink", "terminalpath"].contains(UserDefaults.standard.string(forKey: "uiDemoScreen"))
         return (withLinks ? Array(lines.dropLast(3)) + links : lines).joined(separator: "\r\n")
     }()
 
