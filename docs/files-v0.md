@@ -2,7 +2,7 @@
 
 > 状态：第一步已做（2026-10-16，用户看过第二稿：可以 做吧）——服务（daemon `src/files/browse.ts`、`src/api/browse.ts`），Mac 的文件栏与 `Settings › Nodes`（`packages/mac-app/Sources/AgentSwitchMac/Files/`），iPhone 的 `Files` 标签页与 `+` › `Files on Mac`（`packages/ios-app/App/Sources/Files/`）；做法与设计稿不同的几处、还没做的，见 §9 第一步下面。还没装到真机上用过。第一稿 2026-10-16 给用户看过，§10 的七件事当天拍了板，另加两条：浮在页面上的样子随时能用（§2.1），预览下面的按钮只留两个、`Show in Finder` 进右键菜单（§3.5）。演示页 `docs/design/concepts/files.html`（两种外观、Mac 与手机、授权范围，几个可点的状态）。
 
-> 第三稿（2026-10-18，§12；四问当天答了，还没做）：像 VS Code 那样新建文件、新建文件夹、改名、移到废纸篓（Mac 上移到废纸篓不问、`⌘Z` 放回）；手机上存到手机（系统分享面板的 `Save to Files`），从手机往 Mac 的文件夹传文件；手机的终端页和会话记录页能 `Show in Files`。
+> 第三稿（2026-10-18，§12；四问当天答了，当天做了：daemon `src/files/change.ts`、`src/api/fileChanges.ts`，Mac `Files/FilesEditViews.swift` 与 `AgentSwitchMacCore/Files/FilesChanges.swift`，iPhone `Files/FilesChanging.swift` 与 `AgentSwitchKit/API/FileChanges.swift`；做法与设计不同的两处见 §12.5、§12.8）：像 VS Code 那样新建文件、新建文件夹、改名、移到废纸篓（Mac 上移到废纸篓不问、`⌘Z` 放回）；手机上存到手机（系统分享面板的 `Save to Files`），从手机往 Mac 的文件夹传文件；手机的终端页和会话记录页能 `Show in Files`。
 
 用户（2026-10-16）：我想要给agentswitch加一个简单的文件管理功能，加到右边的侧边栏，像素风格用不一样的更适合展示文件的目录树结构，经典风格用更适合展示文件的文件夹结构，它的层级是在所有agent之上的，但是要做成右边栏的结构，从左边可以选择某个项目作为跳转接口，比如我在左边选择一个目录（或者目录下的一个项目）右键可以打开该目录的文件管理入口，然后第一次打开的时候默认打开家目录；也可以对当前打开的一个窗口加一个图标，便捷打开当前窗口所在的目录的文件管理（多窗口的时候就用多窗口的顶栏上加一个图标，单窗口的时候用app的顶栏上的图标，当然多窗口的时候app顶栏的图标也生效，就像是现在的终端/简略窗口切换一样）；文件管理的功能你找找有什么实现规范没有，可以先做个概念出来，要求目录树、列出文件、选中文件给agent、绝对目录层级展示（并且每一层都可点）、文件预览（没想好怎么做，iPhone和mac上实现应该不一样）。
 
@@ -261,7 +261,7 @@
 - W3C WAI-ARIA Authoring Practices：[Tree View Pattern](https://www.w3.org/WAI/ARIA/apg/patterns/treeview/)。
 - VS Code Explorer 的做法（文件夹在前、Reveal、Copy Path / Copy Relative Path、拖到终端是路径）；`tree(1)` 的画法（`├── └── │`，`-a`、`-F`）。
 
-## 12. 第三稿：改文件、存到手机、从会话去它的文件夹、从手机传文件（2026-10-18，草案；四问已答，§12.7）
+## 12. 第三稿：改文件、存到手机、从会话去它的文件夹、从手机传文件（2026-10-18；四问已答，§12.7；已做）
 
 用户（2026-10-18）：文件管理不太完善 最好是像在vscode里一样可以添加删除 新建文件夹 新建文件 删除文件夹删除文件 然后手机上要增加保存功能 在手机的某个session页面要有打开它所在文件夹的功能 注意要符合规范
 
@@ -340,7 +340,7 @@
 | `POST /files/restore` `{trashed, path}` | 撤销移到废纸篓：放回原处。原处已有回 409 `exists` |
 
 - **检查**：一律先 `realpath`（新建的看它的上一层）；禁区、装着禁区的文件夹、`/` 与系统顶层回 403 `locked`；名字空、`.`、`..`、含 NUL 回 400 `bad-name`；远程调用受 §7.5 的开关和范围管——范围外回 403 `scope`，读得到的地方才改得了。
-- **Mac 上移到废纸篓**：用 `FileManager.trashItem`（应用带一个小工具给服务调，它说出放到了废纸篓的哪里，撤销要这个）。系统自带的 `/usr/bin/trash` 不用：它从 macOS 15 才有（应用最低支持 14），也不说放到了哪。**Linux 节点**照 freedesktop 的废纸篓规范（`~/.local/share/Trash/files` 加 `.trashinfo`）自己搬；同一个盘上放不进的回 `no-trash`。
+- **Mac 上移到废纸篓**：系统自己的 `NSFileManager.trashItem`（和 Finder 同一个），经每台 Mac 都有的 `osascript` 脚本桥调用，不必另带工具。做的时候发现：脚本桥读这个方法的“放到了哪”那个出参会让脚本崩掉（2026-10-18），所以只让它移，再由服务在那个盘的废纸篓里按设备号和 inode 找回它（同一个盘里移动 inode 不变），撤销要的就是这个位置。系统自带的 `/usr/bin/trash` 不用：它从 macOS 15 才有（应用最低支持 14），也不说放到了哪。**Linux 节点**照 freedesktop 的废纸篓规范（`~/.local/share/Trash/files` 加 `.trashinfo`）自己搬；同一个盘上放不进的回 `no-trash`。
 - **远程改文件的总闸**：`Settings › Nodes` 的 `This Mac` 一组，`Paired Nodes May Read Files` 下面加 `Paired Nodes May Change Files`，默认开；读的开关关着时它也灰。关着时配对的设备调这几个接口回 403 `changes-off`，它们那边那几项不出现。默认开的理由：配对的设备本来就能在终端里以用户身份做这些（mesh-v0 §6 第 1 条），这个开关是“文件栏里不许改”的总闸，不是沙箱。
 - **审计**：每次改动（本机和远程）记一行：设备、动作、路径，不记内容。
 - 同步更新 `packages/secret-gate/BOUNDARY.md`：服务第一次有写文件的接口。
@@ -374,7 +374,7 @@
 
 - **入口**：`Files` 标签的文件夹页，`⋯` 在 `New Folder` `New File` 下面一组是 `Upload` 子菜单：`Camera`、`Photos`、`Files`（同 `+` 菜单的词和图标，`Files` 指手机的“文件”App）。传进当前这个文件夹。长按一个文件夹的菜单里不另放（先一个入口）。
 - **传的时候**：选好的文件立刻排在列表最上面，每行名字、大小和一条进度（`Uploading 42%`，像素外观是字符画的进度格），行尾 `×` 取消这一个。传完那一行变成普通的一行，亮一下。失败的那一行写原因，`Retry`。
-- **离开这一页、切到别的应用**：照样接着传（系统的后台传输；做的时候核对证书钉扎在后台传输里能用）。切回来看到的是当时的进度。
+- **离开这一页、切到别的应用**：离开这一页照样接着传（队列在应用里，不在页面上）；切到别的应用时向系统要一段收尾的时间（`beginBackgroundTask`，通常几十秒），大文件在这段时间里没传完会断，回来那一行写原因、点 `Retry` 重传。第一版没用系统的后台传输（`URLSession` 的 background 配置）：它要另一套回调和应用被系统唤醒时的处理，证书钉扎也得在那套里再做一遍，以后需要再加。
 - **重名**：问一次（系统的 confirmation dialog）：“此位置已有名为“IMG_0412.HEIC”的项目。要替换它吗？原来的会移到 Mac mini 的废纸篓。”；几个同名时“此位置已有 3 个同名的项目……”，一次答全部。按钮：`Keep Both`（新的叫 `IMG_0412 2.HEIC`，Finder 的叫法）、`Replace`、`Stop`（不同名的照传）。
 - **上限**：一个文件 200 MB（同分享），一次 20 个；超过的那一个不传，那一行写“文件超过 200 MB，未上传。”。
 - **能传到哪**：同新建——读得到、改得了的地方（§7.5 的范围、`Paired Nodes May Change Files`）；AgentSwitch 自己的禁区和装着它们的文件夹里不行（`⋯` 里没有 `Upload`）。
