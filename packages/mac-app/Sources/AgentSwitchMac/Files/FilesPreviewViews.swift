@@ -142,6 +142,7 @@ struct FilesKeyHost: NSViewRepresentable {
         view.files = files
         view.classic = classic
         files.keys = view
+        files.classic = classic
     }
 }
 
@@ -183,10 +184,14 @@ final class FilesKeyView: NSView, @preconcurrency QLPreviewPanelDataSource, @pre
         case 119: files.jump(toFirst: false, classic: classic); return true                                                           // End
         case 49: files.toggleQuickLook(); return true                                                                                  // space
         case 36, 76:                                                                                                                   // return
-            if option { files.addToReply() } else { files.openSelection() }
+            // ↩ renames, as in Finder and VS Code (files-v0 §12.2); ⌘↓ and ⌘O open.
+            if option { files.addToReply() } else if files.selection.count == 1, let path = files.selection.first { files.startRename(path) }
+            return true
+        case 51 where command:                                                                                                         // ⌘⌫
+            files.trash(files.selection)
             return true
         case 53:                                                                                                                       // esc
-            if files.quickLooking { files.endQuickLook() } else if files.floating { files.close() } else { files.focusPage() }
+            if files.question != nil { files.answer(false) } else if files.quickLooking { files.endQuickLook() } else if files.floating { files.close() } else { files.focusPage() }
             return true
         default: break
         }
@@ -195,15 +200,20 @@ final class FilesKeyView: NSView, @preconcurrency QLPreviewPanelDataSource, @pre
             case "h": files.goHome(); return true
             case "g": files.going = files.root ?? ""; return true
             case ".", ">": files.showHidden.toggle(); return true
+            case "n": files.startNew(folder: true); return true
+            case "z": files.redo(); return true
             default: return false
             }
         }
         if command, option, key == "c" { files.copyPaths(files.selection); return true }
+        if command, option, key == "n" { files.startNew(folder: false); return true }
         if command, !option {
             switch key {
             case "a": files.selectAll(classic: classic); return true
             case "[": files.goBack(); return true
             case "]": files.goForward(); return true
+            case "o": files.openSelection(); return true
+            case "z": files.undo(); return true
             default: return false
             }
         }

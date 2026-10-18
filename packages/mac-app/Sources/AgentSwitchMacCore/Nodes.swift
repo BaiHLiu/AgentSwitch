@@ -114,19 +114,25 @@ public struct MeshSettings: Codable, Equatable, Sendable {
     public var keyboard: Bool
     /// Paired devices may read this Mac's files, each inside its own scope (docs/files-v0.md §7.5).
     public var files: Bool
+    /// Paired devices may change them where they may read them: new folders and files, renames, the Trash, files sent
+    /// from a phone (docs/files-v0.md §12.5).
+    public var changes: Bool
 
-    public init(keyboard: Bool = true, files: Bool = true) {
+    public init(keyboard: Bool = true, files: Bool = true, changes: Bool = true) {
         self.keyboard = keyboard
         self.files = files
+        self.changes = changes
     }
 
-    private enum Keys: String, CodingKey { case keyboard, files }
+    private enum Keys: String, CodingKey { case keyboard, files, changes }
 
-    /// A service from before the Files column says nothing of files: on, as a new one is.
+    /// A service from before the Files column says nothing of files, one from before §12 nothing of changes: on, as a
+    /// new one is.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         keyboard = (try? c.decode(Bool.self, forKey: .keyboard)) ?? true
         files = (try? c.decode(Bool.self, forKey: .files)) ?? true
+        changes = (try? c.decode(Bool.self, forKey: .changes)) ?? true
     }
 }
 

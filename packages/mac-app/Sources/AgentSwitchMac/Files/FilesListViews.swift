@@ -23,6 +23,10 @@ struct FilesList: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: look.isClassic ? 1 : 0) { rows(root) }
                         .padding(.vertical, 4)
+                        .frame(maxWidth: .infinity, minHeight: 200, alignment: .topLeading)
+                        // The list's empty part: the shown folder's own menu (files-v0 §12.2).
+                        .contentShape(Rectangle())
+                        .contextMenu { FilesFolderMenu(files: files, folder: root) }
                 }
                 .scrollIndicators(.automatic)
             }
@@ -39,13 +43,29 @@ struct FilesList: View {
                 FilesUpRow { files.go(to: up) }
             }
             let rows = files.treeRows()
-            if rows.isEmpty { FilesNote(text: "此文件夹为空。") }
-            ForEach(rows) { row in
+            // A new item's row, while its name is typed: first under its folder (files-v0 §12.2).
+            let adding = files.edit.flatMap { edit -> (FilesEdit, FilesTree.Slot)? in
+                switch edit.kind {
+                case .newFile(let dir), .newFolder(let dir): FilesTree.slot(for: dir, root: root, rows: rows).map { (edit, $0) }
+                case .rename: nil
+                }
+            }
+            if rows.isEmpty, adding == nil { FilesNote(text: "此文件夹为空。") }
+            ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
+                if let adding, adding.1.index == i { FilesNewRow(files: files, edit: adding.0, slot: adding.1).id("new") }
                 if look.isClassic { ClassicTreeRow(files: files, row: row) } else { PixelTreeRow(files: files, row: row) }
             }
+            if let adding, adding.1.index == rows.count { FilesNewRow(files: files, edit: adding.0, slot: adding.1).id("new") }
         case .folders:
             let entries = files.entries(of: root)
-            if entries.isEmpty { FilesNote(text: "此文件夹为空。") }
+            let adding = files.edit.flatMap { edit -> FilesEdit? in
+                switch edit.kind {
+                case .newFile(let dir), .newFolder(let dir): dir == root ? edit : nil
+                case .rename: nil
+                }
+            }
+            if let adding { FilesNewRow(files: files, edit: adding).id("new") }
+            if entries.isEmpty, adding == nil { FilesNote(text: "此文件夹为空。") }
             ForEach(entries, id: \.name) { entry in
                 let path = FilesPath.join(root, entry.name)
                 if look.isClassic { ClassicFolderRow(files: files, entry: entry, path: path) } else { PixelFolderRow(files: files, entry: entry, path: path) }
@@ -98,7 +118,9 @@ extension View {
     }
 }
 
-/// The row's right click (files-v0 §3.3): on what is selected when the row is among it, else on the row.
+/// The row's right click (files-v0 §3.3, §12.2): on what is selected when the row is among it, else on the row. What
+/// does not apply is left out, not dimmed, and no keys are written (HIG Context menus); new items in a folder's menu
+/// under what is used most, `Rename…` and `Move to Trash` last (VS Code's order).
 private struct FilesRowMenu: View {
     let files: FilesColumn
     let path: String
@@ -107,18 +129,47 @@ private struct FilesRowMenu: View {
     var body: some View {
         let paths = files.selection.contains(path) ? files.selection : [path]
         if !entry.locked {
-            Button("Add to Reply") { files.addToReply(paths) }.disabled(files.target() == nil)
+            if files.target() != nil { Button("Add to Reply") { files.addToReply(paths) } }
             if !entry.isFolder { Button("Quick Look") { files.select(path, classic: false); files.toggleQuickLook() } }
             Button("Open") { paths.forEach(files.open) }
+            if entry.isFolder {
+                Divider()
+                Button("New File…") { files.startNew(folder: false, inside: path) }
+                Button("New Folder…") { files.startNew(folder: true, inside: path) }
+            }
             Divider()
             if files.local { Button("Show in Finder") { files.showInFinder(paths) } }
             Button("Copy Path") { files.copyPaths(paths) }
-            Button("Copy Relative Path") { files.copyPaths(paths, relative: true) }.disabled(!files.relativeAvailable(paths))
-            if entry.isFolder {
+            if files.relativeAvailable(paths) { Button("Copy Relative Path") { files.copyPaths(paths, relative: true) } }
+            if entry.isFolder { Button("New Terminal Here") { files.newTerminal(entry.kind == .link ? entry.link?.target ?? path : path) } }
+            if paths.allSatisfy({ files.entry($0)?.changeable ?? false }) {
                 Divider()
-                Button("New Terminal Here") { files.newTerminal(entry.kind == .link ? entry.link?.target ?? path : path) }
+                if paths.count == 1 { Button("Rename…") { files.startRename(path) } }
+                Button("Move to Trash") { files.trash(paths) }
             }
         }
+    }
+}
+
+/// The name, or the box it is typed in while the row is being renamed.
+private struct FilesRenaming<Name: View>: View {
+    let files: FilesColumn
+    let path: String
+    @ViewBuilder let name: Name
+
+    var body: some View {
+        if let edit = files.edit, edit.kind == .rename(path) { FilesNameBox(files: files, edit: edit) } else { name }
+    }
+}
+
+/// The line under a row being renamed that says what is wrong with the name.
+private struct FilesRenameCheck: View {
+    let files: FilesColumn
+    let path: String
+    let indent: CGFloat
+
+    var body: some View {
+        if let edit = files.edit, edit.kind == .rename(path) { FilesCheckLine(files: files, edit: edit, indent: indent) }
     }
 }
 
@@ -148,6 +199,7 @@ private struct PixelTreeRow: View {
     var body: some View {
         let entry = row.entry
         let selected = files.selection.contains(row.path)
+        VStack(alignment: .leading, spacing: 0) {
         HStack(spacing: 0) {
             Text(row.twig).foregroundStyle(Look.line)
             if entry.isFolder && !entry.locked {
@@ -157,7 +209,7 @@ private struct PixelTreeRow: View {
             } else {
                 Text("─").foregroundStyle(Look.line)
             }
-            PixelName(entry: entry).padding(.leading, ListLook.ch)
+            FilesRenaming(files: files, path: row.path) { PixelName(entry: entry) }.padding(.leading, ListLook.ch)
             Spacer(minLength: 8)
             PixelMeta(entry: entry, wide: files.width >= 300)
         }
@@ -171,6 +223,8 @@ private struct PixelTreeRow: View {
         .onTapGesture { clicked(files, row.path, classic: false) }
         .onHover { hovering = $0 }
         .help(entry.locked ? FilesRefusal.locked.sentence() : row.path)
+        FilesRenameCheck(files: files, path: row.path, indent: 12 + CGFloat(row.depth * 3 + 4) * ListLook.ch)
+        }
     }
 }
 
@@ -183,8 +237,9 @@ private struct PixelFolderRow: View {
 
     var body: some View {
         let selected = files.selection.contains(path)
+        VStack(alignment: .leading, spacing: 0) {
         HStack(spacing: 0) {
-            PixelName(entry: entry)
+            FilesRenaming(files: files, path: path) { PixelName(entry: entry) }
             Spacer(minLength: 8)
             PixelMeta(entry: entry, wide: files.width >= 300)
             if entry.isFolder, !entry.locked {
@@ -201,6 +256,8 @@ private struct PixelFolderRow: View {
         .onTapGesture { clicked(files, path, classic: false) }
         .onHover { hovering = $0 }
         .help(entry.locked ? FilesRefusal.locked.sentence() : path)
+        FilesRenameCheck(files: files, path: path, indent: 12)
+        }
     }
 }
 
@@ -281,9 +338,13 @@ private struct ClassicFolderRow: View {
     var body: some View {
         let selected = files.selection.contains(path)
         let faint = entry.hidden || entry.dim || entry.locked
+        let renaming = files.edit?.kind == .rename(path)
+        VStack(alignment: .leading, spacing: 0) {
         HStack(spacing: 8) {
-            FilesIcon(entry: entry).foregroundStyle(selected ? Color.white : Look.ink2)
-            Text(entry.name).font(.system(size: 13)).foregroundStyle(selected ? Color.white : faint ? Look.faint : Look.ink).truncationMode(.middle)
+            FilesIcon(entry: entry).foregroundStyle(selected && !renaming ? Color.white : Look.ink2)
+            FilesRenaming(files: files, path: path) {
+                Text(entry.name).font(.system(size: 13)).foregroundStyle(selected ? Color.white : faint ? Look.faint : Look.ink).truncationMode(.middle)
+            }
             Spacer(minLength: 6)
             if !entry.locked {
                 Text(column == nil ? (entry.isFolder ? FilesText.date(entry.modified) : "\(FilesText.date(entry.modified)) · \(FilesText.size(entry.size, short: true))")
@@ -299,7 +360,7 @@ private struct ClassicFolderRow: View {
         .lineLimit(1)
         .padding(.horizontal, 8)
         .frame(height: column == nil ? 30 : 26)
-        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(selected ? Color.signal : leads ? Look.raised : hovering ? ListLook.hover : Color.clear))
+        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(selected && !renaming ? Color.signal : leads ? Look.raised : hovering ? ListLook.hover : Color.clear))
         .padding(.horizontal, 6)
         .filesRow(files, path, entry: entry)
         .onTapGesture {
@@ -310,6 +371,8 @@ private struct ClassicFolderRow: View {
         }
         .onHover { hovering = $0 }
         .help(entry.locked ? FilesRefusal.locked.sentence() : path)
+        FilesRenameCheck(files: files, path: path, indent: 48)
+        }
     }
 }
 
@@ -321,8 +384,10 @@ private struct ClassicTreeRow: View {
 
     var body: some View {
         let entry = row.entry
-        let selected = files.selection.contains(row.path)
+        let renaming = files.edit?.kind == .rename(row.path)
+        let selected = files.selection.contains(row.path) && !renaming
         let faint = entry.hidden || entry.dim || entry.locked
+        VStack(alignment: .leading, spacing: 0) {
         HStack(spacing: 5) {
             Group {
                 if entry.isFolder, !entry.locked {
@@ -332,7 +397,9 @@ private struct ClassicTreeRow: View {
             }
             .frame(width: 14).foregroundStyle(selected ? Color.white : Look.ink2)
             FilesIcon(entry: entry, size: 14).foregroundStyle(selected ? Color.white : Look.ink2)
-            Text(entry.name).font(.system(size: 13)).foregroundStyle(selected ? Color.white : faint ? Look.faint : Look.ink).truncationMode(.middle)
+            FilesRenaming(files: files, path: row.path) {
+                Text(entry.name).font(.system(size: 13)).foregroundStyle(selected ? Color.white : faint ? Look.faint : Look.ink).truncationMode(.middle)
+            }
             Spacer(minLength: 6)
             if !entry.isFolder, !entry.locked { Text(FilesText.size(entry.size, short: true)).font(.system(size: 11.5)).foregroundStyle(selected ? Color.white.opacity(0.85) : Look.ink2) }
         }
@@ -344,6 +411,8 @@ private struct ClassicTreeRow: View {
         .filesRow(files, row.path, entry: entry)
         .onTapGesture { clicked(files, row.path, classic: true) }
         .onHover { hovering = $0 }
+        FilesRenameCheck(files: files, path: row.path, indent: 14 + CGFloat(row.depth) * 16 + 38)
+        }
     }
 }
 
@@ -373,12 +442,22 @@ private struct FilesColumns: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 1) {
                     let entries = files.entries(of: root)
-                    if entries.isEmpty { FilesNote(text: "此文件夹为空。") }
+                    let adding: FilesEdit? = files.edit.flatMap { edit in
+                        switch edit.kind {
+                        case .newFile(let dir), .newFolder(let dir): dir == root ? edit : nil
+                        case .rename: nil
+                        }
+                    }
+                    if let adding { FilesNewRow(files: files, edit: adding).id("new") }
+                    if entries.isEmpty, adding == nil { FilesNote(text: "此文件夹为空。") }
                     ForEach(entries, id: \.name) { entry in
                         ClassicFolderRow(files: files, entry: entry, path: FilesPath.join(root, entry.name), column: 1)
                     }
                 }
                 .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, minHeight: 200, alignment: .topLeading)
+                .contentShape(Rectangle())
+                .contextMenu { FilesFolderMenu(files: files, folder: root) }
             }
             .frame(maxWidth: .infinity)
         }

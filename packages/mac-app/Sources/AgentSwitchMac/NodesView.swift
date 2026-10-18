@@ -25,10 +25,13 @@ struct NodesView: View {
                     .disabled(store.mesh == nil)
                 Toggle("Paired Nodes May Read Files", isOn: Binding(get: { store.mesh?.files ?? true }, set: { on in Task { await store.setFiles(on, model) } }))
                     .disabled(store.mesh == nil)
+                // Changing them is a step past reading them: off while reading is (docs/files-v0.md §12.5).
+                Toggle("Paired Nodes May Change Files", isOn: Binding(get: { (store.mesh?.files ?? true) && (store.mesh?.changes ?? true) }, set: { on in Task { await store.setChanges(on, model) } }))
+                    .disabled(store.mesh == nil || !(store.mesh?.files ?? true))
             } header: {
                 SectionLabel("This Mac")
             } footer: {
-                Footer("Allow Pairing：手机和其他节点能否连接这台 Mac。Paired Nodes May Type：其他节点能否用键盘直接在这台 Mac 的终端里输入；关闭后它们只能使用回复框和指定按键。Paired Nodes May Read Files：手机和其他节点能否在文件栏中浏览这台 Mac 的文件，各自的范围在下面每一行的 Files 中设置。")
+                Footer("Allow Pairing：手机和其他节点能否连接这台 Mac。Paired Nodes May Type：其他节点能否用键盘直接在这台 Mac 的终端里输入；关闭后它们只能使用回复框和指定按键。Paired Nodes May Read Files：手机和其他节点能否在文件栏中浏览这台 Mac 的文件，各自的范围在下面每一行的 Files 中设置。Paired Nodes May Change Files：它们能否在读得到的范围内新建、改名、移到废纸篓，以及从手机传文件进来；AgentSwitch 自己的文件夹不会被改动。")
             }
             Section {
                 if rows.isEmpty {

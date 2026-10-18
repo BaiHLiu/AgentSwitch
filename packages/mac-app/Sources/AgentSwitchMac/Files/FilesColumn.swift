@@ -29,6 +29,45 @@ struct FilesTarget {
     let give: ([FilesPick]) -> Void
 }
 
+/// A name being typed in place (docs/files-v0.md §12.2): a new file or folder in a folder, or an item's new name.
+struct FilesEdit: Equatable {
+    enum Kind: Equatable {
+        case newFile(in: String)
+        case newFolder(in: String)
+        case rename(String)
+    }
+
+    let kind: Kind
+    var text: String
+    /// What the service said of the name last tried (a name the disk takes for one already there); gone once typed on.
+    var refused: String?
+    let id = UUID()
+
+    var folder: Bool { if case .newFolder = kind { return true }; return false }
+}
+
+/// A question before a change goes on (docs/files-v0.md §12.2): only these are asked on the Mac.
+struct FilesQuestion: Equatable {
+    enum Kind: Equatable {
+        case renameInUse(path: String, name: String)
+        case trashInUse([String])
+        case noTrash([String])
+    }
+
+    let kind: Kind
+    let text: String
+
+    /// What the box's head says, and its button that goes on.
+    var head: String { if case .noTrash = kind { return "Move to Trash" }; return "In Use" }
+    var go: String {
+        switch kind {
+        case .renameInUse: "Rename"
+        case .trashInUse: "Move to Trash"
+        case .noTrash: "Delete Permanently"
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class FilesColumn {
@@ -77,6 +116,17 @@ final class FilesColumn {
     var going: String?
     /// Something went wrong that is not one folder's (a file could not be opened).
     private(set) var notice: String?
+
+    // Changes (docs/files-v0.md §12.2).
+    /// A name being typed in place.
+    var edit: FilesEdit?
+    /// The line at the column's foot for what was just done: moved to the Trash, put back, why not.
+    private(set) var said: String?
+    /// Asked before a change goes on: a folder a terminal runs in, or what the Trash would not take.
+    private(set) var question: FilesQuestion?
+    private(set) var history = FilesHistory()
+    /// The look the column is drawn in (the key view says): where a new item goes depends on the view shown.
+    @ObservationIgnored var classic = false
 
     /// The node the window is on (nil: this Mac) and its name, for what is said of its rules.
     let node: String?
@@ -194,6 +244,8 @@ final class FilesColumn {
         selection = []
         anchor = nil
         notice = nil
+        said = nil
+        edit = nil
         if let folder {
             recent = Array(([folder] + recent.filter { $0 != folder }).prefix(5))
             refresh(folder)
@@ -270,6 +322,7 @@ final class FilesColumn {
     /// A click: one; ⌘: one more or one less; ⇧: the run from the last one clicked.
     func select(_ path: String, command: Bool = false, shift: Bool = false, classic: Bool) {
         guard let entry = entry(path), !entry.locked else { return }
+        said = nil
         if command {
             selection = selection.contains(path) ? selection.filter { $0 != path } : selection + [path]
             anchor = path
@@ -455,6 +508,257 @@ final class FilesColumn {
         }
     }
 
+
+    // MARK: changes (docs/files-v0.md §12.2)
+
+    /// Where `+`, ⌥⌘N and ⇧⌘N put a new item: in the tree as VS Code does (in the one selected folder, beside the one
+    /// selected file, else in the shown folder), in the folders as Finder does (the level shown).
+    private func newItemFolder() -> String? {
+        guard let root else { return nil }
+        guard shown(classic: classic) == .tree, !columns(classic: classic), selection.count == 1, let path = selection.first, let e = entry(path) else { return root }
+        return e.isFolder ? path : FilesPath.parent(of: path) ?? root
+    }
+
+    /// `New File…` / `New Folder…`: a row with a box for its name, where it will be (`inside` a folder's menu named).
+    func startNew(folder: Bool, inside: String? = nil) {
+        guard let root, let dir = inside ?? newItemFolder() else { return }
+        if shown(classic: classic) == .tree, !columns(classic: classic) {
+            if dir != root { expanded.insert(dir); refresh(innerOf(dir)); keepPlace() }
+        } else if dir != root {
+            go(to: dir)
+        }
+        said = nil
+        question = nil
+        edit = FilesEdit(kind: folder ? .newFolder(in: dir) : .newFile(in: dir), text: "")
+    }
+
+    /// `Rename…`, ↩: the name becomes a box. What holds AgentSwitch's places is not renamed here.
+    func startRename(_ path: String) {
+        guard let e = entry(path) else { return }
+        guard e.changeable else { said = FilesWords.fixed; return }
+        said = nil
+        question = nil
+        edit = FilesEdit(kind: .rename(path), text: e.name)
+    }
+
+    func cancelEdit() {
+        edit = nil
+        focusKeys()
+    }
+
+    /// The typed name as the column can judge it: a name read in the folder is taken (the service judges the rest,
+    /// a disk that does not tell case apart among it).
+    func check(_ edit: FilesEdit) -> FilesNameCheck.Result {
+        if let refused = edit.refused { return FilesNameCheck.Result(error: refused) }
+        switch edit.kind {
+        case .rename(let path):
+            let name = (path as NSString).lastPathComponent
+            return FilesNameCheck.check(edit.text, renaming: name) { self.taken($0, in: FilesPath.parent(of: path) ?? "/") }
+        case .newFile(let dir), .newFolder(let dir):
+            return FilesNameCheck.check(edit.text) { self.taken($0, in: dir) }
+        }
+    }
+
+    private func taken(_ relative: String, in dir: String) -> Bool {
+        var folder = innerOf(dir)
+        let parts = relative.split(separator: "/").map(String.init)
+        for (i, part) in parts.enumerated() {
+            guard let e = levels[folder]?.entries.first(where: { $0.name == part }) else { return false }
+            if i == parts.count - 1 || !e.isFolder { return true }
+            folder = e.kind == .link ? e.link?.target ?? FilesPath.join(folder, part) : FilesPath.join(folder, part)
+        }
+        return false
+    }
+
+    /// ↩ in the box, or the box left with a good name (VS Code): the change is asked for. False: the name will not do.
+    @discardableResult
+    func commitEdit() -> Bool {
+        guard let edit else { return true }
+        guard check(edit).ok else { return false }
+        self.edit = nil
+        focusKeys()
+        let name = edit.text.trimmingCharacters(in: .whitespaces)
+        if case .rename(let path) = edit.kind, name == (path as NSString).lastPathComponent { return true }
+        Task { await self.apply(edit, name: name) }
+        return true
+    }
+
+    private func apply(_ edit: FilesEdit, name: String, force: Bool = false) async {
+        do {
+            switch edit.kind {
+            case .newFile(let dir), .newFolder(let dir):
+                let path = FilesPath.join(dir, name.split(separator: "/").joined(separator: "/"))
+                let made: FileMade
+                if case .newFile = edit.kind { made = try await client().newFile(path: path) } else { made = try await client().newFolder(path: path) }
+                // The tree shows the new one where it is, the folders the first new thing in the level shown.
+                let shown = shown(classic: classic) == .tree && !columns(classic: classic) ? made.path : FilesPath.join(dir, String(name.split(separator: "/").first ?? Substring(name)))
+                await reveal(shown, reading: dir)
+                history.did(.made(top: made.top, shown: shown))
+                let base = (made.path as NSString).lastPathComponent
+                if base.hasPrefix("."), !showHidden { said = FilesWords.madeHidden(base) }
+            case .rename(let path):
+                let to = try await client().renameFile(path: path, name: name, force: force)
+                moved(from: path, to: to)
+                await reveal(to, reading: FilesPath.parent(of: to) ?? "/")
+                history.did(.renamed(from: path, to: to))
+            }
+        } catch let refusal as FileChangeRefusal {
+            if refusal.code == "in-use", case .rename(let path) = edit.kind {
+                question = FilesQuestion(kind: .renameInUse(path: path, name: name), text: FilesWords.inUse(terminal: refusal.terminals.first?.name ?? "", renaming: true))
+            } else if refusal.code == "exists" {
+                // A name the disk takes for one already there (a case apart): the box again, saying so.
+                self.edit = FilesEdit(kind: edit.kind, text: edit.text, refused: "此位置已有“\(name)”。请换一个名称。")
+            } else {
+                said = refusal.sentence(node: nodeName)
+            }
+        } catch {
+            said = FilesRefusal(error).sentence(node: nodeName)
+        }
+    }
+
+    /// `Move to Trash`, ⌘⌫: not asked (HIG Alerts: a delete that can be undone); asked only when a terminal runs in a
+    /// folder, or the Trash will not take something.
+    func trash(_ paths: [String]) {
+        let paths = paths.filter { entry($0) != nil }
+        guard !paths.isEmpty else { return }
+        guard paths.allSatisfy({ entry($0)?.changeable ?? false }) else { said = FilesWords.fixed; return }
+        question = nil
+        Task { await self.trashNow(paths, force: false, permanent: false) }
+    }
+
+    private func trashNow(_ paths: [String], force: Bool, permanent: Bool) async {
+        do {
+            let moved = try await client().trashFiles(paths: paths, permanent: permanent, force: force)
+            await gone(moved.map(\.path))
+            if !permanent { history.did(.trashed(moved)) }
+            said = permanent ? FilesWords.deleted(moved.map(\.path)) : FilesWords.trashed(moved.map(\.path))
+        } catch let refusal as FileChangeRefusal {
+            switch refusal.code {
+            case "in-use":
+                question = FilesQuestion(kind: .trashInUse(paths), text: FilesWords.inUse(terminal: refusal.terminals.first?.name ?? "", renaming: false))
+            case "no-trash":
+                if !refusal.moved.isEmpty { await gone(refusal.moved.map(\.path)); history.did(.trashed(refusal.moved)) }
+                question = FilesQuestion(kind: .noTrash(refusal.paths), text: FilesWords.noTrash(refusal.paths))
+            default:
+                said = refusal.sentence(node: nodeName)
+            }
+        } catch {
+            said = FilesRefusal(error).sentence(node: nodeName)
+        }
+    }
+
+    /// The answer to the question: `Move to Trash` / `Rename` / `Delete Permanently`, or `Cancel`.
+    func answer(_ yes: Bool) {
+        guard let question else { return }
+        self.question = nil
+        focusKeys()
+        guard yes else { return }
+        switch question.kind {
+        case .renameInUse(let path, let name): Task { await apply(FilesEdit(kind: .rename(path), text: name), name: name, force: true) }
+        case .trashInUse(let paths): Task { await trashNow(paths, force: true, permanent: false) }
+        case .noTrash(let paths): Task { await trashNow(paths, force: true, permanent: true) }
+        }
+    }
+
+    /// ⌘Z: the last change taken back.
+    func undo() {
+        guard edit == nil, let step = history.takeUndo() else { return }
+        Task {
+            if let opposite = await self.reverse(step) { self.history.undone(opposite) }
+        }
+    }
+
+    /// ⇧⌘Z: the last change taken back, done again.
+    func redo() {
+        guard edit == nil, let step = history.takeRedo() else { return }
+        Task {
+            if let opposite = await self.reverse(step) { self.history.redone(opposite) }
+        }
+    }
+
+    /// One step's opposite done; the step that takes that back in turn, or nil when it could not be done.
+    private func reverse(_ step: FilesStep) async -> FilesStep? {
+        do {
+            switch step {
+            case .made(let top, _):
+                let moved = try await client().trashFiles(paths: [top], force: true)
+                await gone([top])
+                said = FilesWords.undoneMade(top)
+                return .trashed(moved)
+            case .renamed(let from, let to):
+                let name = (from as NSString).lastPathComponent
+                let back = try await client().renameFile(path: to, name: name, force: true)
+                moved(from: to, to: back)
+                await reveal(back, reading: FilesPath.parent(of: back) ?? "/")
+                said = FilesWords.renamedBack(name)
+                return .renamed(from: to, to: back)
+            case .trashed(let moved):
+                var back: [FileMoved] = []
+                var why: String?
+                for m in moved {
+                    guard let trashed = m.trashed else { why = FilesWords.lostInTrash(m.path); continue }
+                    do { _ = try await client().restoreFile(trashed: trashed, path: m.path); back.append(m) }
+                    catch let refusal as FileChangeRefusal where refusal.code == "exists" { why = FilesWords.notPutBack(m.path) }
+                }
+                for parent in Set(back.compactMap { FilesPath.parent(of: $0.path) }) { await load(parent) }
+                if let first = back.first { await reveal(first.path, reading: FilesPath.parent(of: first.path) ?? "/") }
+                selection = back.map(\.path).filter { entry($0) != nil }
+                selected()
+                said = why ?? FilesWords.putBack(back.map(\.path))
+                return back.isEmpty ? nil : .restored(back)
+            case .restored(let moved):
+                let again = try await client().trashFiles(paths: moved.map(\.path), force: true)
+                await gone(again.map(\.path))
+                said = FilesWords.trashed(again.map(\.path))
+                return .trashed(again)
+            }
+        } catch let refusal as FileChangeRefusal {
+            said = refusal.sentence(node: nodeName)
+        } catch {
+            said = FilesRefusal(error).sentence(node: nodeName)
+        }
+        return nil
+    }
+
+    /// Paths gone from where they were: out of the selection and the open folders, their levels read again.
+    private func gone(_ paths: [String]) async {
+        selection.removeAll { p in paths.contains { FilesPath.contains($0, p) } }
+        expanded = expanded.filter { p in !paths.contains { FilesPath.contains($0, p) } }
+        for parent in Set(paths.compactMap { FilesPath.parent(of: $0) }) { await load(parent) }
+        keepPlace()
+        selected()
+    }
+
+    /// `from` is `to` now: what the column keeps of it follows.
+    private func moved(from: String, to: String) {
+        let follow = { (p: String) -> String in p == from ? to : FilesPath.contains(from, p) ? to + p.dropFirst(from.count) : p }
+        expanded = Set(expanded.map(follow))
+        selection = selection.map(follow)
+        if let root, FilesPath.contains(from, root) { self.root = follow(root) }
+        keepPlace()
+    }
+
+    /// Shown and selected (HIG Undo: show the result): the folders above it open in the tree, its level the shown one
+    /// in the folders. `reading`: its folder, read again first.
+    private func reveal(_ path: String, reading folder: String) async {
+        guard let root, let parent = FilesPath.parent(of: path) else { return }
+        await load(folder)
+        if shown(classic: classic) == .tree, !columns(classic: classic), FilesPath.contains(root, parent) {
+            var chain: [String] = []
+            var q = parent
+            while q != root, FilesPath.contains(root, q) { chain.append(q); guard let up = FilesPath.parent(of: q) else { break }; q = up }
+            for f in chain.reversed() { expanded.insert(f); await load(innerOf(f)) }
+            keepPlace()
+        } else if parent != root {
+            go(to: parent)
+            await load(parent)
+        }
+        guard entry(path) != nil else { return }
+        selection = [path]
+        anchor = path
+        selected()
+    }
+
     // MARK: Quick Look
 
     /// What the Quick Look panel shows, in the order selected: this Mac's files as they are, another node's fetched.
@@ -507,5 +811,8 @@ final class FilesColumn {
     }
 
     func stageRemote(text: FileTextPreview?, image: NSImage?) { remoteText = text; remoteImage = image }
+
+    /// The box the Mac asks with, as a refusal would put it up (a probe with no terminal running to refuse for).
+    func stageQuestion(_ question: FilesQuestion) { self.question = question }
     #endif
 }

@@ -25,6 +25,12 @@ struct FilesColumnView: View {
         }
         .background(FilesKeyHost(files: files, classic: look.isClassic))
         .background(look.isClassic ? Look.sidebar : ground)
+        // The one box the Mac asks with before a change (files-v0 §12.2), over the column's list.
+        .overlay(alignment: .top) {
+            if let question = files.question {
+                FilesQuestionCard(files: files, question: question).padding(.horizontal, 10).padding(.top, 72)
+            }
+        }
         .overlay(alignment: .leading) { FilesResizeEdge(files: files) }
         .modifier(FilesChrome(floating: floating))
         .environment(\.filesClassic, look.isClassic)
@@ -36,10 +42,12 @@ struct FilesColumnView: View {
         if picked && files.showPreview {
             let preview = max(120, min(height * files.previewShare, height - 160))
             FilesList(files: files).frame(maxHeight: .infinity)
+            if let said = files.said { FilesSaidLine(text: said) }
             FilesSplitEdge(files: files, height: height)
             FilesPreview(files: files).frame(height: preview)
         } else {
             FilesList(files: files).frame(maxHeight: .infinity)
+            if let said = files.said { FilesSaidLine(text: said) }
             Rectangle().fill(Look.line).frame(height: 1)
             if picked { FilesSelectionLine(files: files) } else { FilesFoot(files: files) }
         }
@@ -94,6 +102,7 @@ private struct FilesHead: View {
             }
             Spacer(minLength: 4)
             FilesHeadButton(glyph: "⌂", symbol: "house", help: "Home ⌘⇧H") { files.goHome() }
+            FilesNewMenu(files: files)
             FilesMoreMenu(files: files)
             FilesHeadButton(glyph: "×", symbol: "xmark", help: "Close ⌘⇧F") { files.close() }
         }

@@ -26,9 +26,12 @@ public struct FileEntry: Decodable, Equatable, Hashable, Sendable {
     public let dim: Bool
     /// One of AgentSwitch's own credential places: its name and a lock, nothing more.
     public let locked: Bool
+    /// Never renamed or moved to the Trash from the column (docs/files-v0.md §12.2): it holds one of AgentSwitch's
+    /// places (the home folder, `~/.agentswitch`), or it is right under `/`.
+    public let fixed: Bool
     public let link: Link?
 
-    public init(name: String, kind: Kind, size: Int64 = 0, mtime: Double = 0, hidden: Bool? = nil, dim: Bool = false, locked: Bool = false, link: Link? = nil) {
+    public init(name: String, kind: Kind, size: Int64 = 0, mtime: Double = 0, hidden: Bool? = nil, dim: Bool = false, locked: Bool = false, fixed: Bool = false, link: Link? = nil) {
         self.name = name
         self.kind = kind
         self.size = size
@@ -36,10 +39,11 @@ public struct FileEntry: Decodable, Equatable, Hashable, Sendable {
         self.hidden = hidden ?? name.hasPrefix(".")
         self.dim = dim
         self.locked = locked
+        self.fixed = fixed
         self.link = link
     }
 
-    private enum Keys: String, CodingKey { case name, kind, size, mtime, hidden, dim, locked, link }
+    private enum Keys: String, CodingKey { case name, kind, size, mtime, hidden, dim, locked, fixed, link }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -50,8 +54,12 @@ public struct FileEntry: Decodable, Equatable, Hashable, Sendable {
         hidden = (try? c.decode(Bool.self, forKey: .hidden)) ?? name.hasPrefix(".")
         dim = (try? c.decode(Bool.self, forKey: .dim)) ?? false
         locked = (try? c.decode(Bool.self, forKey: .locked)) ?? false
+        fixed = (try? c.decode(Bool.self, forKey: .fixed)) ?? false
         link = try? c.decode(Link.self, forKey: .link)
     }
+
+    /// Renamed and moved to the Trash from the column: neither one of AgentSwitch's places nor a folder holding one.
+    public var changeable: Bool { !locked && !fixed }
 
     /// A folder, or a link to one: it has a level of its own.
     public var isFolder: Bool { kind == .dir || (kind == .link && link?.kind == .dir) }
