@@ -17,12 +17,14 @@ import SwiftUI
 /// (and where the page is drawn as the display asks, not as the probe does); `-probeScene <name>` plays one scene.
 /// `-probeReal YES`: the session has the sizes a real one has (answers from a line to a few thousand characters,
 /// code, tables) instead of forty like turns.
-/// `-probePerf YES` instead says what a record of 60 items and one of 300 cost: to show, to add to, to read through.
+/// `-probePerf YES` instead says what a record of 60 items and one of 300 cost: to show, to add to, to read through;
+/// `-probeCPU YES`, what one costs on screen while nothing is asked of it (`RecordCPUProbe`).
 @MainActor
 enum RecordTurnProbe {
     static func run(into directory: URL) async throws {
         let log = Log()
         if UserDefaults.standard.bool(forKey: "probePerf") { return try await perf(into: directory, log: log) }
+        if UserDefaults.standard.bool(forKey: "probeCPU") { return try await RecordCPUProbe.run(into: directory, log: log) }
         let onScreen = UserDefaults.standard.bool(forKey: "probeOnScreen")
         let only = UserDefaults.standard.string(forKey: "probeScene")
         for scene in Scene.allCases where only == nil || only == scene.rawValue {
