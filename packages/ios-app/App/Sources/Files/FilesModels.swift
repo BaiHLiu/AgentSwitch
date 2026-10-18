@@ -177,6 +177,9 @@ final class FilesSession {
         case tab
         /// Over a terminal's page: what is picked lands in its reply box.
         case sheet(terminal: String)
+        /// Over a page with no reply box (an earlier session's, `Show in Files`, files-v0 §12.4.1): `Add to Reply…`
+        /// asks which terminal, as the Files tab does; `Done` closes it.
+        case over
     }
 
     let mode: Mode
@@ -269,6 +272,8 @@ final class FilesSession {
     }
 
     var inTab: Bool { mode == .tab }
+    /// Nobody to give to yet: `Add to Reply…` asks which terminal (the Files tab, or over a page with no reply box).
+    var asksTerminal: Bool { mode == .tab || mode == .over }
 
     /// A level of the path row: back to it if it is open, else a new first page.
     func go(to path: String) {

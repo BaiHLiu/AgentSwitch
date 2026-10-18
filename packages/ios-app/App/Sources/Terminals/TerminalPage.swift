@@ -147,8 +147,9 @@ struct TerminalPage: View {
                         }
                     }
                     Divider()
-                    // Its folder on the Files tab, where the agent works now (docs/files-v0.md §12.4).
-                    Button("Show in Files", systemImage: "folder") { model.showInFiles(workdir) }
+                    // Its folder, over this page, where the agent works now; `Done` back (docs/files-v0.md §12.4.1): the
+                    // `+` › Files on Mac sheet, what is picked there landing in this reply box.
+                    Button("Show in Files", systemImage: "folder") { browsingMac = true }
                     Divider()
                     Button("Rename", systemImage: "pencil") { newName = page.name; renaming = true }
                     Button("Close", systemImage: "xmark", role: .destructive) { if page.status == .exited && !canDeleteRecord { Task { await close() } } else { confirmClose = true } }

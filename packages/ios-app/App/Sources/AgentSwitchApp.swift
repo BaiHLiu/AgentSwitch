@@ -19,7 +19,7 @@ struct AgentSwitchApp: App {
         // browserzoomwatch|linkedpage|proxies|clash|clashservice|clashrules|clashcheck|clashnodes|clashtext|clashsource|
         // proxybrowser|proxyprofile|files|fileshome|filesopen|filespreview|filesimage|filesselect|fileschoose|filessensitive|
         // filesscoped|filessheet|filesreply|filesnew|filesnameerror|filestrash|filestrashbusy|filesselectbar|filesshare|filesupload|
-        // filesclash|filesgone`.
+        // filesclash|filesgone|transcriptfiles`.
         if let hosts = UserDefaults.standard.string(forKey: "tlsProbe"), let pin = UserDefaults.standard.string(forKey: "tlsProbePin") {
             TLSProbe.run(hosts: hosts.split(separator: ",").map(String.init), pin: pin)
         }
@@ -30,7 +30,7 @@ struct AgentSwitchApp: App {
             let screen = UserDefaults.standard.string(forKey: "uiDemoScreen")
             let model = AppModel.demo(offline: screen == "offline" || screen == "offlinemac")
             switch screen {
-            case "settings", "mac", "offlinemac", "tasks", "search", "sessions", "transcript",
+            case "settings", "mac", "offlinemac", "tasks", "search", "sessions", "transcript", "transcriptfiles",
                  "proxies", "clash", "clashservice", "clashrules", "clashcheck", "clashnodes", "clashtext", "clashsource", "proxybrowser", "proxyprofile": model.tab = .settings
             case "task": model.tab = .tasks; model.openTaskRequest = "t2"
             case "done": model.tab = .tasks; model.openTaskRequest = "t3"

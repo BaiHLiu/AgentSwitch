@@ -45,6 +45,23 @@ struct MacFilesSheet: View {
     }
 }
 
+/// `Show in Files` from an earlier session's page (docs/files-v0.md §12.4.1; 2026-10-18, user: 弹出页面然后点击done返回):
+/// the browser over the page at the session's folder, `Done` back to it. No reply box here: `Add to Reply…` asks which
+/// terminal, and that terminal's page opens with them.
+struct MacFilesOverSheet: View {
+    @State private var session: FilesSession
+
+    init(start: String) { _session = State(initialValue: FilesSession(mode: .over, root: start)) }
+
+    var body: some View {
+        FilesBrowser(session: session) { _ in }
+            .sheet(isPresented: Binding(get: { session.choosing != nil }, set: { if !$0 { session.choosing = nil } })) {
+                TerminalChooser(picks: session.choosing ?? [], session: session).followsLook()
+            }
+            .presentationDetents([.large])
+    }
+}
+
 /// One folder's page.
 struct FolderPage: View {
     let session: FilesSession
@@ -90,8 +107,8 @@ struct FolderPage: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if session.selecting {
                 SelectBar(session: session, give: { give(session.picked) },
-                          share: session.inTab ? { session.share(session.picked.map(\.path), model.fileSource) } : nil,
-                          trash: session.inTab ? { askTrash(session.picked.map(\.path)) } : nil)
+                          share: session.asksTerminal ? { session.share(session.picked.map(\.path), model.fileSource) } : nil,
+                          trash: session.asksTerminal ? { askTrash(session.picked.map(\.path)) } : nil)
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -159,7 +176,7 @@ struct FolderPage: View {
         ToolbarItem(placement: .principal) {
             VStack(spacing: 1) {
                 Text(folder.path.map(MacPath.name) ?? "Files").font(.headline).lineLimit(1)
-                if session.selecting && session.inTab {
+                if session.selecting && session.asksTerminal {
                     Text("\(session.picked.count) Selected").mono(11).foregroundStyle(.secondary).lineLimit(1)
                 } else {
                     Text(look.isClassic ? "On \(mac)" : "@ \(mac)").mono(11).foregroundStyle(look.isClassic ? Color.secondary : Theme.signal).lineLimit(1)
@@ -284,7 +301,7 @@ struct FolderPage: View {
     /// last and red (HIG Context menus). What cannot be changed here has no Rename… or Move to Trash; a folder no Share….
     @ViewBuilder private func rowMenu(_ entry: MacFileEntry, path: String, dir: String) -> some View {
         Section {
-            Button(session.inTab ? "Add to Reply…" : "Add to Reply", systemImage: "arrowshape.turn.up.left") { give([MacPick(path: path, isFolder: entry.isFolder)]) }
+            Button(session.asksTerminal ? "Add to Reply…" : "Add to Reply", systemImage: "arrowshape.turn.up.left") { give([MacPick(path: path, isFolder: entry.isFolder)]) }
             if !entry.isFolder { Button("Share…", systemImage: "square.and.arrow.up") { session.share([path], model.fileSource) } }
             Button("Copy Path", systemImage: "doc.on.doc") { UIPasteboard.general.string = path }
         }
@@ -304,7 +321,7 @@ struct FolderPage: View {
         guard !picks.isEmpty else { return }
         Task {
             let checked = await session.checked(picks, model.fileSource)
-            if session.inTab {
+            if session.asksTerminal {
                 session.choosing = checked
             } else {
                 // The terminal's page closes the sheet as it takes them.
@@ -515,7 +532,7 @@ struct SelectBar: View {
                 }
                 Spacer(minLength: 8)
                 if session.checking { BrailleSpinner(color: .secondary) }
-                Button(action: give) { ButtonWord(session.inTab ? "Add to Reply…" : "Add to Reply (\(session.picked.count))") }
+                Button(action: give) { ButtonWord(session.asksTerminal ? "Add to Reply…" : "Add to Reply (\(session.picked.count))") }
                     .buttonStyle(SquareButtonStyle(prominent: true, expand: false))
                     .disabled(session.picked.isEmpty || session.checking)
             }

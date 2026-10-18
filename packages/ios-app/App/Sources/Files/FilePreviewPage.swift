@@ -141,7 +141,7 @@ struct FilePreviewPage: View {
         VStack(spacing: 0) {
             HairRule()
             HStack(spacing: Theme.Space.m) {
-                Button { give() } label: { ButtonWord(session.inTab ? "Add to Reply…" : "Add to Reply") }
+                Button { give() } label: { ButtonWord(session.asksTerminal ? "Add to Reply…" : "Add to Reply") }
                     .buttonStyle(SquareButtonStyle(prominent: true, expand: false))
                     .disabled(details == nil || session.checking)
                 Button { copyPath() } label: { ButtonWord(copied ? "Copied" : "Copy Path") }
@@ -209,7 +209,7 @@ struct FilePreviewPage: View {
 
     private func give() {
         let pick = MacPick(path: path, isFolder: false, sensitive: details?.sensitive != nil)
-        if session.inTab { session.choosing = [pick]; return }
+        if session.asksTerminal { session.choosing = [pick]; return }
         session.land([pick]) { landed in onPick(landed) }
     }
 
