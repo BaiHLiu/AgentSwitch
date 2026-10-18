@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
-import { FileAudit, mountBrowse, rangeOf, viewerFor, type FileAccess } from "../src/api/browse.js";
+import { FileAudit, MAX_REMOTE_CONTENT, mountBrowse, rangeOf, viewerFor, type FileAccess } from "../src/api/browse.js";
 import { markRemote } from "../src/core/caller.js";
 import type { ProtectedPaths } from "../src/executors/protected.js";
 import { askedPath, attachable, byFinderOrder, details, listLevel, sensitiveReason, textPreview, typeOf, type FileScope, type Viewer } from "../src/files/browse.js";
@@ -274,7 +274,7 @@ describe("the routes", () => {
     expect((await s.get(`/files/content?path=${s.q(s.d.p("Projects/lumen/src"))}`)).status).toBe(400);
     const big = s.d.p("Projects/lumen/huge.bin");
     writeFileSync(big, "");
-    truncateSync(big, 26 * 1024 * 1024);
+    truncateSync(big, MAX_REMOTE_CONTENT + 1);
     const refused = await s.get(`/files/content?path=${s.q(big)}`, { remote: true });
     expect(refused.status).toBe(413);
     expect((await s.get(`/files/content?path=${s.q(big)}`, { headers: { range: "bytes=0-9" }, remote: true })).status).toBe(206);

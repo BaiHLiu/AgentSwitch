@@ -14,11 +14,14 @@ export type MeshSettings = {
   /** Paired devices may read this node's files (`/files…`, a reply's `{path}`). Off, none may; this node's own screens
    *  always may. */
   readonly files: boolean;
+  /** Paired devices may change this node's files where they may read them (docs/files-v0.md §12.5): new folders and
+   *  files, renames, the Trash, files sent from a phone. Off, none may; this node's own screens always may. */
+  readonly changes: boolean;
   /** Each device's reach, by its id; a device not here has `DEFAULT_SCOPE`. */
   readonly scopes: Readonly<Record<string, FileScope>>;
 };
 
-export const DEFAULT_MESH: MeshSettings = { keyboard: true, files: true, scopes: {} };
+export const DEFAULT_MESH: MeshSettings = { keyboard: true, files: true, changes: true, scopes: {} };
 const FILE = "mesh.json";
 const MODES: readonly ScopeMode[] = ["home", "all", "folders", "none"];
 
@@ -42,7 +45,7 @@ export function loadMesh(home: string): MeshSettings {
   let settings = DEFAULT_MESH;
   if (existsSync(path)) {
     try {
-      const parsed = JSON.parse(readFileSync(path, "utf8")) as { keyboard?: unknown; files?: unknown; scopes?: unknown };
+      const parsed = JSON.parse(readFileSync(path, "utf8")) as { keyboard?: unknown; files?: unknown; changes?: unknown; scopes?: unknown };
       const scopes: Record<string, FileScope> = {};
       if (parsed.scopes && typeof parsed.scopes === "object") {
         for (const [id, raw] of Object.entries(parsed.scopes as Record<string, unknown>)) { const s = scopeFrom(raw); if (s) scopes[id] = s; }
@@ -50,6 +53,7 @@ export function loadMesh(home: string): MeshSettings {
       settings = {
         keyboard: typeof parsed.keyboard === "boolean" ? parsed.keyboard : DEFAULT_MESH.keyboard,
         files: typeof parsed.files === "boolean" ? parsed.files : DEFAULT_MESH.files,
+        changes: typeof parsed.changes === "boolean" ? parsed.changes : DEFAULT_MESH.changes,
         scopes,
       };
     } catch { /* an unreadable file is the default */ }

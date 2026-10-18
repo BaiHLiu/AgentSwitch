@@ -13,27 +13,33 @@ import { remoteCaller } from "../core/caller.js";
 import type { ProtectedPaths } from "../executors/protected.js";
 import { askedPath, details, listLevel, readable, startOf, textPreview, type FileScope, type Refusal, type Viewer } from "../files/browse.js";
 import { contentType } from "../files/names.js";
+import type { Running, Trasher } from "../files/change.js";
 import type { Thumbnails } from "../files/thumbnails.js";
 import { versionedJson } from "./shared.js";
 
-/** The most of one file a paired device is given in one answer (a phone's Quick Look of a file). */
-export const MAX_REMOTE_CONTENT = 25 * 1024 * 1024;
+/** The most of one file a paired device is given in one answer: a phone's Quick Look of a file (which itself stops at
+ *  25 MB), and a file it shares on, to save on the phone (docs/files-v0.md §12.3). */
+export const MAX_REMOTE_CONTENT = 200 * 1024 * 1024;
 
 export type FileAccess = {
   /** The user's home folder: where a viewer starts, what `Home Folder` scopes and `~` mean. */
   readonly home: string;
   /** AgentSwitch's own credential places: the executors' read-denied table (executors/protected.ts). */
   readonly denied: ProtectedPaths;
-  /** Whether paired devices may read files here now, and each one's scope. */
-  readonly remote: () => { readonly on: boolean; readonly scopeOf: (deviceId: string) => FileScope };
+  /** Whether paired devices may read files here now, may change them (absent: may), and each one's scope. */
+  readonly remote: () => { readonly on: boolean; readonly changes?: boolean; readonly scopeOf: (deviceId: string) => FileScope };
   readonly thumbnails?: Thumbnails;
   readonly audit?: FileAudit;
+  /** Where what is moved to the Trash goes (files/change.ts `systemTrash` when absent). */
+  readonly trash?: Trasher;
+  /** The terminals running now and their folders: a folder holding one is asked about before it moves. */
+  readonly running?: () => readonly Running[];
 };
 
-/** One line per read of a file's contents by a paired device. */
+/** One line per read of a file's contents by a paired device, and per change from anywhere (docs/files-v0.md §12.5). */
 export class FileAudit {
   constructor(private readonly path: string, private readonly now: () => number = Date.now) {}
-  record(entry: { readonly device: string; readonly action: "preview" | "thumbnail" | "content"; readonly path: string; readonly bytes: number }): void {
+  record(entry: { readonly device: string; readonly action: string; readonly path: string; readonly bytes?: number; readonly to?: string }): void {
     try {
       mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
       appendFileSync(this.path, `${JSON.stringify({ ts: this.now(), ...entry })}\n`, { mode: 0o600 });

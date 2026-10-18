@@ -35,6 +35,14 @@ export const REMOTE_ROUTES: readonly (readonly [Method, string])[] = [
   ["GET", "/files/preview"],
   ["GET", "/files/thumbnail"],
   ["GET", "/files/content"],
+  // Changing them (docs/files-v0.md §12.5, §12.8): only while this node lets paired devices change its files too, inside
+  // the device's scope; never AgentSwitch's own places or the folders holding them.
+  ["POST", "/files/folder"],
+  ["POST", "/files/file"],
+  ["POST", "/files/rename"],
+  ["POST", "/files/trash"],
+  ["POST", "/files/restore"],
+  ["PUT", "/files/content"],
   ["GET", "/approvals"],
   ["GET", "/threads"],
   ["GET", "/threads/:id"],

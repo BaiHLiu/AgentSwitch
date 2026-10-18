@@ -186,6 +186,12 @@
 - 配对的设备读文件受两样管，都只在这个节点自己身上设（本机接口，不在远程名单）：节点自己的开关（`PUT /settings/mesh {files}`，默认开；关了 `/files…` 与它的 `{path}` 附件一律 403）和每个设备的范围（`PUT /devices/:id/files`：家目录（默认）、全部、几个文件夹、无；存在 `mesh.json`，设备吊销时一并删掉）。范围之上的几层只列通往授权文件夹的那几项。范围外的回 403。
 - 配对的设备每读一次文件内容（预览、小图、字节）在 `$AGENTSWITCH_HOME/files/audit.jsonl` 记一行：设备、路径、字节数，不记内容。列目录不记。
 - **范围不是沙箱**：配对的设备照样能开终端，让 agent 读范围外、甚至可能含凭据的文件（配对的设备本来就等于能以用户身份跑命令，见上一节）。范围管的只是文件栏和附件能看到、能交出去的。
+- **文件栏能改文件了**（files-v0 §12，daemon `src/files/change.ts`、`src/api/fileChanges.ts`；2026-10-18）：`POST /files/{folder,file,rename,trash,restore}` 与 `PUT /files/content`（手机传进来的文件，原样字节，一个至多 200 MB，边收边写进同一个文件夹里的临时文件，收完才改成真名；配对设备取文件的上限也随之放到 200 MB，为了在手机上分享/存下）。
+  - 不动的：AgentSwitch 自己存凭据的地方、**装着它们的文件夹**（家目录、`~/.agentswitch` 一串：移走或改名就把凭据一起搬走了）、`/` 和它下面一层；指进禁区的链接按禁区算。新建、传进来的东西也不能落进禁区。
+  - 删除一律是移到废纸篓（Mac：系统的 `NSFileManager.trashItem`，经 `osascript` 的脚本桥；Linux：freedesktop 的废纸篓）；只有废纸篓不收、并且再次明确要求时才永久删除。`restore` 只从废纸篓里往外搬，不能当成一般的移动。
+  - 配对的设备改文件另受一个开关管（`PUT /settings/mesh {changes}`，默认开，本机接口），并且只能改它读得到的地方（同一个范围）。有终端在里面运行的文件夹，移走或改名前先问（409 `in-use`）。
+  - 每次改动（本机和远程）在 `files/audit.jsonl` 记一行：设备、动作、路径（改名多一个新路径，传文件多字节数），不记内容。
+  - 本机网页的防跨站规则只多放行 `PUT /files/content` 的 `application/octet-stream`（浏览器对它本来就要先预检）。
 
 ## Linux 节点（`packages/linux`、daemon `src/keeper/`，mesh-v0 §4；2026-10-13）
 

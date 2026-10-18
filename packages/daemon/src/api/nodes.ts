@@ -38,8 +38,9 @@ const FILE_STALL_MS = 15_000;
 const FILE_LONGEST_MS = 15 * 60_000;
 
 const AddBody = z.object({ link: z.string().min(1).max(8192), back: z.boolean().optional() });
-/** Either switch, or both; what is not named stays as it is. */
-const MeshBody = z.object({ keyboard: z.boolean().optional(), files: z.boolean().optional() }).refine((b) => b.keyboard !== undefined || b.files !== undefined, "keyboard or files");
+/** Any of the switches; what is not named stays as it is. */
+const MeshBody = z.object({ keyboard: z.boolean().optional(), files: z.boolean().optional(), changes: z.boolean().optional() })
+  .refine((b) => b.keyboard !== undefined || b.files !== undefined || b.changes !== undefined, "keyboard, files or changes");
 
 export type NodesApiDeps = { readonly nodes: Nodes; readonly home: string };
 
@@ -67,13 +68,13 @@ export function mountNodes<A extends Hono>(app: A, deps: NodesApiDeps): A {
 
   // What paired nodes may do here beyond the list's own rules; this node's own to set.
   // The devices' own scopes are told with the devices (`GET /devices`), not here.
-  const switches = () => { const m = loadMesh(home); return { keyboard: m.keyboard, files: m.files }; };
+  const switches = () => { const m = loadMesh(home); return { keyboard: m.keyboard, files: m.files, changes: m.changes }; };
   app.get("/settings/mesh", (c) => c.json(switches()));
   app.put("/settings/mesh", async (c) => {
     const body = MeshBody.safeParse(await c.req.json().catch(() => ({})));
     if (!body.success) return c.json({ error: issues(body.error) }, 400);
     const now = loadMesh(home);
-    saveMesh(home, { ...now, ...(body.data.keyboard !== undefined ? { keyboard: body.data.keyboard } : {}), ...(body.data.files !== undefined ? { files: body.data.files } : {}) });
+    saveMesh(home, { ...now, ...(body.data.keyboard !== undefined ? { keyboard: body.data.keyboard } : {}), ...(body.data.files !== undefined ? { files: body.data.files } : {}), ...(body.data.changes !== undefined ? { changes: body.data.changes } : {}) });
     return c.json(switches());
   });
 
@@ -98,7 +99,9 @@ async function forward(c: Context, nodes: Nodes, peer: Peer): Promise<Response> 
   const body = raw ? Readable.fromWeb(raw as unknown as NodeWebStream<Uint8Array>) : null;
   const unreachable = (why: string): Response => c.json({ error: `${peer.name} cannot be reached: ${why}`, node: peer.id }, 502, { [NODE_HEADER]: peer.id, [NODE_ERROR_HEADER]: "unreachable" });
   const where = { fingerprint: peer.fingerprint, port: peer.port, last: peer.last, lan: peer.lan, tailnet: peer.tailnet };
-  const file = body !== null && (c.req.header("content-type") ?? "").trim().toLowerCase().startsWith("multipart/form-data");
+  // A file on its way (a reply's attachments, or one sent into a folder, docs/files-v0.md §12.8) may take long.
+  const type = (c.req.header("content-type") ?? "").trim().toLowerCase();
+  const file = body !== null && (type.startsWith("multipart/form-data") || type.startsWith("application/octet-stream"));
   const waits = file ? { headTimeoutMs: FILE_LONGEST_MS, stallTimeoutMs: FILE_STALL_MS, answerTimeoutMs: HEAD_TIMEOUT_MS }
     : { headTimeoutMs: body ? UPLOAD_HEAD_TIMEOUT_MS : HEAD_TIMEOUT_MS };
   const ask = async (fresh: boolean) => {
