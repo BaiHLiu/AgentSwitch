@@ -171,6 +171,31 @@ describe("a profile's own proxy", () => {
     await expect(pool().address("k", sealed)).rejects.toThrow(/凭据网关不可用/);
   });
 
+  it("keeps its forwarder when the proxy is changed or saved again: what already runs under it goes the new way, not nowhere", async () => {
+    // 2026-10-18 (user: 去掉直连之后终端里的Claudecode就连接不上了): the proxy saved again with its password typed anew
+    // (a new ciphertext) made a new forwarder on another port, and the terminal already running was left with a port
+    // nobody listened on.
+    const first = await upstream(), second = await upstream();
+    const exits = pool(async () => ({ value: "pw", label: "proxy" }));
+    const via = await exits.address("claude-code.keep00000", { server: first.server, username: "me", password: "enc:v1:abcdefghijklmnopqrstuvwx" });
+    // The same proxy, its password sealed again: the same forwarder, its own password and all.
+    expect(await exits.address("claude-code.keep00000", { server: first.server, username: "me", password: "enc:v1:zyxwvutsrqponmlkjihgfedc" })).toEqual(via);
+    // Another proxy: still the same forwarder; what goes through it now reaches the other one.
+    expect(await exits.address("claude-code.keep00000", { server: second.server })).toEqual(via);
+    const at = new URL(via.server);
+    const status = await new Promise<number>((ok, fail) => {
+      const req = request({ host: at.hostname, port: Number(at.port), path: "http://lookup.test/json", headers: { host: "lookup.test", "proxy-authorization": `Basic ${Buffer.from(`${via.username}:${via.password}`).toString("base64")}` } },
+        (res) => { res.resume(); ok(res.statusCode ?? 0); });
+      req.on("error", fail); req.end();
+    });
+    expect(status).toBe(200);
+    expect(second.seen).toEqual([{ url: "http://lookup.test/json", auth: null }]);
+    expect(first.seen).toEqual([]);
+    // Its proxy taken away: it stops, and nothing it is asked leaves straight.
+    await exits.drop("claude-code.keep00000");
+    await expect(new Promise((ok, fail) => { const req = request({ host: at.hostname, port: Number(at.port), path: "http://lookup.test/json" }, ok); req.on("error", fail); req.end(); })).rejects.toThrow();
+  });
+
   it("is not held to be down because a lookup will not say where it lets traffic out", async () => {
     // The first lookup limits how often an address may ask (seen for real, 2026-10-09): the next one is asked.
     const limited = await upstream((url) => (url.startsWith("http://lookup.test") ? { status: 429, body: "slow down" } : { status: 200, body: "fl=1\nip=203.0.113.9\nts=1.2\nloc=SG\n" }));
@@ -238,7 +263,7 @@ describe("a profile's own proxy", () => {
     expect(await through(`http://127.0.0.1:${site}/page`)).toEqual({ status: 200, body: "here" });
     expect((await through(`http://127.0.0.1:${own}/local-token`)).status).not.toBe(200);
     expect(seen).toEqual(["/page"]);
-    // The same forwarder as long as nothing changes; a proxy set later takes its place.
+    // The same forwarder as long as nothing changes (a proxy set later keeps it too: the test above).
     expect(await exits.address("claude-code.plain00000", null)).toEqual(via);
   });
 
