@@ -2,6 +2,8 @@
 
 > 状态：第一步已做（2026-10-16，用户看过第二稿：可以 做吧）——服务（daemon `src/files/browse.ts`、`src/api/browse.ts`），Mac 的文件栏与 `Settings › Nodes`（`packages/mac-app/Sources/AgentSwitchMac/Files/`），iPhone 的 `Files` 标签页与 `+` › `Files on Mac`（`packages/ios-app/App/Sources/Files/`）；做法与设计稿不同的几处、还没做的，见 §9 第一步下面。还没装到真机上用过。第一稿 2026-10-16 给用户看过，§10 的七件事当天拍了板，另加两条：浮在页面上的样子随时能用（§2.1），预览下面的按钮只留两个、`Show in Finder` 进右键菜单（§3.5）。演示页 `docs/design/concepts/files.html`（两种外观、Mac 与手机、授权范围，几个可点的状态）。
 
+> 第三稿（2026-10-18，待定，§12）：像 VS Code 那样新建文件、新建文件夹、改名、移到废纸篓；手机上存到手机（系统分享面板的 `Save to Files`）；手机的终端页和会话记录页能 `Show in Files`。
+
 用户（2026-10-16）：我想要给agentswitch加一个简单的文件管理功能，加到右边的侧边栏，像素风格用不一样的更适合展示文件的目录树结构，经典风格用更适合展示文件的文件夹结构，它的层级是在所有agent之上的，但是要做成右边栏的结构，从左边可以选择某个项目作为跳转接口，比如我在左边选择一个目录（或者目录下的一个项目）右键可以打开该目录的文件管理入口，然后第一次打开的时候默认打开家目录；也可以对当前打开的一个窗口加一个图标，便捷打开当前窗口所在的目录的文件管理（多窗口的时候就用多窗口的顶栏上加一个图标，单窗口的时候用app的顶栏上的图标，当然多窗口的时候app顶栏的图标也生效，就像是现在的终端/简略窗口切换一样）；文件管理的功能你找找有什么实现规范没有，可以先做个概念出来，要求目录树、列出文件、选中文件给agent、绝对目录层级展示（并且每一层都可点）、文件预览（没想好怎么做，iPhone和mac上实现应该不一样）。
 
 用户（2026-10-16，看过第一稿）：窗口窄时那个情况很好看 应该做成随时可以那样打开；（截图：预览下面 `Add to Reply` `Open` 一行、`Show in Finder` 折到第二行）这个按钮排列太不文明了 把在访达打开改成在右键菜单里吧；对于设计稿 1关 2可以 3可以 4敏感文件看就行，不过发送给agent的时候加上预警 5开一个标签页吧 6可以，并且可以设置给其他节点设置授权文件范围 7改成可以设置
@@ -18,7 +20,7 @@
 - **选中给 agent**：选一个或几个（⌘ 点、⇧ 点），`Add to Reply`、或拖到某一块上——落进那一块的回复框，是光标处的 `[File #n]` 占位符，和今天拖文件、`+` › `Files…` 是同一条路（发送时输入路径，文件不拷贝）；终端视图里拖上去照旧是输入路径。文件夹给的也是路径。**可能含凭据的文件**（`~/.ssh/`、`.env`、各 agent 的登录文件……）照常能看、能预览，给 agent 时先问一句（用户定，§4）。
 - **预览**：Mac 上选中一个文件，栏的下半是它的预览（文字、代码、图片、PDF 都由系统的 Quick Look 画；`空格` 放大成 Quick Look 的面板）；`⋯` › `Show Preview` 可以关掉，只留空格（用户定：可以设置）。预览下面只有两个按钮 `Add to Reply` `Open`，其余都在右键菜单里。手机上点一个文件推进一页：文字由应用自己显示前 64 KB，图片、PDF 和其他交给系统的 `QLPreviewController`（先下载，上限 25 MB）。
 - **手机**：第五个标签 `Files`（用户定），排在 `Terminals` 后面；终端页 `+` 菜单的 `Files on Mac` 留着，从那里选的直接落进那个终端。
-- **只读**（第一版）：列目录、看信息、预览、给 agent、`Show in Finder`、`Copy Path`、`New Terminal Here`。不新建、不改名、不删除——这些在 Finder 里做（§9）。
+- **只读**（第一版）：列目录、看信息、预览、给 agent、`Show in Finder`、`Copy Path`、`New Terminal Here`。不新建、不改名、不删除——这些在 Finder 里做（§9）。第三稿（§12，待定）提议加上新建、改名、移到废纸篓，手机上能存到手机、从会话页去它的文件夹。
 - **服务给数据**：列目录、取信息、取预览都经服务的接口（`/files…`，§7），所以手机和别的节点用的是同一份；AgentSwitch 自己存凭据的地方（与 `protected.ts` 同一张表）列出来只有名字和锁，不能打开、预览、给 agent。手机和别的节点读这台 Mac 的文件，由这台 Mac 自己的开关管，并且每个配过对的设备各有一个**授权范围**（用户定，§7.5）。
 
 ## 1. 查到的规范，用了什么
@@ -229,7 +231,7 @@
 
 1. **第一步（最小可用）**——已做（2026-10-16）。与上面写的不同、或还没做的：Mac 上拖动只拖一项（几项用 `Add to Reply`）；主窗口没有 `View` 菜单（应用在菜单栏，没有自己的菜单），浮起只在 `⋯` 里换；`Places` 只有最近去过的；`▸ N More` 只是一行字，不能点开；别的节点上文件的 `Open` 与 Quick Look 先下载再交给系统，没在两台真机上试过；手机的路径行见 §5。当时的内容：服务的 `/files`、`/files/stat`、`/files/preview`、`/files/content` 与保护规则、“可能含凭据”的表、`{path}` 附件、节点的开关与每个设备的范围、测试（禁区、敏感、链接、相对路径、范围与范围之上的层、超大文件夹、二进制判断、远程上限）；Mac 的文件栏（两种看法与经典的分栏、路径行、靠边与浮起、预览与它的开关、Quick Look、`Add to Reply` 与拖放、那张卡、右键菜单、键盘、记住状态）、三个入口（左边右键、顶栏图标、标题栏图标）、`Settings › Nodes` 的开关与范围；手机的 `Files` 标签页与 sheet（入口、往下钻、路径、预览、`Add to Reply` / `Add to Reply…`、提示框）。
 2. **第二步**：别的节点（§7.4）；Linux 节点的 `devices files`、`settings files`；文件后面标 git 的改动（`M` `A` `?`，左边列表已经有每个文件夹的 git）——“把改过的文件给 agent”会常用；当前文件夹里按名字筛选；`Follow Pane`（焦点换到哪一块，文件栏跟到哪一块的文件夹，VS Code 的 auto reveal）。
-3. **以后再说**：新建文件夹、改名、移到废纸篓；从手机往 Mac 的某个文件夹传文件；`Open With`。用户要的是“简单的”，这些在 Finder 里做。
+3. **以后再说**：新建文件夹、改名、移到废纸篓；从手机往 Mac 的某个文件夹传文件；`Open With`。用户要的是“简单的”，这些在 Finder 里做。——2026-10-18 用户要了新建、删除（像 VS Code 那样），第三稿 §12 把新建、改名、移到废纸篓提到下一轮；传文件是 §12.7 的第 4 问。
 
 ## 10. 拍板记录
 
@@ -258,3 +260,100 @@
 - Apple 开发文档：`QLPreviewView` / `QLPreviewPanel`（QuickLookUI，macOS）、`QLPreviewController`（QuickLook，iOS）、`NSOutlineView`、`NSBrowser`（分栏）、`NSPathControl`、SwiftUI `OutlineGroup`。
 - W3C WAI-ARIA Authoring Practices：[Tree View Pattern](https://www.w3.org/WAI/ARIA/apg/patterns/treeview/)。
 - VS Code Explorer 的做法（文件夹在前、Reveal、Copy Path / Copy Relative Path、拖到终端是路径）；`tree(1)` 的画法（`├── └── │`，`-a`、`-F`）。
+
+## 12. 第三稿：改文件、存到手机、从会话去它的文件夹（2026-10-18，草案，待定）
+
+用户（2026-10-18）：文件管理不太完善 最好是像在vscode里一样可以添加删除 新建文件夹 新建文件 删除文件夹删除文件 然后手机上要增加保存功能 在手机的某个session页面要有打开它所在文件夹的功能 注意要符合规范
+
+我的读法（不对请指出）：“添加”是新建；“保存功能”是**把 Mac 上的文件存到手机上**——接着 10-17 问的“预览的文件存在手机哪里、能不能清理”，不是在手机上改文件再保存。“session 页面”是终端页（正在运行的会话）和会话记录页（以前的会话）两种。
+
+这一稿把第一版的“只读”（§0、§7.3）和 §9 第 3 步里的“新建文件夹、改名、移到废纸篓”提到这一轮。
+
+### 12.1 查到的规范，用了什么
+
+| 来源 | 说的 | 这里怎么用 |
+|---|---|---|
+| VS Code Explorer（源码 `fileActions.ts`、`fileActions.contribution.ts`、`files.contribution.ts`，2026-10-18 读） | 右键菜单：`New File...` `New Folder...` 在最前，`Copy Path` `Copy Relative Path` 一组，`Rename...` 和删除在最后一组；新建是在树里**就地出一个输入框**，回车才建，名字里带 `/` 一次建出几层；名字检查：空（“A file or folder name must be provided.”）、已存在（“A file or folder **x** already exists at this location. Please choose a different name.”）、首尾有空格（只提醒）；Mac 键位：`↩` 改名、`⌘⌫` 移到废纸篓、`⌥⌘⌫` 永久删除；删除默认先问（`explorer.confirmDelete`，说明“可从废纸篓恢复”，带“Do not ask me again”），能撤销（`explorer.enableUndo`）；废纸篓用不了时问要不要永久删除；远程时多 `Download...` `Upload...` | 新建、改名、移到废纸篓、就地输入、名字检查、`/` 建几层、键位、菜单顺序照它。删除问不问：Mac 照 Apple（下一行），手机问 |
+| Apple HIG · Alerts | “Avoid displaying alerts for common, undoable actions, even when they’re destructive”——删邮件、删文件能撤销，就不弹；少见的、撤销不了的才弹。按钮用动词，不用 OK；取消一律叫 `Cancel`，不当默认按钮 | Mac 上移到废纸篓**不问**，`⌘Z` 放回；只有撤销不了的（只能永久删除）和会牵连运行中终端的才问（§12.2）。按钮 `Move to Trash` / `Cancel` |
+| Apple HIG · Undo and redo | `⌘Z` `⇧⌘Z`；能撤多步；撤销后把结果显示出来，不在眼前的要带过去；iPhone 上是摇一摇 | Mac 文件栏 `⌘Z` 撤这一栏里做过的新建、改名、移到废纸篓，多步；撤销后选中那一项并滚到它 |
+| Apple HIG · Action sheets | 对人自己发起的破坏性操作用 action sheet 确认；破坏性按钮红色、在上面；一定有 `Cancel` | 手机上移到废纸篓**先问**：废纸篓在 Mac 上，手机这边撤不回来，算“在这里撤销不了”。用系统的 confirmation dialog |
+| Apple HIG · Context menus | iOS 上破坏性的项放最后、红字；用系统的图标（Copy、Share、Delete）；**不可用的项藏起来，不是变灰**；不在右键菜单里写快捷键 | 长按 / 右键菜单里 `Move to Trash` 在最后（手机红字、`trash` 图标），`Share…` 用 `square.and.arrow.up`；动不了的项不出现；快捷键只写在 `+` 和 `⋯` 这种下拉菜单里 |
+| Apple HIG · Menus | 要再输入东西才能完成的项，名字后加 `…` | `New File…` `New Folder…` `Rename…` `Share…` 带 `…`；`Move to Trash` 不带 |
+| Apple HIG · Activity views | 用 Share 按钮打开系统的分享面板；面板里已有的动作不要另做一份（Save to Files 就在里面）；同一件事不要另开一条路 | 手机上的“保存”= `Share` → 系统分享面板里的 `Save to Files`（存到“文件”App 里自己挑的位置）、图片的 `Save Image`（存进照片）、AirDrop。不另做“保存”按钮 |
+| Apple HIG · File management | 用熟悉的菜单命令和快捷键新建，“include an Add (+) button”；自定义的文件浏览器顺着系统的文件系统 | 文件栏标题行加一个 `+`（菜单 `New File…` `New Folder…`）；手机文件夹页 `⋯` 菜单最上面 `New Folder` `New File` |
+| Finder | `⇧⌘N` 新建文件夹；`↩` 改名，只选中主名（不含扩展名）；`⌘⌫` 移到废纸篓，不问；`⌘Z` 放回原处 | 键位同 Finder（与 VS Code 的 Mac 键位一致）；改名的选中范围照它 |
+| iOS“文件”App | 文件夹页 `⋯` 里 `New Folder`；长按一项：`Share`、`Rename`……`Delete` 在最后、红色；`Select` 后底栏有分享和删除 | 手机照它摆（§12.3） |
+
+### 12.2 Mac 的文件栏
+
+- **新建**：标题行 `⌂` 后面加 `+`，菜单 `New File…  ⌥⌘N`、`New Folder…  ⇧⌘N`（下拉菜单里写快捷键）。右键一个文件夹也有这两项，放在 `Add to Reply` `Open` 下面一组（VS Code 放在最前；这里最常用的还是给 agent，Apple 说常用的放前面）；列表空白处右键是这一层的菜单，这两项在最前。建在哪：右键的那个文件夹（文件夹看法里先进到它）；用 `+` 或键时，像素的树照 VS Code——选中的是文件夹就建在它里面，是文件就建在它旁边，没选中就建在当前文件夹；经典的文件夹看法照 Finder，建在当前这一层。
+  - **就地输入**：像素的树里那个文件夹展开，第一行出一个输入框（前面是 `▸` 或文件的位置，名字后面跟着 `/` 表示文件夹）；经典的文件夹看法里在这一层最上面出一行（文件夹或文件图标加输入框）。
+  - 一边输一边检查，出错时输入框下一行红字，`↩` 不响：`请输入名称。`、`此位置已有“src”。请换一个名称。`、`名称不能是“.”或“..”。`；首尾有空格是琥珀色的一行 `名称前后有空格。`，照样能建（VS Code 也只提醒）。
+  - `↩` 建，`esc` 取消；点到别处时名字有效就建、无效就取消（VS Code 的做法）。名字里带 `/` 一次建几层（`src/utils/date.ts`：缺的 `src/`、`utils/` 一并建）。
+  - 建好以后选中它（文件夹不进去）；新文件的预览写“此文件为空。”，`Open` 交给默认程序。以 `.` 开头而隐藏文件没显示时照样建，底部一行“已创建“.env”。它是隐藏文件，可在 ⋯ › Show Hidden Files 中显示。”
+- **改名**：右键 `Rename…`，或选中后按 `↩`。名字原地变成输入框，选中主名（不含扩展名，文件夹选全名），检查同上；`↩` 改，`esc` 不改。
+  - 第一步把 `↩` 定成“打开”，是因为当时没有改名（§3.4）；现在照 Finder 和 VS Code 改成改名，打开是双击、`⌘↓`（Finder）或 `⌘O`。
+- **移到废纸篓**：右键最后一项 `Move to Trash`，或 `⌘⌫`；多选一起移。**不问**（Apple 的规矩）；底部那一行几秒内写“已将“notes.md”移到废纸篓。⌘Z 可放回。”；`⌘Z` 放回原处，选中并滚到它。
+  - 要问的只有两种：
+    - **只能永久删除**（这个盘放不进废纸篓：一些网络盘、外置盘）：“无法将“x”移到废纸篓。要永久删除吗？此操作无法撤销。”`[ Cancel ]` `[ Delete Permanently ]`——VS Code 的同一问。
+    - **有终端正在里面运行的文件夹**（就是它的文件夹，或在它下面）：“终端“lumen”正在此文件夹中运行。移到废纸篓后，其中的 agent 仍会使用原来的路径，可能出错。”`[ Cancel ]` `[ Move to Trash ]`。改名也问同一种，最后一句换成“改名后……”、按钮 `Rename`。
+  - **动不了的**，菜单里不出现，按键不响，底部一行说为什么：AgentSwitch 自己的禁区（§7.3），**和装着禁区的文件夹**——家目录、`~/Library`、`~/Library/Application Support` 这一串，移走它们就把 AgentSwitch 的凭据一起搬走了；`/` 和系统的顶层文件夹（系统本来也不让）。说明：“此文件夹中有 AgentSwitch 的凭据，不能在这里改名或移到废纸篓。”
+  - 不做永久删除（`⌥⌘⌫`）：要清就去 Mac 的废纸篓里清。
+- **撤销**：`⌘Z` 撤这一栏里做过的新建（把新建的移到废纸篓）、改名（改回去）、移到废纸篓（放回原处），`⇧⌘Z` 重做；按节点各记一串，应用退出就清。原处已有同名的就不放回，说明“原位置已有“x”，未放回。可在废纸篓中手动放回。”
+- **这一轮不做**：剪切、拷贝、粘贴，拖着移动，`Duplicate`，`Open With`。
+- **右键菜单顺手改的**（Apple 的右键菜单规范）：不写快捷键；用不了的项不出现，而不是变灰——`Copy Relative Path` 只在它在焦点那一块终端的文件夹下面时才有，没有回复框的页面上没有 `Add to Reply`。第一步的原生菜单本来就没写快捷键，第二稿的演示写了，这一稿去掉。
+- **别的节点**：同样的菜单和键，经那个节点的服务做；它的禁区它自己判断。窗口在别的节点上时，`⌘Z` 撤的也是那个节点上的。
+
+### 12.3 iPhone
+
+- **新建**：文件夹页导航栏 `⋯` 最上面一组 `New Folder`、`New File`（`folder.badge.plus`、`doc.badge.plus`），下面照旧是 `Show Hidden Files`、`Sort By`、`Home`——iOS“文件”的摆法。点了是系统的输入框（同终端页的 `Rename`）：标题 `New Folder`，输入框，`Cancel` / `Create`；名字空时 `Create` 是灰的；已有同名的等错误，再弹一次，说明同 Mac，输入的名字留着改。带 `/` 同样一次建几层。建好后列表滚到它。
+- **长按一项**（文件列表现在还没有长按菜单）：
+  - 文件：`Add to Reply…`（sheet 里是 `Add to Reply`）、`Share…`、`Copy Path`；`Rename…`；`Move to Trash`（最后、红字）。
+  - 文件夹：`Add to Reply…`、`Copy Path`；`Rename…`；`Move to Trash`。文件夹没有 `Share…`（要打包，不做）。
+  - 动不了的照 Mac：那几项不出现。
+- **`Select` 以后的底栏**（标签页里）：选了几项写在导航栏标题下面的小字里（`2 Selected`，原来的 `@ Mac mini` 的位置）；底栏左边两个图标按钮——分享（选中里有文件夹时不可用）、`trash`（移到废纸篓），右边 `Add to Reply…`。从终端 `+` 进来的 sheet 照旧只有 `Add to Reply (n)`：那里是给这个终端挑文件。
+- **预览页**：导航栏右边一个 `Share` 按钮（`square.and.arrow.up`）和 `⋯`（`Rename…`、`Move to Trash`）；底部照旧 `Add to Reply…` `Copy Path`。
+- **移到废纸篓先问**（系统的 confirmation dialog）：“将“notes.md”移到 Mac mini 的废纸篓？”（几项时“将 3 项移到 Mac mini 的废纸篓？”），说明“可在 Mac mini 的废纸篓中恢复。”；`Move to Trash`（红，在上）、`Cancel`。只能永久删除、或有终端在里面运行时，说明换成 Mac 上那两句，按钮相应换成 `Delete Permanently` 或照旧。在预览页里移走的，回到上一层。手机上不做撤销。
+- **改名**：系统的输入框，标题 `Rename`，文字是原名；有终端在里面运行时先问（同 Mac）。
+- **存到手机（“保存”）**：`Share…`（或预览页的 `Share` 按钮）先把整个文件下到应用的临时目录（同 `Open Preview` 的进度条，可取消），再开系统的分享面板：
+  - `Save to Files`：存到“文件”App 里自己挑的位置（“我的 iPhone”里的某个文件夹、iCloud 云盘）。存在哪由你挑，在“文件”App 里看得到、删得掉——这回答了 10-17 的“存在哪、能不能清理”。
+  - 图片还有 `Save Image`（存进照片），以及 AirDrop、发到别的 App。
+  - 上限：分享放到 200 MB（预览仍是 25 MB；服务的 `/files/content` 对手机的上限跟着放宽）；超过的说明“文件超过 200 MB，无法在手机上分享。”
+- **应用自己的缓存**（10-17 那个问题）：有了“存到手机”这条明路，预览和分享下载的副本都只是临时的——Quick Look 或分享面板一关就删（当时的方案 1）；启动时照旧清一遍。设置里不用再有 `Clear`。
+
+### 12.4 从会话去它的文件夹（手机）
+
+名字照 Mac 左边列表的右键菜单：`Show in Files`（`folder` 图标）。做的事同终端行长按的那一项（已有）：切到 `Files` 标签，到那个文件夹；原来的页面留在 `Terminals` 标签里，切回去还在。
+
+- **终端页**：导航栏 `⋯` 里加 `Show in Files`，单独一组，放在 `Rename`、`Close` 上面。到这个终端**此刻**所在的文件夹（`workdir`：agent 换了文件夹就是新的那个）。
+- **会话记录页**（以前的会话，只读、底部 `Resume`）：导航栏右边加 `⋯`，里面 `Show in Files`，到会话的文件夹。文件夹已经不在时到它还在的最近一层，上面一行说明“此会话的文件夹已不在 Mac mini 上，已打开它的上一层。”
+- **终端列表长按会话行**的菜单（`Resume`、`Resume As`、`Delete`）加 `Show in Files`，与 Mac 上会话的右键菜单一致。
+
+### 12.5 服务
+
+| 接口 | 做什么 |
+|---|---|
+| `POST /files/folder` `{path}` | 新建文件夹；`path` 是新文件夹的绝对路径，中间缺的层一并建。已有回 409 `exists` |
+| `POST /files/file` `{path}` | 新建空文件，中间缺的层一并建。已有回 409 `exists` |
+| `POST /files/rename` `{path, name}` | 在同一个文件夹里改名；`name` 不含 `/`。已有回 409 `exists` |
+| `POST /files/trash` `{paths, permanent?, force?}` | 移到废纸篓，回 `{moved: [{path, trashed}]}`（`trashed` 是废纸篓里的位置，撤销用）。放不进废纸篓回 409 `no-trash`，问过以后带 `permanent: true`；有终端在里面运行回 409 `in-use {terminals}`，问过以后带 `force: true`（改名同样带 `force`） |
+| `POST /files/restore` `{trashed, path}` | 撤销移到废纸篓：放回原处。原处已有回 409 `exists` |
+
+- **检查**：一律先 `realpath`（新建的看它的上一层）；禁区、装着禁区的文件夹、`/` 与系统顶层回 403 `locked`；名字空、`.`、`..`、含 NUL 回 400 `bad-name`；远程调用受 §7.5 的开关和范围管——范围外回 403 `scope`，读得到的地方才改得了。
+- **Mac 上移到废纸篓**：用 `FileManager.trashItem`（应用带一个小工具给服务调，它说出放到了废纸篓的哪里，撤销要这个）。系统自带的 `/usr/bin/trash` 不用：它从 macOS 15 才有（应用最低支持 14），也不说放到了哪。**Linux 节点**照 freedesktop 的废纸篓规范（`~/.local/share/Trash/files` 加 `.trashinfo`）自己搬；同一个盘上放不进的回 `no-trash`。
+- **远程改文件的总闸**：`Settings › Nodes` 的 `This Mac` 一组，`Paired Nodes May Read Files` 下面加 `Paired Nodes May Change Files`，默认开；读的开关关着时它也灰。关着时配对的设备调这几个接口回 403 `changes-off`，它们那边那几项不出现。默认开的理由：配对的设备本来就能在终端里以用户身份做这些（mesh-v0 §6 第 1 条），这个开关是“文件栏里不许改”的总闸，不是沙箱。
+- **审计**：每次改动（本机和远程）记一行：设备、动作、路径，不记内容。
+- 同步更新 `packages/secret-gate/BOUNDARY.md`：服务第一次有写文件的接口。
+
+### 12.6 演示页
+
+`docs/design/concepts/files.html` 加上这一稿的状态：Mac 上 `+` 菜单、就地新建（含出错的那一行）、右键的 `Rename…` / `Move to Trash`、移走以后底部那一行和 `⌘Z`、有终端在里面运行时的那一问；手机上 `⋯` 的 `New Folder` 和输入框、长按菜单、移到废纸篓的确认、`Select` 底栏的两个图标、`Share` 和分享面板、终端页与会话记录页的 `Show in Files`；`Settings › Nodes` 的新开关。
+
+### 12.7 要你定的
+
+1. **Mac 上移到废纸篓问不问**：照 Apple 和 Finder，不问，`⌘Z` 放回（我建议这样）；还是照 VS Code，每次都问（可勾“不再询问”）。手机上两种都是先问。
+2. **改名**：你没提，VS Code 和 Finder 都有，新建时起错了名字也要靠它改——我建议加上。连带着 `↩` 从“打开”改成“改名”（同 Finder、VS Code），打开用双击、`⌘↓`、`⌘O`。
+3. **“保存”的读法**：系统分享面板里的 `Save to Files` / `Save Image`（Apple 的做法，我建议这样）。如果你要的是在手机上改文件再保存，告诉我。
+4. **从手机往 Mac 传文件**（VS Code 的 `Upload…`；“添加”是不是这个意思）：这一轮做不做。
+
+这一稿顺手定的，不合适再改：远程改文件的总闸默认开；手机上不做撤销（先问代替）；这一轮不做剪切、拷贝、粘贴、拖着移动、`Duplicate`；分享的上限 200 MB；预览下载的副本用完就删。

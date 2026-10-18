@@ -489,6 +489,70 @@ code.c { font: 12px var(--code); background: color-mix(in srgb, var(--ink) 8%, t
 .pnote .btn, .pnote .cbtn { margin-top: 10px; }
 .pfoot2 { padding: 8px 14px; font: 12px var(--ui); color: var(--ink3); border-top: 1px solid var(--ink4); }
 
+/* ---------- third draft (files-v0 §12): new, rename, to the Trash; saving to the phone; a session's folder ---------- */
+.ctl .v3 { font: 11px var(--mono); color: #77746e; letter-spacing: .1em; align-self: center; margin-right: 2px; }
+/* the box a name is typed in, in place */
+.fin { font: inherit; font-weight: 400; color: var(--ink); background: var(--bg); border: 1px solid var(--ink); padding: 0 3px; height: 18px; width: 100%; min-width: 0; outline: none; }
+.fin::selection { background: var(--signal); color: #000; }
+.classic .fin { border: 0; border-radius: 4px; height: 21px; padding: 0 5px; background: var(--card); box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--accent) 65%, transparent); }
+.classic .fin::selection { background: color-mix(in srgb, var(--accent) 40%, transparent); color: inherit; }
+.fr.edit .nm, .cr.edit .nm, .ct.edit .nm { overflow: visible; padding-right: 2px; }
+.fr.edit:hover, .cr.edit:hover, .ct.edit:hover { background: none; }
+.cr.edit.sel, .ct.edit.sel { background: none; color: inherit; }
+.ferr { font: 11.5px/1.45 var(--ui); color: var(--red); padding: 1px 12px 4px; }
+.ferr.warn { color: var(--amber); }
+.ferr:empty { display: none; }
+/* the line under the list after a change; the column's bottom holds it and the preview */
+.fbot { min-height: 0; display: flex; flex-direction: column; }
+.fnote { border-top: 1px solid var(--ink4); padding: 6px 12px; font: 11.5px/1.5 var(--ui); color: var(--ink2); }
+/* the one box the Mac asks with: a terminal runs in the folder */
+.warn.dlg { position: absolute; left: calc(50% + 100px); top: 64px; transform: translateX(-50%); width: 400px; z-index: 10; margin: 0; }
+/* the phone: the system's menus, the share sheet, the confirmation, the select bar's buttons */
+.pmenu.ctxm { left: 22px; bottom: auto; width: 240px; z-index: 6; font-size: 14.5px; }
+.pmenu.ctxm .it { padding: 9px 14px; gap: 12px; }
+.pmenu .it.red { color: #ff453a; }
+.light .pmenu .it.red { color: #e0352b; }
+.pmenu .it .li { opacity: .9; }
+.pmenu .gap { height: 7px; background: rgba(0,0,0,.28); }
+.light .pmenu .gap { background: rgba(0,0,0,.08); }
+.dimmer.blur { z-index: 4; background: rgba(0,0,0,.35); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); }
+.plift { position: absolute; left: 12px; right: 12px; top: 148px; z-index: 5; background: var(--bg); border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+.plift .pr { border-bottom: 0; }
+.palert .pin { display: block; width: 100%; margin-top: 12px; font: 14px var(--ui); padding: 6px 8px; border-radius: 7px; border: .5px solid rgba(127,127,127,.5); background: rgba(127,127,127,.14); color: inherit; outline: none; }
+.palert .bt button:disabled { opacity: .4; cursor: default; }
+.palert .bt.one { grid-template-columns: 1fr; }
+.palert .bt.one button { font-weight: 600; border: 0; }
+.asheet { position: absolute; left: 8px; right: 8px; bottom: 22px; z-index: 6; display: grid; gap: 8px; font: 17px var(--ui); }
+.asheet .g { border-radius: 14px; background: rgba(44,44,46,.97); overflow: hidden; text-align: center; }
+.light .asheet .g { background: rgba(250,250,250,.98); }
+.asheet .hd { padding: 12px 16px; font: 12.5px/1.45 var(--ui); color: #8e8e93; border-bottom: .5px solid rgba(127,127,127,.35); }
+.asheet .hd b { display: block; font-weight: 600; margin-bottom: 2px; }
+.asheet button { display: block; width: 100%; padding: 14px; color: #0a84ff; }
+.asheet button.red { color: #ff453a; }
+.asheet button.cancel { font-weight: 600; }
+.share { position: absolute; left: 0; right: 0; bottom: 0; top: 168px; z-index: 6; border-radius: 14px 14px 0 0; background: rgba(28,28,30,.985); color: #f2f2f4; display: flex; flex-direction: column; font: 14px var(--ui); box-shadow: 0 -10px 30px rgba(0,0,0,.4); }
+.light .share { background: rgba(242,242,247,.99); color: #1c1c1e; }
+.share .sh { display: flex; gap: 10px; align-items: center; padding: 14px 14px 12px; border-bottom: .5px solid rgba(127,127,127,.3); }
+.share .fi { width: 40px; height: 40px; border-radius: 9px; background: rgba(127,127,127,.22); display: grid; place-items: center; flex: none; }
+.share .tt { min-width: 0; }
+.share .tt b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.share .tt small { color: #8e8e93; font-size: 12px; }
+.share .x { margin-left: auto; width: 28px; height: 28px; border-radius: 50%; background: rgba(127,127,127,.25); display: grid; place-items: center; flex: none; }
+.share .tg { display: flex; gap: 12px; padding: 14px; }
+.share .tg span { display: grid; justify-items: center; gap: 5px; font-size: 11px; color: #8e8e93; width: 58px; }
+.share .tg i { width: 54px; height: 54px; border-radius: 14px; background: rgba(127,127,127,.22); display: grid; place-items: center; color: inherit; }
+.share .ac { margin: 4px 14px; border-radius: 11px; background: rgba(127,127,127,.16); overflow: hidden; }
+.share .ac .it { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: .5px solid rgba(127,127,127,.25); }
+.share .ac .it:last-child { border-bottom: 0; }
+.share .ac .it.hi { background: rgba(127,127,127,.25); }
+.pnav .nb.r .ib2 { display: inline-grid; vertical-align: middle; cursor: pointer; }
+.pnav .nb.r .more { cursor: pointer; }
+.pbar .icos { display: flex; gap: 6px; }
+.pbar .ico { width: 34px; height: 30px; display: grid; place-items: center; color: var(--ink); }
+.pbar .ico:disabled { color: var(--ink3); cursor: default; }
+.classic .pbar .ico { color: var(--accent); }
+.classic .pbar .ico:disabled { color: var(--ink3); }
+
 /* ---------- the notes under the demos ---------- */
 .docs { max-width: 1240px; margin: 0 auto; padding: 0 16px; display: flex; flex-direction: column; gap: 14px; color: #a9a6a0; font-size: 12.5px; line-height: 1.75; }
 .docs ol, .docs ul { margin: 0; padding-left: 1.4em; max-width: 112ch; }
@@ -505,6 +569,7 @@ code.c { font: 12px var(--code); background: color-mix(in srgb, var(--ink) 8%, t
 
 <div class="top">
   <h1>Files · 主窗口右边的文件栏</h1>
+  <p class="lede"><b>第三稿（2026-10-18，files-v0 §12，待定）</b>：像 VS Code 那样<b>新建文件、新建文件夹、改名、移到废纸篓</b>（Mac ⑪–⑯：标题行的 <code>+</code>、就地起名、右键、<code>↩</code> 改名、<code>⌘⌫</code> 移到废纸篓不问、<code>⌘Z</code> 放回；只有终端在里面运行时问）；手机上<b>存到手机</b>（预览页的 <code>Share</code> → 系统分享面板的 <code>Save to Files</code>）、长按菜单、<code>⋯</code> 新建、移到废纸篓先问；终端页和会话记录页的 <code>⋯</code> 里 <code>Show in Files</code>（手机 ⑨–⑭）；<code>Settings › Nodes</code> 多一个改文件的总闸。下面带“第三稿”的那两排按钮是这一稿的状态，演示里都能真的建、改、移走（每次点按钮从头来）。</p>
   <p class="lede">配 <code>docs/files-v0.md</code>（第二稿：第一稿的七件事已拍板）。文件栏是<b>窗口自己的一栏</b>，在所有终端之上：换终端、换页、分屏它都在；默认关着，<b>靠边</b>或<b>浮起</b>（<code>⋯</code> › <code>Float Over Page</code>）。像素外观是 <code>tree</code> 式的目录树，经典外观是 Finder 式的文件夹（一次一层，拉宽到 460 点以上是分栏）；顶上是绝对路径，每一层可点。入口有三个：左边列表的右键 <code>Show in Files</code>、顶栏的文件夹图标（焦点那一块）、分屏时每块标题栏上的同一个图标。选中的文件 <code>Add to Reply</code> 或拖到某一块，落成回复框里的 <code>[File #n]</code>；可能含密码的文件先问一句。预览下面只有两个按钮，其余在右键菜单里；预览可以在 <code>⋯</code> 里关掉。手机多一个 <code>Files</code> 标签页；别的设备能读到哪些文件，在 <code>Settings › Nodes</code> 里给每个设备定。下面的窗口和手机都能点：树的 <code>▸</code>、行（⌘ 点多选、⇧ 点连选、双击文件夹进入、右键）、路径的每一层、<code>⌂</code>、<code>⋯</code>、<code>×</code>、顶栏和标题栏的文件夹图标、左边列表的右键；焦点在文件列表里时 <code>↑ ↓ ← →</code>、<code>空格</code>（Quick Look）、<code>esc</code>；文件栏的左边缘能拖。路径与文件都是编的。</p>
   <div class="tools">
     <span>外观 <span class="seg" data-opt="look"><button data-v="pixel" class="on">Pixel</button><button data-v="classic">Classic</button></span></span>
@@ -519,6 +584,9 @@ code.c { font: 12px var(--code); background: color-mix(in srgb, var(--ink) 8%, t
     <button data-mac="preview">④ 选中看预览</button><button data-mac="ctx">⑤ 右键一项</button><button data-mac="reply">⑥ 两个给 agent</button><button data-mac="sensitive">⑦ 可能含密码的文件</button>
     <button data-mac="ql">⑧ 空格 Quick Look</button><button data-mac="float">⑨ 浮起</button><button data-mac="wide">⑩ 拉宽</button>
   </div>
+  <div class="ctl" id="ctlMac3">
+    <span class="v3">第三稿</span><button data-mac="newmenu">⑪ + 新建</button><button data-mac="newin">⑫ 就地起名</button><button data-mac="folderctx">⑬ 右键文件夹</button><button data-mac="rename">⑭ 改名 ↩</button><button data-mac="trash">⑮ 移到废纸篓 · ⌘Z</button><button data-mac="inuse">⑯ 有终端在里面运行</button>
+  </div>
   <div class="fit" id="fitMac"><div class="scaled"><div class="win" id="win"></div></div></div>
 </div>
 <div class="cap" id="capMac"></div>
@@ -528,6 +596,9 @@ code.c { font: 12px var(--code); background: color-mix(in srgb, var(--ink) 8%, t
   <div class="ctl" id="ctlPhone">
     <button data-ph="browse" class="on">① + 菜单</button><button data-ph="open">② 打开在终端的文件夹</button><button data-ph="down">③ 往下一层</button><button data-ph="preview">④ 预览</button><button data-ph="select">⑤ Select 两项</button><button data-ph="reply">⑥ 回到回复框</button>
     <button data-ph="tab">⑦ Files 标签页</button><button data-ph="sensitive">⑧ 可能含密码的文件</button>
+  </div>
+  <div class="ctl" id="ctlPhone3">
+    <span class="v3">第三稿</span><button data-ph="pnew">⑨ ⋯ 新建文件夹</button><button data-ph="plong">⑩ 长按 · 移到废纸篓</button><button data-ph="psel">⑪ Select 的底栏</button><button data-ph="pshare">⑫ 存到手机</button><button data-ph="pterm">⑬ 终端页 Show in Files</button><button data-ph="psess">⑭ 会话记录页 Show in Files</button>
   </div>
   <div class="phones" id="phones"></div>
 </div>
@@ -549,6 +620,12 @@ code.c { font: 12px var(--code); background: color-mix(in srgb, var(--ink) 8%, t
     <tr><td>WAI-ARIA APG · Tree View</td><td>↑↓ 移动，→ 展开 / 进子项，← 收起 / 回上层，Home / End，打字跳转，<code>*</code> 展开同层；多选空格、⇧↑↓</td><td>键盘照它；网页版标 <code>tree / treeitem / group</code>、<code>aria-expanded</code>、<code>aria-selected</code></td></tr>
     <tr><td>VS Code Explorer</td><td>文件夹在前；Reveal、Copy Path / Copy Relative Path、Reveal in Finder；拖进聊天或终端是引用 / 路径</td><td>文件夹在前；右键 <code>Copy Path</code>、<code>Copy Relative Path</code>、<code>Show in Finder</code>、<code>New Terminal Here</code>；拖到回复框是占位符、拖到终端是路径</td></tr>
     <tr><td><code>tree</code>、iOS“文件”</td><td><code>├── └── │</code>，<code>-a</code> 才列隐藏文件；iOS 一次一层往下钻，长按返回键列出上面各层</td><td>像素用两格树线 <code>├─ └─ │</code>、文件夹加 <code>/</code>，隐藏文件默认不列；手机两种外观都是往下钻</td></tr>
+    <tr><td colspan="3" style="color:#77746e; font:11px var(--mono); letter-spacing:.08em">第三稿（2026-10-18）</td></tr>
+    <tr><td>VS Code Explorer（源码）</td><td>右键 <code>New File...</code> <code>New Folder...</code> 在前、<code>Rename...</code> 和删除在最后；树里就地出输入框，回车才建，<code>/</code> 一次建几层；名字为空、已存在是错，首尾空格只提醒；Mac 上 <code>↩</code> 改名、<code>⌘⌫</code> 移到废纸篓；删除默认问、能撤销；远程有 <code>Download...</code> <code>Upload...</code></td><td>新建、改名、移到废纸篓、就地起名、名字检查、键位都照它（⑪–⑮）；删除问不问照 Apple（下一行）</td></tr>
+    <tr><td>HIG · Alerts、Undo and redo</td><td>能撤销的删除不弹框，撤销不了的、少见的才弹；<code>⌘Z</code> <code>⇧⌘Z</code> 多步，撤销后把结果显示出来</td><td>Mac 上移到废纸篓不问、底部一行说明、<code>⌘Z</code> 放回并选中（⑮）；只有终端在里面运行（⑯）和只能永久删除时问</td></tr>
+    <tr><td>HIG · Action sheets、Context menus、Menus</td><td>自己发起的破坏性操作用 action sheet 确认，红色在上、Cancel 另一块；右键菜单里破坏性的在最后、红字，用不了的项藏起来，不写快捷键；要再输入的项加 <code>…</code></td><td>手机上移到废纸篓先问（废纸篓在 Mac 上，手机撤不回来；手机 ⑩ ⑪）；菜单里 <code>Move to Trash</code> 最后；<code>New File…</code> <code>Rename…</code> <code>Share…</code> 带 <code>…</code>；第二稿演示右键菜单里的快捷键去掉（⑬）</td></tr>
+    <tr><td>HIG · Activity views、File management</td><td>用 Share 按钮开系统的分享面板，面板里有的（Save to Files）不另做；新建要有一个 Add (+) 按钮</td><td>手机的“保存”是 <code>Share</code> → <code>Save to Files</code> / <code>Save Image</code>（手机 ⑫）；文件栏标题行一个 <code>+</code>（⑪）</td></tr>
+    <tr><td>Finder、iOS“文件”</td><td><code>⇧⌘N</code> 新建文件夹、<code>↩</code> 改名只选主名、<code>⌘⌫</code> 不问；iOS 文件夹页 <code>⋯</code> 里 New Folder，长按菜单 Delete 在最后，Select 后底栏有分享和删除</td><td>键位同 Finder；手机照 iOS“文件”摆（⑨–⑪）</td></tr>
   </table></div>
 </div>
 
@@ -563,6 +640,14 @@ code.c { font: 12px var(--code); background: color-mix(in srgb, var(--ink) 8%, t
   <li><b>预览可以设置：</b><code>⋯</code> › <code>Show Preview</code>，关了只在空格时看。</li>
 </ol>
 <p style="margin:0">另两条：浮起随时能用（⑨，<code>⋯</code> › <code>Float Over Page</code>）；预览下面只留 <code>Add to Reply</code> <code>Open</code>，<code>Show in Finder</code> 在右键菜单里（⑤）。这一稿顺手定的：默认靠边；浮起时点页面不收起；那一问在加进回复框时问一次，发送时不再问；新配对的设备默认 <code>Home Folder</code>。</p></div>
+<div class="sec">6 · 第三稿要你定的（files-v0 §12.7）</div>
+<div class="docs"><ol>
+  <li><b>Mac 上移到废纸篓问不问：</b>照 Apple 和 Finder 不问、<code>⌘Z</code> 放回（我建议，⑮）；还是照 VS Code 每次都问（可勾“不再询问”）。手机上两种都先问。</li>
+  <li><b>改名：</b>你没提，VS Code 和 Finder 都有，新建时起错名字也靠它——我建议加上（⑭）。连带 <code>↩</code> 从“打开”改成“改名”，打开用双击、<code>⌘↓</code>、<code>⌘O</code>。</li>
+  <li><b>“保存”的读法：</b>系统分享面板里的 <code>Save to Files</code> / <code>Save Image</code>（我建议，手机 ⑫）。如果要的是在手机上改文件再保存，告诉我。</li>
+  <li><b>从手机往 Mac 传文件</b>（VS Code 的 <code>Upload…</code>；“添加”是不是这个意思）：这一轮做不做。</li>
+</ol>
+<p style="margin:0">顺手定的：远程改文件的总闸 <code>Paired Nodes May Change Files</code> 默认开（第 3 节）；手机上不做撤销（先问代替）；这一轮不做剪切、拷贝、粘贴、拖着移动、<code>Duplicate</code>；分享上限 200 MB；预览下载的副本用完就删。</p></div>
 <div style="height:60px"></div>
 
 <script src="pixel.js"></script>
@@ -575,18 +660,21 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
 const attr = (s) => esc(s).replace(/'/g, "&#39;");
 
 // ---------- the made-up file system ----------
+// It can be changed now (third draft, files-v0 §12): each preset starts again from the original.
 const HOME = D.HOME;
+const PRISTINE = structuredClone(D.root);
 const byPath = new Map();
-(function index(node, path) {
-  node.path = path;
-  byPath.set(path, node);
-  for (const c of node.children ?? []) index(c, `${path}/${c.name}`);
-})(D.root, HOME);
-for (const [p, names] of Object.entries(D.ABOVE)) {
-  if (!byPath.has(p)) byPath.set(p, { name: p === "/" ? "" : p.split("/").pop(), kind: "dir", path: p, children: [] });
-  const dir = byPath.get(p);
-  dir.children = names.map((n) => { const cp = (p === "/" ? "" : p) + "/" + n; return byPath.get(cp) ?? (byPath.set(cp, { name: n, kind: "dir", path: cp, children: [], mtime: "9/12" }), byPath.get(cp)); });
+const index = (n, path) => { n.path = path; byPath.set(path, n); for (const c of n.children ?? []) index(c, `${path}/${c.name}`); };
+function buildTree() {
+  byPath.clear();
+  index(structuredClone(PRISTINE), HOME);
+  for (const [p, names] of Object.entries(D.ABOVE)) {
+    if (!byPath.has(p)) byPath.set(p, { name: p === "/" ? "" : p.split("/").pop(), kind: "dir", path: p, children: [] });
+    const dir = byPath.get(p);
+    dir.children = names.map((n) => { const cp = (p === "/" ? "" : p) + "/" + n; return byPath.get(cp) ?? (byPath.set(cp, { name: n, kind: "dir", path: cp, children: [], mtime: "9/12" }), byPath.get(cp)); });
+  }
 }
+buildTree();
 const node = (p) => byPath.get(p) ?? null;
 const resolve = (n) => n && n.kind === "link" ? node(n.target) : n;
 const isDir = (n) => { const r = resolve(n); return !!r && r.kind === "dir"; };
@@ -621,9 +709,11 @@ const S = {
   open: true, root: HOME, expanded: new Set(), sel: [], anchor: null, view: null, hidden: false, back: [], fwd: [],
   panes: 1, focus: 0, viewOf: ["simple", "terminal"], reply: [[], []], typed: ["", ""],
   menu: null, ql: false, narrow: false, sideW: 300, float: false, preview: true, warn: null,
+  // third draft: a name being typed in place, the box that asks, the line under the list, what ⌘Z undoes
+  edit: null, dlg: null, note: null, undo: [], redo: [],
   ph: { step: "browse", root: HOME + "/Projects/lumen", expanded: new Set(), select: false, sel: [], preview: null, added: [] },
   // Settings › Nodes on the Mac mini (files-v0 §7.5): its own switch, and what each paired device may read.
-  set: { read: true, menu: null, mbp: { mode: "home", folders: [] }, phone: { mode: "folders", folders: [HOME + "/Projects/lumen", HOME + "/Documents"] }, root: HOME },
+  set: { read: true, change: true, menu: null, mbp: { mode: "home", folders: [] }, phone: { mode: "folders", folders: [HOME + "/Projects/lumen", HOME + "/Documents"] }, root: HOME },
 };
 // Files that may hold a password (files-v0 §7.3): by path and name only, the contents are not read.
 const isSensitive = (p) => {
@@ -633,6 +723,150 @@ const isSensitive = (p) => {
   if (name === ".env" || (/^\.env\./.test(name) && !/^\.env\.(example|sample|template)$/.test(name))) return true;
   return /\.(pem|key|p12|pfx|keychain-db)$/.test(name) || /^id_(rsa|ecdsa|ed25519)$/.test(name);
 };
+
+// ---------- changing files (files-v0 §12): new, rename, to the Trash, and back ----------
+const LANG = { ts: "TypeScript", tsx: "TypeScript JSX", js: "JavaScript", md: "Markdown", json: "JSON", sql: "SQL" };
+// Where a terminal runs now (the list's terminals): a folder holding one is asked about before it moves.
+const RUNNING = D.LIST.flatMap((g) => g.rows.filter((r) => r.kind === "term").map((r) => ({ name: r.name, at: r.workdir ?? g.cwd })));
+const runsIn = (p) => RUNNING.find((t) => t.at === p || t.at.startsWith(p + "/")) ?? null;
+// What cannot be renamed or moved here: outside home, AgentSwitch's own places, and the folders holding them.
+const fixed = (p) => !p.startsWith(HOME + "/") || !!node(p)?.locked || [...byPath.keys()].some((k) => k.startsWith(p + "/") && byPath.get(k).locked);
+/** A name typed for a new item in `dir` (or for `path`, renamed): what is wrong with it, or what to mind. */
+function checkName(dir, value, { renaming = null } = {}) {
+  const name = value.trim();
+  if (!name) return { error: "请输入名称。" };
+  if (renaming && name.includes("/")) return { error: "名称不能包含“/”。" };
+  const segs = name.split("/").filter(Boolean);
+  if (segs.some((x) => x === "." || x === "..")) return { error: "名称不能是“.”或“..”。" };
+  const full = (dir === "/" ? "" : dir) + "/" + segs.join("/");
+  if (full !== renaming && node(full)) return { error: `此位置已有“${segs.join("/")}”。请换一个名称。` };
+  if (value !== value.trim()) return { warn: "名称前后有空格。" };
+  return {};
+}
+const unindex = (p) => { for (const k of [...byPath.keys()]) if (k === p || k.startsWith(p + "/")) byPath.delete(k); };
+/** New folders, or a file at the end; `a/b/c.ts` makes the folders on the way. Returns the new path and the topmost
+ *  new one (what undo takes away). */
+function makeItem(dir, value, kind) {
+  const segs = value.trim().split("/").filter(Boolean);
+  let parent = node(dir), path = dir === "/" ? "" : dir, top = null;
+  segs.forEach((x, i) => {
+    path += "/" + x;
+    let n = node(path);
+    if (!n) {
+      const ext = x.includes(".") ? x.split(".").pop() : "";
+      n = i === segs.length - 1 && kind === "file"
+        ? { name: x, kind: "file", size: 0, mtime: "Now", type: "text", text: "", lang: LANG[ext] }
+        : { name: x, kind: "dir", children: [], mtime: "Now" };
+      if (x.startsWith(".")) n.hidden = true;
+      parent.children = [...(parent.children ?? []), n];
+      index(n, path);
+      top ??= path;
+    }
+    parent = n;
+  });
+  return { path, top };
+}
+function takeOut(p) {
+  const n = node(p), parent = node(parentOf(p));
+  const at = parent.children.indexOf(n);
+  parent.children.splice(at, 1);
+  unindex(p);
+  return { n, parent: parentOf(p), at, path: p };
+}
+function putBack(r) {
+  const parent = node(r.parent);
+  parent.children.splice(Math.min(r.at, parent.children.length), 0, r.n);
+  index(r.n, r.path);
+}
+function renameItem(p, name) {
+  const n = node(p), to = parentOf(p) + "/" + name;
+  unindex(p);
+  n.name = name;
+  index(n, to);
+  const move = (q) => q === p ? to : q.startsWith(p + "/") ? to + q.slice(p.length) : q;
+  S.expanded = new Set([...S.expanded].map(move));
+  S.sel = S.sel.map(move);
+  if (S.root === p || S.root.startsWith(p + "/")) S.root = move(S.root);
+  return to;
+}
+/** One thing done in the column, and how ⌘Z takes it back (HIG Undo and redo: many steps, the result shown). */
+function did(op) { S.undo.push(op); S.redo = []; }
+function undo() {
+  const op = S.undo.pop();
+  if (!op) return;
+  op.back(); S.redo.push(op);
+}
+function redo() {
+  const op = S.redo.pop();
+  if (!op) return;
+  op.again(); S.undo.push(op);
+}
+/** Show `p`: the folders above it open (the tree), or its level the current one (folders), and it selected. */
+function reveal(p) {
+  if (viewNow() === "tree") { for (let q = parentOf(p); q && q !== S.root && q.startsWith(S.root); q = parentOf(q)) S.expanded.add(q); }
+  else if (parentOf(p) !== S.root) S.root = parentOf(p);
+  S.sel = [p]; S.anchor = p;
+}
+const quoted = (paths) => paths.length === 1 ? `“${baseName(paths[0])}”` : ` ${paths.length} 项`;
+/** ⌘⌫ / Move to Trash: not asked (HIG Alerts: undoable), unless a terminal runs in it. */
+function toTrash(paths, { force = false } = {}) {
+  paths = paths.filter((p) => node(p));
+  if (!paths.length) return;
+  if (paths.some(fixed)) { S.note = "此文件夹中有 AgentSwitch 的凭据，不能在这里改名或移到废纸篓。"; return; }
+  const busy = !force && paths.map(runsIn).find(Boolean);
+  if (busy) { S.dlg = { kind: "inuse", op: "trash", paths, term: busy.name }; return; }
+  let gone = [];
+  const once = () => { gone = paths.map(takeOut); S.sel = S.sel.filter((p) => !paths.includes(p)); S.note = `已将${quoted(paths)}移到废纸篓。⌘Z 可放回。`; };
+  once();
+  did({ back: () => { [...gone].reverse().forEach(putBack); S.sel = [...paths]; reveal(paths[0]); S.sel = [...paths]; S.note = `已放回${quoted(paths)}。`; }, again: once });
+}
+/** + / a folder's menu / ⌥⌘N ⇧⌘N: a row with a box for the name, where it will be (files-v0 §12.2). */
+function startNew(kind, inside = null) {
+  let dir = inside;
+  if (!dir) {
+    const one = S.sel.length === 1 ? node(S.sel[0]) : null;
+    // The tree as VS Code: in the selected folder, beside the selected file; the folders view as Finder: this level.
+    dir = viewNow() === "tree" && one ? (isDir(one) ? one.path : parentOf(one.path)) : S.root;
+  }
+  if (viewNow() === "tree") { if (dir !== S.root) { for (let q = dir; q && q !== S.root; q = parentOf(q)) S.expanded.add(q); } }
+  else if (dir !== S.root) goTo(dir);
+  S.menu = null;
+  S.edit = { mode: "new", kind, dir, value: "" };
+}
+function startRename(p) {
+  const n = node(p);
+  if (!n || fixed(p)) { if (n) S.note = "此文件夹中有 AgentSwitch 的凭据，不能在这里改名或移到废纸篓。"; return; }
+  S.menu = null;
+  S.edit = { mode: "rename", path: p, value: n.name };
+}
+/** ↩ in the box, or a click elsewhere with a good name (VS Code); a bad one is let go. */
+function commitEdit({ force = false } = {}) {
+  const ed = S.edit;
+  if (!ed) return;
+  const dir = ed.mode === "new" ? ed.dir : parentOf(ed.path);
+  const check = checkName(dir, ed.value, { renaming: ed.mode === "rename" ? ed.path : null });
+  if (check.error) return false;
+  const name = ed.value.trim();
+  if (ed.mode === "rename") {
+    if (name === node(ed.path).name) { S.edit = null; return true; }
+    const busy = !force && isDir(node(ed.path)) && runsIn(ed.path);
+    if (busy) { S.dlg = { kind: "inuse", op: "rename", path: ed.path, term: busy.name }; return true; }
+    const from = ed.path, old = node(from).name;
+    let to = null;
+    const once = () => { to = renameItem(from, name); reveal(to); };
+    once();
+    did({ back: () => { renameItem(to, old); reveal(from); S.note = `已改回“${old}”。`; }, again: once });
+  } else {
+    const made = makeItem(dir, name, ed.kind);
+    let taken = null;
+    const shown = viewNow() === "tree" ? made.path : made.top;
+    reveal(shown);
+    if (baseName(made.path).startsWith(".") && !S.hidden) S.note = `已创建“${baseName(made.path)}”。它是隐藏文件，可在 ⋯ › Show Hidden Files 中显示。`;
+    did({ back: () => { taken = takeOut(made.top); S.sel = []; S.note = `已将“${baseName(made.top)}”移到废纸篓。`; }, again: () => { putBack(taken); reveal(shown); } });
+  }
+  S.edit = null;
+  return true;
+}
 const C = () => S.look === "classic";
 const look = () => `${C() ? "classic" : ""} ${S.light ? "light" : ""}`;
 const viewNow = () => S.view ?? (C() ? "folders" : "tree");
@@ -652,6 +886,8 @@ function preset(name) {
   S.mac = name; S.menu = null; S.ql = false; S.narrow = false; S.open = true; S.view = null; S.hidden = false; S.back = []; S.fwd = [];
   S.expanded = new Set(); S.sel = []; S.anchor = null; S.panes = 1; S.focus = 0; S.reply = [[], []]; S.typed = ["", ""]; S.viewOf = ["simple", "terminal"];
   S.float = false; S.preview = true; S.warn = null; S.sideW = 300;
+  S.edit = null; S.dlg = null; S.note = null; S.undo = []; S.redo = [];
+  buildTree();
   const lumen = HOME + "/Projects/lumen";
   if (name === "home") { S.root = HOME; }
   if (name === "list") { S.root = lumen; S.menu = { kind: "list", cwd: lumen, id: "g0", hi: "files" }; }
@@ -664,9 +900,18 @@ function preset(name) {
   if (name === "float") { S.float = true; S.root = lumen; S.expanded = new Set([lumen + "/src"]); S.sel = [lumen + "/src/store.ts"]; S.reply[0] = [lumen + "/src/store.ts"]; }
   if (name === "wide") { S.sideW = 500; S.root = lumen; S.expanded = new Set([lumen + "/src", lumen + "/src/components"]); S.sel = [lumen + "/src/store.ts"]; }
   if (name === "narrow") { S.narrow = true; S.root = lumen; S.expanded = new Set([lumen + "/src"]); }
+  // third draft (files-v0 §12)
+  if (name === "newmenu") { S.root = lumen; S.expanded = new Set([lumen + "/src"]); S.menu = { kind: "new" }; }
+  if (name === "newin") { S.root = lumen; S.edit = { mode: "new", kind: "dir", dir: lumen, value: "docs" }; }
+  if (name === "folderctx") { S.root = lumen; S.sel = [lumen + "/src"]; S.menu = { kind: "file", path: lumen + "/src", hi: "new" }; }
+  if (name === "rename") { S.root = lumen; S.expanded = new Set([lumen + "/src"]); S.sel = [lumen + "/src/app.ts"]; S.edit = { mode: "rename", path: lumen + "/src/app.ts", value: "app.ts" }; }
+  if (name === "trash") { S.root = lumen; S.expanded = new Set([lumen + "/docs"]); S.sel = [lumen + "/docs/logo.png"]; }
+  if (name === "inuse") { S.root = HOME + "/Projects"; S.sel = [HOME + "/Projects/harbor-api"]; S.dlg = { kind: "inuse", op: "trash", paths: [HOME + "/Projects/harbor-api"], term: "refreshToken 字段" }; }
   // Folders, one level at a time: the level the selection is in (what was added before stays in the reply).
   if (viewNow() === "folders" && S.sel.length) { S.root = parentOf(S.sel.at(-1)); S.sel = S.sel.filter((p) => parentOf(p) === S.root); }
   if (S.menu?.kind === "file" && viewNow() === "folders") S.menu.path = S.sel[0];
+  // Moved to the Trash just now: the line under the list, and ⌘Z.
+  if (name === "trash") toTrash([...S.sel]);
 }
 /** Classic, the column 460 points or wider, as folders: Finder's columns (files-v0 §3.3, user: 3可以). */
 const columns = () => C() && viewNow() === "folders" && S.sideW >= 460;
@@ -682,6 +927,8 @@ const PX = {
   down: ["#########", "#.......#", "#.......#", "#########", "#########", "#########"],
   plus: ["....#....", "....#....", "#########", "....#....", "....#...."],
   home: ["....#....", "...###...", "..##.##..", ".##...##.", "#########", ".#.....#.", ".#.##..#.", ".#.##..#."],
+  share: ["....#....", "...###...", "..#.#.#..", "....#....", "##..#..##", "#.......#", "#.......#", "#########"],
+  trash: ["...###...", "#########", ".#.....#.", ".#.#.#.#.", ".#.#.#.#.", ".#.#.#.#.", ".#.....#.", "..#####.."],
 };
 const RAIL = {
   dispatch: ["......###", ".....#...", "....#....", "###.#####", "###......", "....#....", ".....#...", "......###"],
@@ -720,6 +967,20 @@ const LINE = {
   keys: '<rect x="3" y="6.5" width="18" height="11" rx="2"/><path d="M7 10h.01M10.5 10h.01M14 10h.01M17.5 10h.01M8 14h8"/>',
   warn: '<path d="M10.3 4.9a2 2 0 0 1 3.4 0l7 12.2a2 2 0 0 1-1.7 3H5a2 2 0 0 1-1.7-3z"/><path d="M12 9.5v4.2M12 16.8h.01"/>',
   phone: '<rect x="7" y="3" width="10" height="18" rx="2.6"/><path d="M11 18h2"/>',
+  share: '<path d="M12 3.5v11M8 7.5l4-4 4 4"/><path d="M8.5 10.5H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-1.5"/>',
+  trash: '<path d="M4.5 6.5h15M9.5 6.5V4.5h5v2M6.5 6.5l1 13a1.5 1.5 0 0 0 1.5 1.4h6a1.5 1.5 0 0 0 1.5-1.4l1-13M10 10.5v6.5M14 10.5v6.5"/>',
+  pencil: '<path d="M15.5 5l3.5 3.5L9 18.5H5.5V15z"/><path d="M13.5 7l3.5 3.5"/>',
+  copy: '<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/>',
+  folderPlus: '<path d="M3.5 7.5V17.5a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2V9.5a2 2 0 0 0-2-2h-6.8l-2-2.5H5.5a2 2 0 0 0-2 2z"/><path d="M12 10.5v6M9 13.5h6"/>',
+  docPlus: '<path d="M7 3.5h6.5L18.5 8.5v10a2 2 0 0 1-2 2h-9.5a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2z"/><path d="M13.5 3.5v5h5M12 11.5v6M9 14.5h6"/>',
+  eye: '<path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
+  sort: '<path d="M8 4.5v15M4.5 8L8 4.5 11.5 8M16 19.5v-15M12.5 16l3.5 3.5 3.5-3.5"/>',
+  reply: '<path d="M10 6.5L4.5 12l5.5 5.5"/><path d="M4.5 12H14a5.5 5.5 0 0 1 5.5 5.5v1"/>',
+  airdrop: '<circle cx="12" cy="12" r="1.6"/><path d="M8.5 15.5a5 5 0 1 1 7 0M6 18a8.5 8.5 0 1 1 12 0"/>',
+  bubble: '<path d="M12 4.5c4.7 0 8.5 3 8.5 6.8s-3.8 6.8-8.5 6.8c-1 0-2-.1-2.9-.4L5 19.5l1.2-3.4C4.5 14.9 3.5 13.2 3.5 11.3 3.5 7.5 7.3 4.5 12 4.5z"/>',
+  mail: '<rect x="3.5" y="6" width="17" height="12" rx="2"/><path d="M4 7l8 6 8-6"/>',
+  notes: '<rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4"/>',
+  plusminus: '<path d="M12 4.5v7M8.5 8h7M8.5 17h7"/>',
 };
 const line = (k, size = 16, w) => `<svg class="li" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w ?? (size < 15 ? 2.1 : 1.6)}" stroke-linecap="round" stroke-linejoin="round">${LINE[k]}</svg>`;
 const tbIcon = (k) => C() ? line(k, 16) : P.sprite(PX[k], { px: 1.5 });
@@ -762,11 +1023,17 @@ function drawMac() {
   const files = S.open ? filesHtml({ float }) : "";
   const selInfo = S.open && S.sel.length ? `<span>${S.sel.length} Selected${S.sel.length > 1 ? ` · ${sizeWords(S.sel.reduce((a, p) => a + (node(p)?.size ?? 0), 0))}` : ""}</span>` : "";
   const status = `<div class="status"><span><span class="sq" style="background:var(--green)"></span> ${C() ? "Gateway OK" : "Gateway"}</span><span>iPhone Online</span><span class="sp"></span>${selInfo}<span>${f.ag === "cc" ? "Claude Code · Opus 5.5" : "Codex · GPT-6 Astra"}</span><span>${S.viewOf[S.panes === 1 ? 0 : S.focus] === "simple" ? "Simple" : "120×38"}</span></div>`;
-  win.innerHTML = `${bar}<div class="body">${rail}${listHtml()}${center}${files}${S.menu ? menuHtml() : ""}</div>${status}`;
+  win.innerHTML = `${bar}<div class="body">${rail}${listHtml()}${center}${files}${S.menu ? menuHtml() : ""}${S.dlg ? dlgHtml() : ""}</div>${status}`;
   const anchor = win.querySelector(".menu[data-anchor]");
   if (anchor) { const el = win.querySelector(`[data-ctx-id="${anchor.dataset.anchor}"]`); if (el) anchor.style.top = `${el.offsetTop + el.offsetHeight - 2}px`; }
   document.getElementById("capMac").innerHTML = capMac();
   fitAll();
+  const fin = document.getElementById("fin");
+  if (fin && !S.dlg && document.activeElement !== fin) {
+    fin.focus({ preventScroll: true });
+    const v = fin.value, dot = v.lastIndexOf(".");
+    if (S.edit.mode === "rename" && !isDir(node(S.edit.path)) && dot > 0) fin.setSelectionRange(0, dot); else fin.select();
+  }
   // A row's right click: the system's menu opens at the row, kept inside the window.
   const fm = win.querySelector(".menu[data-file]");
   if (fm) {
@@ -861,14 +1128,28 @@ function ttyHtml(i) {
 // ---------- Files ----------
 function filesHtml({ float = false } = {}) {
   const hd = C()
-    ? `<div class="fhd"><span class="lb">Files</span><span class="acts"><button class="ib" data-act="home" aria-label="Home">${line("home", 15)}</button><button class="ib ${S.menu?.kind === "more" ? "on" : ""}" data-act="more" aria-label="More">${line("more", 16)}</button><button class="ib" data-act="close" aria-label="Close">${line("x", 13)}</button></span></div>`
-    : `<div class="fhd"><span class="lb">// FILES</span><span class="acts"><button class="ib" data-act="home" aria-label="Home ⌘⇧H">${P.sprite(PX.home, { px: 1.5 })}</button><button class="ib ${S.menu?.kind === "more" ? "on" : ""}" data-act="more" aria-label="More">⋯</button><button class="ib" data-act="close" aria-label="Close">×</button></span></div>`;
+    ? `<div class="fhd"><span class="lb">Files</span><span class="acts"><button class="ib" data-act="home" aria-label="Home">${line("home", 15)}</button><button class="ib ${S.menu?.kind === "new" ? "on" : ""}" data-act="newmenu" aria-label="New">${line("plus", 15)}</button><button class="ib ${S.menu?.kind === "more" ? "on" : ""}" data-act="more" aria-label="More">${line("more", 16)}</button><button class="ib" data-act="close" aria-label="Close">${line("x", 13)}</button></span></div>`
+    : `<div class="fhd"><span class="lb">// FILES</span><span class="acts"><button class="ib" data-act="home" aria-label="Home ⌘⇧H">${P.sprite(PX.home, { px: 1.5 })}</button><button class="ib ${S.menu?.kind === "new" ? "on" : ""}" data-act="newmenu" aria-label="New">+</button><button class="ib ${S.menu?.kind === "more" ? "on" : ""}" data-act="more" aria-label="More">⋯</button><button class="ib" data-act="close" aria-label="Close">×</button></span></div>`;
   const body = columns() ? columnsHtml()
     : `<div class="fl" tabindex="0" id="fl" role="tree" aria-label="${attr(S.root)}" aria-multiselectable="true">${viewNow() === "tree" ? (C() ? classicTreeHtml() : treeHtml()) : foldersHtml()}</div>`;
   const hiddenHere = kids(S.root, true).length - kids(S.root, false).length;
-  const foot = S.sel.length ? (S.preview ? previewHtml() : selLineHtml()) : `<div class="ffoot"><span>${fileCount(S.root, S.hidden)} Items</span>${!S.hidden && hiddenHere ? `<span>${hiddenHere} Hidden</span>` : ""}</div>`;
-  return `<div class="files ${float ? "float" : ""}" ${float ? `style="width:${S.sideW}px"` : ""} role="region" aria-label="Files"><span class="drag" data-act="drag" title="Drag to resize"></span>${hd}${crumbsHtml()}${body}${foot}</div>`;
+  const foot = S.sel.length ? (S.preview ? previewHtml() : selLineHtml()) : `<div class="ffoot"><span>${fileCount(S.root, S.hidden)} ${fileCount(S.root, S.hidden) === 1 ? "Item" : "Items"}</span>${!S.hidden && hiddenHere ? `<span>${hiddenHere} Hidden</span>` : ""}</div>`;
+  const note = S.note ? `<div class="fnote" role="status">${esc(S.note)}</div>` : "";
+  return `<div class="files ${float ? "float" : ""}" ${float ? `style="width:${S.sideW}px"` : ""} role="region" aria-label="Files"><span class="drag" data-act="drag" title="Drag to resize"></span>${hd}${crumbsHtml()}${body}<div class="fbot">${note}${foot}</div></div>`;
 }
+/** The box a name is typed in, in place (files-v0 §12.2, VS Code's explorer); the line under it says what is wrong. */
+function finHtml() {
+  const ed = S.edit;
+  return `<input class="fin" id="fin" value="${attr(ed.value)}" spellcheck="false" autocomplete="off" aria-label="${ed.mode === "rename" ? "Rename" : ed.kind === "dir" ? "New Folder" : "New File"}">`;
+}
+function ferrHtml(pad) {
+  const ed = S.edit;
+  const c = checkName(ed.mode === "new" ? ed.dir : parentOf(ed.path), ed.value, { renaming: ed.mode === "rename" ? ed.path : null });
+  const say = ed.value === "" ? "" : c.error ?? c.warn ?? "";
+  return `<div class="ferr ${c.warn && !c.error ? "warn" : ""}" id="ferr" data-pad="${pad}" style="padding-left:${pad}px">${esc(say)}</div>`;
+}
+const editing = (p) => S.edit?.mode === "rename" && S.edit.path === p;
+const newHere = (dir) => S.edit?.mode === "new" && S.edit.dir === dir;
 /** ⋯ › Show Preview off: the list keeps the column; what is selected is one line, and the space bar shows it. */
 function selLineHtml() {
   const canReply = S.sel.every((p) => !node(p)?.locked);
@@ -884,7 +1165,7 @@ function columnsHtml() {
   const right = kids(S.root, S.hidden);
   S.visible = right.map((n) => n.path);
   const col = (list, side) => list.map((n) => crRow(n, { side, path: side === "l" && n.path === S.root })).join("");
-  return `<div class="cols"><div class="fl" role="tree" aria-label="${attr(up ?? "/")}">${up ? col(kids(up, S.hidden), "l") : ""}</div><div class="fl" tabindex="0" id="fl" role="tree" aria-label="${attr(S.root)}" aria-multiselectable="true">${right.length ? col(right, "r") : `<div class="note">此文件夹为空。</div>`}</div></div>`;
+  return `<div class="cols"><div class="fl" role="tree" aria-label="${attr(up ?? "/")}">${up ? col(kids(up, S.hidden), "l") : ""}</div><div class="fl" tabindex="0" id="fl" role="tree" aria-label="${attr(S.root)}" aria-multiselectable="true">${newHere(S.root) ? newRowHtml() : ""}${right.length ? col(right, "r") : newHere(S.root) ? "" : `<div class="note">此文件夹为空。</div>`}</div></div>`;
 }
 /** The absolute path, every level a button; the middle folded into `…` when it does not fit. */
 function crumbsHtml() {
@@ -916,6 +1197,7 @@ function treeHtml() {
   const rows = [];
   const walk = (p, stems) => {
     const list = kids(p, S.hidden);
+    if (newHere(p)) rows.push({ edit: true, stems, last: !list.length, depth: stems.length });
     list.forEach((n, i) => {
       const last = i === list.length - 1;
       const dir = isDir(n);
@@ -925,18 +1207,20 @@ function treeHtml() {
     });
   };
   walk(S.root, []);
-  S.visible = rows.map((r) => r.n.path);
+  S.visible = rows.filter((r) => !r.edit).map((r) => r.n.path);
   const up = parentOf(S.root);
   const out = up ? [`<div class="fr up" data-act="up"><span class="tr"></span><span class="nm">../</span><span class="mt"></span></div>`] : [];
   if (!rows.length) out.push(`<div class="note">${C() ? "" : ""}此文件夹为空。</div>`);
   for (const r of rows) {
     const { n } = r;
     const stem = r.stems.map((l) => (l ? "   " : "│  ")).join("") + (r.last ? "└─" : "├─");
+    const pad = 12 + (r.depth * 3 + 4) * 7.25;
+    if (r.edit) { out.push(`<div class="fr edit ${S.edit.kind === "dir" ? "dir" : "file"}"><span class="tr">${stem}${S.edit.kind === "dir" ? "▸" : "─"}</span><span class="nm">${finHtml()}</span><span class="mt"></span></div>${ferrHtml(pad)}`); continue; }
     const tw = r.dir && !n.locked ? `<span class="tw" data-act="twist" data-path="${attr(n.path)}">${r.open ? "▾" : "▸"}</span>` : "─";
     const cls = ["fr", r.dir ? "dir" : "file", n.hidden || n.dim ? "dim" : "", n.locked ? "locked" : "", S.sel.includes(n.path) ? "sel" : ""].join(" ");
     const name = `${esc(n.name)}${r.dir ? "/" : ""}${n.kind === "link" ? `<span class="to"> → ${esc(n.target.replace(HOME, "~"))}</span>` : ""}${n.locked ? `<span class="lk" title="此处存放 AgentSwitch 的凭据，无法在此打开。">⌧</span>` : ""}`;
     const meta = n.locked ? "" : r.dir ? `<span>${esc(n.mtime ?? "")}</span>` : `<span class="sz">${size(n)}</span><span>${esc(n.mtime ?? "")}</span>`;
-    out.push(`<div class="${cls}" data-row="${attr(n.path)}" role="treeitem" aria-level="${r.depth + 1}" ${r.dir ? `aria-expanded="${r.open}"` : ""} aria-selected="${S.sel.includes(n.path)}" ${n.locked ? 'title="此处存放 AgentSwitch 的凭据，无法在此打开。"' : ""}><span class="tr">${stem}${tw}</span><span class="nm">${name}</span><span class="mt">${meta}</span></div>`);
+    out.push(`<div class="${cls} ${editing(n.path) ? "edit" : ""}" data-row="${attr(n.path)}" role="treeitem" aria-level="${r.depth + 1}" ${r.dir ? `aria-expanded="${r.open}"` : ""} aria-selected="${S.sel.includes(n.path)}" ${n.locked ? 'title="此处存放 AgentSwitch 的凭据，无法在此打开。"' : ""}><span class="tr">${stem}${tw}</span><span class="nm">${editing(n.path) ? finHtml() : name}</span><span class="mt">${editing(n.path) ? "" : meta}</span></div>${editing(n.path) ? ferrHtml(pad) : ""}`);
   }
   return out.join("");
 }
@@ -945,36 +1229,50 @@ function foldersHtml() {
   const list = kids(S.root, S.hidden);
   S.visible = list.map((n) => n.path);
   const out = [];
-  if (!list.length) out.push(`<div class="note">此文件夹为空。</div>`);
+  if (newHere(S.root)) out.push(newRowHtml());
+  if (!list.length && !newHere(S.root)) out.push(`<div class="note">此文件夹为空。</div>`);
   for (const n of list) {
     const dir = isDir(n);
     const cls = [C() ? "cr" : "fr", dir ? "dir" : "file", n.hidden || n.dim ? "dim" : "", n.locked ? "locked" : "", S.sel.includes(n.path) ? "sel" : ""].join(" ");
     if (C()) {
       out.push(crRow(n));
     } else {
+      if (editing(n.path)) { out.push(`<div class="${cls} edit" data-row="${attr(n.path)}"><span class="tr"></span><span class="nm" style="padding-left:0">${finHtml()}</span><span class="mt"></span></div>${ferrHtml(12)}`); continue; }
       out.push(`<div class="${cls}" data-row="${attr(n.path)}" role="treeitem" aria-selected="${S.sel.includes(n.path)}"><span class="tr"></span><span class="nm" style="padding-left:0">${esc(n.name)}${dir ? "/" : ""}${n.locked ? `<span class="lk">⌧</span>` : ""}</span><span class="mt">${dir ? "" : `<span class="sz">${size(n)}</span>`}<span>${esc(n.mtime ?? "")}</span>${dir && !n.locked ? `<span class="go" data-act="enter" data-path="${attr(n.path)}">›</span>` : ""}</span></div>`);
     }
   }
   return out.join("");
 }
+/** The row a new item's name is typed in, at the top of the level (Finder's folders, the pixel look's one level). */
+function newRowHtml() {
+  const dir = S.edit.kind === "dir";
+  return C() ? `<div class="cr edit ${dir ? "dir" : "file"}"><span class="ic">${dir ? line("folder", 17) : line("doc", 16)}</span><span class="nm">${finHtml()}</span><span class="mt"></span><span class="go"></span></div>${ferrHtml(44)}`
+    : `<div class="fr edit ${dir ? "dir" : "file"}"><span class="tr"></span><span class="nm" style="padding-left:0">${finHtml()}</span><span class="mt"></span></div>${ferrHtml(12)}`;
+}
 /** A classic row of a folder's level; in the columns `side` is the column it is in, `path` marks the folder whose
  *  contents the right column shows. */
 function crRow(n, { side = null, path = false } = {}) {
   const dir = isDir(n);
+  if (editing(n.path)) return `<div class="cr edit ${dir ? "dir" : "file"}" data-row="${attr(n.path)}"><span class="ic">${fileIcon(n)}</span><span class="nm">${finHtml()}</span><span class="mt"></span><span class="go"></span></div>${ferrHtml(44)}`;
   const cls = ["cr", dir ? "dir" : "file", n.hidden || n.dim ? "dim" : "", n.locked ? "locked" : "", S.sel.includes(n.path) ? "sel" : "", path ? "path" : ""].join(" ");
   const meta = side ? (n.locked || dir ? "" : size(n)) : n.locked ? "" : dir ? esc(n.mtime ?? "") : `${esc(n.mtime ?? "")} · ${size(n)}`;
   return `<div class="${cls}" data-row="${attr(n.path)}" ${side ? `data-col="${side}"` : ""} role="treeitem" aria-selected="${S.sel.includes(n.path)}" ${n.locked ? 'title="此处存放 AgentSwitch 的凭据，无法在此打开。"' : ""}><span class="ic">${fileIcon(n)}</span><span class="nm">${esc(n.name)}${n.kind === "link" ? ` <span class="to">→ ${esc(baseName(n.target))}</span>` : ""}</span><span class="mt">${meta}</span><span class="go" ${dir && !n.locked && !side ? `data-act="enter" data-path="${attr(n.path)}"` : ""}>${dir && !n.locked ? line("chevR", 12, 2.2) : ""}</span></div>`;
 }
 function classicTreeHtml() {
   const rows = [];
-  const walk = (p, depth) => kids(p, S.hidden).forEach((n) => {
-    const dir = isDir(n), open = dir && S.expanded.has(n.path);
-    rows.push({ n, depth, dir, open });
-    if (open && !n.locked) walk(n.kind === "link" ? n.target : n.path, depth + 1);
-  });
+  const walk = (p, depth) => {
+    if (newHere(p)) rows.push({ edit: true, depth });
+    kids(p, S.hidden).forEach((n) => {
+      const dir = isDir(n), open = dir && S.expanded.has(n.path);
+      rows.push({ n, depth, dir, open });
+      if (open && !n.locked) walk(n.kind === "link" ? n.target : n.path, depth + 1);
+    });
+  };
   walk(S.root, 0);
-  S.visible = rows.map((r) => r.n.path);
-  return rows.map(({ n, depth, dir, open }) => `<div class="ct ${dir ? "dir" : "file"} ${n.hidden || n.dim ? "dim" : ""} ${n.locked ? "locked" : ""} ${S.sel.includes(n.path) ? "sel" : ""}" data-row="${attr(n.path)}" role="treeitem" aria-level="${depth + 1}" style="padding-left:${8 + depth * 16}px">
+  S.visible = rows.filter((r) => !r.edit).map((r) => r.n.path);
+  return rows.map(({ n, depth, dir, open, edit }) => edit || editing(n.path)
+    ? `<div class="ct edit ${edit ? (S.edit.kind === "dir" ? "dir" : "file") : dir ? "dir" : "file"}" style="padding-left:${8 + depth * 16}px"><span class="tw"></span><span class="ic">${edit ? (S.edit.kind === "dir" ? line("folder", 17) : line("doc", 16)) : fileIcon(n)}</span><span class="nm">${finHtml()}</span><span class="mt"></span></div>${ferrHtml(8 + depth * 16 + 42)}`
+    : `<div class="ct ${dir ? "dir" : "file"} ${n.hidden || n.dim ? "dim" : ""} ${n.locked ? "locked" : ""} ${S.sel.includes(n.path) ? "sel" : ""}" data-row="${attr(n.path)}" role="treeitem" aria-level="${depth + 1}" style="padding-left:${8 + depth * 16}px">
       <span class="tw" ${dir && !n.locked ? `data-act="twist" data-path="${attr(n.path)}"` : ""}>${dir && !n.locked ? line(open ? "chevD" : "chevR", 11, 2.4) : ""}</span><span class="ic">${fileIcon(n)}</span><span class="nm">${esc(n.name)}</span><span class="mt">${n.locked ? "" : dir ? "" : size(n)}</span></div>`).join("");
 }
 
@@ -996,6 +1294,7 @@ function previewHtml() {
   return `<div class="pv" style="${dir ? "height:140px" : ""}"><div class="h"><b>${esc(n.name)}</b><span>${esc(meta)}</span></div><div class="cnt">${dir ? "" : contentHtml(n, false)}</div>${acts}</div>`;
 }
 function contentHtml(n, big) {
+  if (n.type === "text" && !n.text) return `<div class="nopv"><div>此文件为空。</div></div>`;
   if (n.text) {
     const lines = n.text.replace(/\n$/, "").split("\n");
     const shown = lines.slice(0, big ? 40 : 18);
@@ -1023,6 +1322,12 @@ function qlHtml() {
   return `<div class="ql" role="dialog" aria-label="Quick Look">${head}<div class="bd">${contentHtml(n, true)}</div></div>`;
 }
 
+/** Asked before a folder a terminal runs in is renamed or moved (files-v0 §12.2); nothing else is asked on the Mac. */
+function dlgHtml() {
+  const d = S.dlg;
+  const say = `终端“${esc(d.term)}”正在此文件夹中运行。${d.op === "rename" ? "改名后" : "移到废纸篓后"}，其中的 agent 仍会使用原来的路径，可能出错。`;
+  return `<div class="warn dlg" role="alertdialog" aria-label="In Use"><div class="h">${C() ? line("warn", 16) : ""}<span>In Use</span></div><div class="b">${say}</div><div class="a">${B("Cancel", "", "dlgcancel")}${B(d.op === "rename" ? "Rename" : "Move to Trash", "pri", "dlgok")}</div></div>`;
+}
 // System menus: the list's right click, ⋯, and the path's folded levels.
 function menuHtml() {
   const m = S.menu;
@@ -1030,7 +1335,7 @@ function menuHtml() {
     const it = (label, key, hi, isNew) => `<div class="it ${hi ? "hi" : ""}" ${key === "files" ? `data-act="showin" data-path="${attr(m.cwd)}"` : ""}>${label}${isNew ? `<span class="new">New</span>` : ""}</div>`;
     const [, gi, ri] = /^g(\d+)(?:r(\d+))?$/.exec(m.id) ?? [];
     const kind = ri === undefined ? "dir" : D.LIST[Number(gi)].rows[Number(ri)].kind;
-    const files = it("Show in Files", "files", m.hi === "files", true);
+    const files = it("Show in Files", "files", m.hi === "files");
     // A terminal's and a session's own menus as they are (TerminalSidebar.swift), with the one new item; a folder row
     // has had no menu (its `+` is New Terminal Here).
     const items = kind === "term" ? [it("Rename"), it("Open in New Window"), files, "<hr>", it("Close")]
@@ -1056,10 +1361,23 @@ function menuHtml() {
     const n = node(m.path);
     if (!n) return "";
     const dir = isDir(n), under = m.path.startsWith(paneOf(S.focus).cwd + "/");
-    const it = (label, { act = "", k = "", hi = false, off = false } = {}) => `<div class="it ${hi ? "hi" : ""} ${off ? "off" : ""}" ${act ? `data-act="${act}" data-path="${attr(m.path)}"` : ""}>${label}${k ? `<span class="k">${k}</span>` : ""}</div>`;
-    const items = [it("Add to Reply", { act: "addreply", k: "⌥↩" }), dir ? "" : it("Quick Look", { act: "qlopen", k: "Space" }), it("Open", { act: dir ? "enter" : "" }), "<hr>",
-      it("Show in Finder", { hi: m.hi === "finder" }), it("Copy Path", { k: "⌥⌘C" }), it("Copy Relative Path", { off: !under }), ...(dir ? ["<hr>", it("New Terminal Here")] : [])];
+    const it = (label, { act = "", hi = false, isNew = false } = {}) => `<div class="it ${hi ? "hi" : ""}" ${act ? `data-act="${act}" data-path="${attr(m.path)}"` : ""}>${label}${isNew ? `<span class="new">New</span>` : ""}</div>`;
+    // No shortcuts in a context menu, and what does not apply is left out rather than dimmed (HIG Context menus;
+    // the third draft). New items in a folder's menu, under what is used most; Rename… and Move to Trash last (VS Code).
+    const items = [it("Add to Reply", { act: "addreply" }), dir ? "" : it("Quick Look", { act: "qlopen" }), it("Open", { act: dir ? "enter" : "" }),
+      ...(dir ? ["<hr>", it("New File…", { act: "newfile", isNew: true, hi: m.hi === "new" }), it("New Folder…", { act: "newfolder", isNew: true })] : []), "<hr>",
+      it("Show in Finder", { hi: m.hi === "finder" }), it("Copy Path"), under ? it("Copy Relative Path") : "", dir ? it("New Terminal Here") : "",
+      ...(fixed(m.path) ? [] : ["<hr>", it("Rename…", { act: "rename", isNew: true }), it("Move to Trash", { act: "trash", isNew: true })])];
     return `<div class="menu" data-file style="left:0; top:0; min-width:230px">${items.join("")}</div>`;
+  }
+  if (m.kind === "bg") {
+    // The list's empty part: this folder's menu, new items first (VS Code).
+    const it = (label, act = "", isNew = false) => `<div class="it" ${act ? `data-act="${act}" data-path="${attr(S.root)}"` : ""}>${label}${isNew ? `<span class="new">New</span>` : ""}</div>`;
+    return `<div class="menu" style="left:${m.x}px; top:${m.y}px; min-width:210px">${it("New File…", "newfile", true)}${it("New Folder…", "newfolder", true)}<hr>${it("Show in Finder")}${it("Copy Path")}${it("New Terminal Here")}</div>`;
+  }
+  if (m.kind === "new") {
+    // The column's +: a pull-down menu, so its keys are written in it (files-v0 §12.2).
+    return `<div class="menu" style="right:56px; top:30px; min-width:200px"><div class="it" data-act="newfile">New File…<span class="k">⌥⌘N</span></div><div class="it" data-act="newfolder">New Folder…<span class="k">⇧⌘N</span></div></div>`;
   }
   return "";
 }
@@ -1068,10 +1386,10 @@ function capMac() {
   const v = viewNow() === "tree" ? "目录树" : "文件夹";
   const say = {
     home: `<b>第一次打开</b>：在家目录 <code>/Users/you</code>。路径行从 <code>/</code> 开始，每一层可点；${C() ? "经典外观默认是文件夹看法：一次一层，文件夹行尾 <code>›</code>，单击选中、双击或点 <code>›</code> 进去，路径左边 <code>‹ ›</code> 前进后退" : "像素外观默认是目录树：<code>▸</code> 展开一层（只管展开），点名字选中，双击文件夹把它当作当前文件夹，<code>../</code> 到上一层"}。隐藏文件（<code>.</code> 开头）默认不列，底部写着有几项没列；<code>⋯</code> › <code>Show Hidden Files</code> 打开后能看到 <code>.secret-gate</code>、<code>.agentswitch/nodes</code> 这些受保护的地方——照列，带锁，点不开。`,
-    list: `<b>从左边进入</b>：在左边列表的文件夹行（或它下面的终端、会话）上右键，系统菜单里多一项 <code>Show in Files</code>，文件栏到那个文件夹（终端是它此刻所在的文件夹）。演示里右键左边任意一行都能弹出这个菜单。标着 <code>New</code> 的是这一稿新加的项。`,
+    list: `<b>从左边进入</b>：在左边列表的文件夹行（或它下面的终端、会话）上右键，系统菜单里多一项 <code>Show in Files</code>，文件栏到那个文件夹（终端是它此刻所在的文件夹）。演示里右键左边任意一行都能弹出这个菜单。`,
     pane: `<b>分屏时</b>：每块标题栏上一个文件夹图标，到那一块的文件夹（这里是右边 Codex 所在的 <code>harbor-api/src</code>）；顶栏的同一个图标管焦点那一块——和顶栏、标题栏上的终端 / 简略切换一样。<b>图标亮着</b>表示文件栏正显示这一块的文件夹，再点一下收起；点另一块的图标就换到那一块的文件夹。试试点左边那块标题栏上的图标。`,
     preview: `<b>选中看预览</b>：选中一个文件，栏的下半是 Quick Look 画的预览（本机文件由系统画；别的节点上的由服务给前 64 KB 或缩略图）。一行信息：类型、大小、修改时间、行数。下面<b>只有两个按钮</b> <code>Add to Reply</code>（主）、<code>Open</code>，栏最窄时也是一行；<code>Show in Finder</code> 这些在行的右键菜单里（⑤）。⌘ 点、⇧ 点多选；选中文件夹时 <code>Open</code> 是进去。不要预览：<code>⋯</code> › <code>Show Preview</code> 关掉，底部只剩一行和 <code>Add to Reply</code>，看内容按空格。`,
-    ctx: `<b>右键一项</b>：系统菜单，<code>Add to Reply</code>、<code>Quick Look</code>、<code>Open</code>；<code>Show in Finder</code>（从预览下面挪过来的）、<code>Copy Path</code>、<code>Copy Relative Path</code>（相对于焦点那一块终端的文件夹，不在它下面时变灰）；文件夹另有 <code>New Terminal Here</code>。演示里每一行都能右键。`,
+    ctx: `<b>右键一项</b>：系统菜单，<code>Add to Reply</code>、<code>Quick Look</code>、<code>Open</code>；<code>Show in Finder</code>（从预览下面挪过来的）、<code>Copy Path</code>、<code>Copy Relative Path</code>（相对于焦点那一块终端的文件夹，不在它下面时不出现）；文件夹另有 <code>New Terminal Here</code>。演示里每一行都能右键。`,
     reply: `<b>两个给 agent</b>：选两个文件 <code>Add to Reply</code>（或拖到某一块上），焦点那一块的回复框里多两个占位符 <code>[File #1] [File #2]</code>，上面一排小条可以 <code>×</code> 拿掉——和今天拖文件、<code>+</code> › <code>Files…</code> 是同一条路：发送时输入路径，文件不拷贝。状态栏写着选了几个、多大。终端视图的那一块没有回复框：给它就是把路径打进光标处（③ 里选右边那块再点 <code>Add to Reply</code> 试试）。`,
     sensitive: `<b>可能含密码的文件</b>：<code>.env</code>、<code>~/.ssh/</code> 里的钥匙、各 agent 的登录文件这一类，照常列出、照常预览（手机上也能看），<b>交给 agent 的那一刻</b>问一次：卡浮在那一块的回复框上方，<code>Cancel</code> 只拿掉这几个，<code>Add</code> 以后小条上带${C() ? "一个琥珀色的三角" : "琥珀色的 <code>!</code>"}，发送时不再问。只看路径和名字判断，不读内容。点 <code>Add</code> 试试；或者打开 <code>⋯</code> › <code>Show Hidden Files</code>，从家目录的 <code>.ssh</code> 里挑 <code>id_ed25519</code>。`,
     ql: `<b>空格</b>：Quick Look 的面板，和在 Finder 里按空格一样（原生是 <code>QLPreviewPanel</code>）；<code>esc</code> 或再按空格关上。焦点在文件列表里时 <code>↑ ↓</code> 换一项，面板跟着换。预览关着时也是空格看。`,
@@ -1079,6 +1397,12 @@ function capMac() {
     wide: C() && viewNow() === "folders"
       ? `<b>拉宽</b>：栏宽到 460 点以上，经典的文件夹看法变成 Finder 的<b>分栏</b>，只留最后两栏：左边是上一层（当前的 <code>src</code> 在里面标着），右边是当前文件夹。和 Finder 的分栏一样，<b>单击文件夹就进去</b>，整排往左移一栏；点左栏里别的文件夹，右栏换成它的。拖文件栏的左边缘到 460 点以下，回到一次一层。`
       : `<b>拉宽</b>：像素的树拉宽了还是树，名字和右边的大小、时间有了地方。分栏是经典外观的（切到 Classic 看）。拖文件栏的左边缘改宽度，240–560 点。`,
+    newmenu: `<b>新建</b>（第三稿）：标题行 <code>⌂</code> 后面多一个 <code>+</code>（Apple 的文件管理规范要一个 Add 按钮），菜单 <code>New File…</code> <code>New Folder…</code>，快捷键写在这个下拉菜单里（<code>⌥⌘N</code>、<code>⇧⌘N</code>）。${viewNow() === "tree" ? "目录树照 VS Code：选中的是文件夹就建在它里面，是文件就建在它旁边，没选中就建在当前文件夹——这里选的是 <code>src</code> 里的文件，点 <code>New File…</code> 看它出在哪。" : "文件夹看法照 Finder：建在当前这一层。"}`,
+    newin: `<b>就地起名</b>：新的一行出在${viewNow() === "tree" ? "那个文件夹的第一行（树线照画）" : "这一层的最上面"}，名字在框里打（VS Code 的做法）。一边打一边检查：这里打的是 <code>docs</code>，已经有了，框下一行红字，<code>↩</code> 不响。改成别的再按 <code>↩</code> 建好并选中；<code>esc</code> 取消；点到别处时名字有效就建、无效就取消。名字里带 <code>/</code> 一次建几层（试试 <code>fixtures/users.json</code>）；名字前后有空格是琥珀色的提醒，照样能建；以 <code>.</code> 开头的建好后底部说它是隐藏文件。<code>⌘Z</code> 撤销刚建的。`,
+    folderctx: `<b>右键一个文件夹</b>：在 <code>Add to Reply</code> <code>Open</code> 下面一组是 <code>New File…</code> <code>New Folder…</code>（建在它里面），最后一组是 <code>Rename…</code> 和 <code>Move to Trash</code>（VS Code 的顺序）。右键菜单里<b>不写快捷键</b>、用不了的项<b>不出现</b>而不是变灰（Apple 的右键菜单规范；第二稿的演示写了快捷键，这一稿去掉）：<code>Copy Relative Path</code> 只在它在焦点那一块终端的文件夹下面时才有；装着 AgentSwitch 凭据的文件夹（比如家目录）没有改名和移到废纸篓。列表空白处右键是这一层的菜单。`,
+    rename: `<b>改名</b>：右键 <code>Rename…</code>，或选中后按 <code>↩</code>（同 Finder、VS Code 的 Mac 键位；第一步的 <code>↩</code> 是“打开”，现在打开用双击、<code>⌘↓</code>、<code>⌘O</code>）。名字原地变成框，文件只选中主名（<code>app</code>，不含 <code>.ts</code>），检查同新建；<code>↩</code> 改，<code>esc</code> 不改，<code>⌘Z</code> 改回去。有终端在里面运行的文件夹，改名前问一句（⑮）。`,
+    trash: `<b>移到废纸篓</b>：右键最后一项 <code>Move to Trash</code>，或 <code>⌘⌫</code>。<b>不问</b>——Apple 的规范：能撤销的删除不弹框（VS Code 默认要问，这里照 Apple，第一问）。<code>logo.png</code> 刚移走：底部一行说移到了废纸篓、<code>⌘Z</code> 可放回。点一下列表再按 <code>⌘Z</code>，它回到原处、被选中；<code>⇧⌘Z</code> 重做。也可以选别的按 <code>⌘⌫</code> 试试。不做永久删除；放不进废纸篓的盘（一些网络盘）才问一句“要永久删除吗？此操作无法撤销。”。`,
+    inuse: `<b>有终端在里面运行</b>：<code>harbor-api</code> 里有终端“refreshToken 字段”在跑（它在 <code>harbor-api/src</code>）。移走或改名后，agent 仍按原来的路径找文件，会出错，所以这一种要问。Mac 上会问的只有这一种和“只能永久删除”。`,
     narrow: `<b>窗口窄时</b>：打开文件栏后页面剩不到 520 点，靠边的文件栏临时浮在页面右边${C() ? "（圆角、投影）" : "（1 点墨色框、抖动的硬阴影）"}，不挤页面。窗口拉宽后回到一栏。`,
   }[S.mac];
   return `${say} 现在是<b>${v}</b>看法（<code>⋯</code> 里能换）。`;
@@ -1086,13 +1410,14 @@ function capMac() {
 
 // ---------- 2. the phone ----------
 /** A terminal's page: `p` is the terminal, `added` the files in its reply box. */
-function phoneTerm({ menu = false, added = [], p = PANES[0] } = {}) {
+function phoneTerm({ menu = false, added = [], p = PANES[0], more = null } = {}) {
   const chips = added.length ? `<div class="chips" style="margin:0 0 6px">${added.map((f, k) => `<span class="fchip ${isSensitive(f) ? "sens" : ""}">${C() ? `<span style="color:var(--ink2)">${fileIcon(node(f))}</span>` : `<i>[File #${k + 1}]</i>`}${chipMark(f)}${esc(baseName(f))}<i>on Mac</i><button aria-label="Remove">×</button></span>`).join("")}</div>` : "";
   const text = added.length ? `<span class="tx">看一下 ${added.map((_, k) => `<b>[File #${k + 1}]</b>`).join(" ")} <span class="caret"></span></span>` : `<span class="tx ph">回复…</span>`;
   const body = p.term === "t1"
     ? `<div class="ub" style="max-width:90%">把列表的排序改成按最近使用，置顶的仍然在最前。</div><div class="md"><p>改好了：列表现在按最近使用排，置顶的仍然在最前。排序放在 <code class="c">store.ts</code> 里做。</p></div><div class="now">${spin()}<span>Read</span><code>docs/design.md</code></div>`
     : `<div class="ub" style="max-width:90%">登录接口的返回加上 refreshToken 字段</div><div class="md"><p>已在 <code class="c">routes/auth.ts</code> 的登录返回里加了 refreshToken，过期时间取配置里的 REFRESH_TTL。</p></div>`;
-  return `<div class="pscr"><div class="pnav"><span class="nb">‹</span><span class="t"><b>${esc(p.name)}</b><span>${esc(p.short)} · ${p.st === "busy" ? (C() ? "Working" : "Busy") : "Idle"}</span></span><span class="nb r">${C() ? line("terminal", 18) : "▤"}</span></div>
+  const termMenu = more ? `<div class="pmenu ctxm" style="top:52px; right:10px; left:auto">${mi("Terminal View", "terminal")}${mi("Transcript: Verbose", "notes")}${mi("Changes", "plusminus")}<div class="gap"></div>${mi("Show in Files", "folder", "phshowin", { isNew: true, hi: true })}<div class="gap"></div>${mi("Rename", "pencil")}${mi("Close", "x", "", { red: true })}</div>` : "";
+  return `<div class="pscr"><div class="pnav"><span class="nb">‹</span><span class="t"><b>${esc(p.name)}</b><span>${esc(p.short)} · ${p.st === "busy" ? (C() ? "Working" : "Busy") : "Idle"}</span></span><span class="nb r">${C() ? `<span class="ib2">${line("terminal", 18)}</span>` : "▤"}${more !== null ? `<span class="more" data-act="phtermmore">⋯</span>` : ""}</span></div>${termMenu}
     <div class="pbody">${body}</div>
     <div class="pfoot">${chips}<div class="pbox"><span class="plus">+</span>${text}</div></div>
     ${menu ? `<div class="pmenu"><div class="it"><span>Camera</span>${line("camera", 18)}</div><div class="it"><span>Photos</span>${line("image", 18)}</div><div class="it"><span>Files</span>${line("folder", 18)}</div><div class="it hi"><span>Files on Mac<span class="new">New</span></span>${line("laptop", 18)}</div><div class="it"><span>Paste Image</span>${line("clip", 18)}</div><div class="it" style="border:0"><span>Keys</span>${line("keys", 18)}</div></div>` : ""}
@@ -1113,7 +1438,7 @@ function phRows(root, o) {
   const rows = [];
   list.forEach((n, i) => {
     const dir = isDir(n), last = i === list.length - 1;
-    const checked = (o.sel ?? []).includes(n.path);
+    const checked = (o.sel ?? []).includes(n.path) || o.flash === n.path;
     if (C()) {
       rows.push(`<div class="pr ${dir ? "dir" : ""} ${n.dim ? "dim" : ""} ${checked ? "on" : ""}" data-act="${actOf(n)}" data-path="${attr(n.path)}">${o.select ? `<span class="cb2 ${checked ? "on" : ""}">${checked ? "✓" : ""}</span>` : "<span></span>"}<span class="ic">${fileIcon(n)}</span><span class="nm">${esc(n.name)}<small>${esc(n.mtime ?? "")}${dir ? "" : ` · ${size(n)}`}</small></span><span class="go">${dir && !o.select ? line("chevR", 13, 2.2) : ""}</span></div>`);
     } else {
@@ -1142,13 +1467,17 @@ function tabBar() {
 }
 /** The Files tab (files-v0 §5; user: 5开一个标签页吧): a page of its own, at the last place; nobody to give to yet, so
  *  Select ends in Add to Reply…, which asks which terminal. */
-function phoneTab({ chooser = false } = {}) {
+function phoneTab({ chooser = false, root = null } = {}) {
   const ph = S.ph;
-  const up = parentOf(ph.root);
-  const nav = `<div class="pnav"><span class="nb" ${up ? `data-act="phcrumb" data-path="${attr(up)}"` : ""}>${up ? `‹ ${esc(baseName(up))}` : ""}</span><span class="t"><b>${esc(baseName(ph.root))}</b><span>${C() ? "On Mac mini" : "@ Mac mini"}</span></span><span class="nb r"><span data-act="phselect">${ph.select ? "Cancel" : "Select"}</span><span class="more">⋯</span></span></div>`;
-  const foot = ph.select ? `<div class="pbar"><span style="color:var(--ink2)">${ph.sel.length} Selected</span>${B("Add to Reply…", "pri", "tabadd", ph.sel.length ? "" : "disabled")}</div>` : tabBar();
-  return `<div class="pscr ptab">${nav}${phCrumbs(ph.root)}<div class="plist">${phRows(ph.root, ph)}</div>${foot}</div>${chooser ? phoneChooser() : ""}`;
+  const at = root ?? ph.root, selecting = ph.select && !root;
+  const up = parentOf(at);
+  // Selecting: the count under the title, the bar's two buttons before Add to Reply… (iOS Files' select bar).
+  const nav = `<div class="pnav"><span class="nb" ${up ? `data-act="phcrumb" data-path="${attr(up)}"` : ""}>${up ? `‹ ${esc(baseName(up))}` : ""}</span><span class="t"><b>${esc(baseName(at))}</b><span>${selecting ? `${ph.sel.length} Selected` : C() ? "On Mac mini" : "@ Mac mini"}</span></span><span class="nb r"><span data-act="phselect">${selecting ? "Cancel" : "Select"}</span><span class="more" data-act="phmore">⋯</span></span></div>`;
+  const files = ph.sel.length && ph.sel.every((p) => node(p) && !isDir(node(p)));
+  const foot = selecting ? `<div class="pbar"><span class="icos"><button class="ico" data-act="phselshare" ${files ? "" : "disabled"} aria-label="Share">${ico("share")}</button><button class="ico" data-act="phseltrash" ${ph.sel.length ? "" : "disabled"} aria-label="Move to Trash">${ico("trash")}</button></span>${B("Add to Reply…", "pri", "tabadd", ph.sel.length ? "" : "disabled")}</div>` : tabBar();
+  return `<div class="pscr ptab">${nav}${phCrumbs(at)}<div class="plist">${phRows(at, root ? { ...ph, select: false, sel: [], expanded: new Set(), flash: null } : ph)}</div>${foot}</div>${chooser ? phoneChooser() : ""}`;
 }
+const ico = (k) => C() ? line(k, 20) : P.sprite(PX[k], { px: 2 });
 function phoneChooser() {
   const rows = PANES.map((p, k) => `<div class="pch" data-act="choose" data-k="${k}">${agent(p.ag)}<span><b>${esc(p.name)}</b><small>${esc(p.short)} · ${p.st === "busy" ? (C() ? "Working" : "Busy") : "Idle"}</small></span><span class="ago">${k === 0 ? "Now" : "12m"}</span></div>`).join("");
   return `<div class="dimmer"></div><div class="sheet choose"><div class="grab"></div><div class="pnav"><span class="nb" data-act="chcancel">Cancel</span><span class="t"><b>Add to Reply</b><span>${S.ph.sel.length} Files</span></span><span class="nb r"></span></div><div class="plist">${rows}</div><div class="pfoot2">选的文件会落进这个终端的回复框，最近用过的终端在前。</div></div>`;
@@ -1162,15 +1491,82 @@ function alertHtml(files) {
 function phonePreview() {
   const n = node(S.ph.preview);
   const lines = (n.text ?? "").replace(/\n$/, "").split("\n").slice(0, 22);
-  return `<div class="pscr"><div class="pnav"><span class="nb" data-act="phback">‹ ${esc(baseName(parentOf(n.path)))}</span><span class="t"><b>${esc(n.name)}</b><span>${esc(kindWord(n))} · ${sizeWords(n.size)}</span></span><span class="nb r"></span></div>
+  return `<div class="pscr"><div class="pnav"><span class="nb" data-act="phback">‹ ${esc(baseName(parentOf(n.path)))}</span><span class="t"><b>${esc(n.name)}</b><span>${esc(kindWord(n))} · ${sizeWords(n.size)}</span></span><span class="nb r"><span class="ib2" data-act="phshare" aria-label="Share">${C() ? line("share", 19) : P.sprite(PX.share, { px: 2 })}</span><span class="more" data-act="phpvmore">⋯</span></span></div>
     <div class="pbody" style="padding:0">${n.text ? `<pre class="code" style="font-size:11.5px; padding:10px 12px">${lines.map((l, i) => `<span class="ln">${i + 1}</span>${esc(l)}`).join("\n")}</pre>` : `<div class="pic">${picSvg(n.pic, false)}</div>`}</div>
-    <div class="pbar" style="justify-content:flex-start; gap:16px">${B(S.ph.tab ? "Add to Reply…" : "Add to Reply", "pri", "phaddone")}${B("Copy Path")}</div></div>`;
+    <div class="pbar" style="justify-content:flex-start; gap:16px">${B(S.ph.tab ? "Add to Reply…" : "Add to Reply", "pri", "phaddone")}${B("Copy Path")}</div>${S.ph.menu === "pv" ? `<div class="pmenu ctxm" style="top:52px; right:10px; left:auto">${mi("Rename…", "pencil", "phpvrename", { isNew: true })}<div class="gap"></div>${mi("Move to Trash", "trash", "phpvtrash", { red: true, isNew: true })}</div>` : ""}</div>`;
+}
+
+// ---------- the phone, third draft (files-v0 §12.3, §12.4): changing files, saving to the phone, a session's folder ----------
+/** An item of the system's menu on iOS: the word, its symbol at the end; a destructive one red. */
+const mi = (label, icon, act = "", { red = false, isNew = false, hi = false, path = "" } = {}) =>
+  `<div class="it ${red ? "red" : ""} ${hi ? "hi" : ""}" ${act ? `data-act="${act}"` : ""} ${path ? `data-path="${attr(path)}"` : ""}><span>${label}${isNew ? `<span class="new">New</span>` : ""}</span>${line(icon, 18)}</div>`;
+/** The folder page's ⋯: New Folder and New File first (iOS Files), then what was there. */
+function phMoreHtml() {
+  // Over the whole phone (outside the page): under the bar's ⋯.
+  return `<div class="pmenu ctxm" style="top:94px; right:10px; left:auto">${mi("New Folder", "folderPlus", "phnewfolder", { isNew: true })}${mi("New File", "docPlus", "phnewfile", { isNew: true })}<div class="gap"></div>${mi("Show Hidden Files", "eye")}${mi("Sort By", "sort")}<div class="gap"></div>${mi("Home", "home")}</div>`;
+}
+/** A long press on a row: the row lifted, the system's menu under it; Move to Trash last and red (HIG Context menus).
+ *  What cannot be changed here has no Rename… and no Move to Trash. */
+function phRowMenuHtml(path) {
+  const n = node(path);
+  if (!n) return "";
+  const dir = isDir(n);
+  const row = C()
+    ? `<div class="pr ${dir ? "dir" : ""}"><span></span><span class="ic">${fileIcon(n)}</span><span class="nm">${esc(n.name)}<small>${esc(n.mtime ?? "")}${dir ? "" : ` · ${size(n)}`}</small></span><span class="go"></span></div>`
+    : `<div class="pr ${dir ? "dir" : ""}"><span></span><span class="tr">${dir ? "▸" : "─"}</span><span class="nm">${esc(n.name)}${dir ? "/" : ""}</span><span class="mt">${dir ? "" : size(n)}</span></div>`;
+  const items = [mi("Add to Reply…", "reply", "phmreply"), dir ? "" : mi("Share…", "share", "phmshare", { isNew: true, path }), mi("Copy Path", "copy"),
+    ...(fixed(path) ? [] : [`<div class="gap"></div>`, mi("Rename…", "pencil", "phmrename", { isNew: true, path }), `<div class="gap"></div>`, mi("Move to Trash", "trash", "phmtrash", { red: true, isNew: true, path })])];
+  return `<div class="dimmer blur"></div><div class="plift">${row}</div><div class="pmenu ctxm" style="top:206px">${items.join("")}</div>`;
+}
+/** The system's alert with a field: a name for a new item, or a new name (the terminal page's Rename is the same). A
+ *  name that cannot be used is said in a second alert, and the field keeps what was typed (files-v0 §12.3). */
+function phNameHtml(d) {
+  if (d.err) return `<div class="dimmer" style="z-index:5"></div><div class="palert" role="alertdialog"><div class="bd"><b>${d.title}</b>${esc(d.err)}</div><div class="bt one"><button data-act="phdlgok">OK</button></div></div>`;
+  const go = d.kind === "rename" ? ["phrenamego", "Rename"] : ["phcreate", "Create"];
+  return `<div class="dimmer" style="z-index:5"></div><div class="palert" role="alertdialog"><div class="bd"><b>${d.title}</b><input class="pin" value="${attr(d.value)}" placeholder="名称" spellcheck="false" autocomplete="off"></div><div class="bt"><button data-act="phdlgcancel">Cancel</button><button class="go" data-act="${go[0]}" ${d.value.trim() ? "" : "disabled"}>${go[1]}</button></div></div>`;
+}
+/** Asked before anything goes to the Mac's Trash from the phone: the Trash is on the Mac, so it cannot be undone here
+ *  (HIG Action sheets: Move to Trash red on top, Cancel apart). A folder a terminal runs in says so. */
+function phTrashHtml(d) {
+  const what = d.paths.length === 1 ? `“${baseName(d.paths[0])}”` : ` ${d.paths.length} 项`;
+  const busy = d.paths.map(runsIn).find(Boolean);
+  const say = busy ? `终端“${esc(busy.name)}”正在此文件夹中运行。移到废纸篓后，其中的 agent 仍会使用原来的路径，可能出错。` : "可在 Mac mini 的废纸篓中恢复。";
+  return `<div class="dimmer" style="z-index:5"></div><div class="asheet" role="dialog"><div class="g"><div class="hd"><b>将${esc(what)}移到 Mac mini 的废纸篓？</b>${say}</div><button class="red" data-act="phdotrash">Move to Trash</button></div><div class="g"><button class="cancel" data-act="phdlgcancel">Cancel</button></div></div>`;
+}
+/** The system's share sheet, the file fetched to the phone first: Save to Files puts it where you pick in the Files app,
+ *  Save Image into Photos (HIG Activity views: the Share button, no saving of our own). */
+function phShareHtml(d) {
+  const ns = d.paths.map(node).filter(Boolean);
+  const one = ns.length === 1 ? ns[0] : null;
+  const head = one ? `<b>${esc(one.name)}</b><small>${esc(kindWord(one))} · ${sizeWords(one.size)}</small>` : `<b>${ns.length} Files</b><small>${sizeWords(ns.reduce((a, n) => a + (n.size ?? 0), 0))}</small>`;
+  const targets = [["airdrop", "AirDrop"], ["bubble", "Messages"], ["mail", "Mail"], ["notes", "Notes"]];
+  const acts = [["Copy", "copy"], ["Save to Files", "folder", true], ...(ns.every((n) => n.type === "image") ? [["Save Image", "image"]] : [])];
+  return `<div class="dimmer" style="z-index:5"></div><div class="share" role="dialog" aria-label="Share"><div class="sh"><span class="fi">${one ? fileIcon(one) : line("doc", 18)}</span><span class="tt">${head}</span><button class="x" data-act="phdlgcancel" aria-label="Close">${line("x", 12)}</button></div><div class="tg">${targets.map(([k, l]) => `<span><i>${line(k, 24)}</i>${l}</span>`).join("")}</div><div class="ac">${acts.map(([l, k, hi]) => `<div class="it ${hi ? "hi" : ""}">${l}${line(k, 19)}</div>`).join("")}</div></div>`;
+}
+const phOverlay = (d) => !d ? "" : d.kind === "trash" ? phTrashHtml(d) : d.kind === "share" ? phShareHtml(d) : phNameHtml(d);
+/** An earlier session, read only, `Resume` under it; ⋯ has Show in Files (files-v0 §12.4). Made up. */
+function phoneSession({ menu = false } = {}) {
+  return `<div class="pscr"><div class="pnav"><span class="nb">‹</span><span class="t"><b>文件接口的分页</b><span>~/Projects/harbor-api · 5d</span></span><span class="nb r"><span class="more" data-act="phsessmore">⋯</span></span></div>
+    <div class="pbody"><div class="ub" style="max-width:90%">文件接口加上分页，每页 50 条。</div><div class="md"><p>已在 <code class="c">routes/files.ts</code> 加了游标分页：带 <code class="c">?cursor=</code> 取下一页，每页 50 条。</p></div><div class="ub" style="max-width:90%">测试也补上。</div><div class="md"><p>补了 3 个测试，<code class="c">npm test</code> 全部通过。</p></div></div>
+    <div class="pbar" style="justify-content:center">${B("Resume", "pri")}</div>
+    ${menu ? `<div class="pmenu ctxm" style="top:52px; right:10px; left:auto">${mi("Show in Files", "folder", "phshowin", { isNew: true, hi: true })}</div>` : ""}</div>`;
 }
 function drawPhones() {
   const ph = S.ph;
   const el = document.getElementById("phones");
   let left, right, ll, rl;
-  if (ph.tab) {
+  const lumen = HOME + "/Projects/lumen";
+  // the third draft's pairs: left what is done, right what comes of it
+  const list = () => ph.preview ? phonePreview() : phoneTab();
+  const leftMenu = () => ph.menu === "more" ? phMoreHtml() : ph.menu?.kind === "row" ? phRowMenuHtml(ph.menu.path) : "";
+  if (ph.v3) {
+    if (ph.step === "pnew") { left = list() + leftMenu(); ll = "Files 标签页 · ⋯"; right = list() + phOverlay(ph.dlg); rl = ph.dlg ? (ph.dlg.err ? "名字用不了" : `${ph.dlg.title} · 起名`) : "建好了"; }
+    if (ph.step === "plong") { left = list() + leftMenu(); ll = "长按一项（演示里右键）"; right = list() + phOverlay(ph.dlg); rl = ph.dlg?.kind === "trash" ? "Move to Trash · 先问" : ph.dlg ? "下一步" : "移走了"; }
+    if (ph.step === "psel") { left = list() + leftMenu(); ll = "Select · 底栏"; right = list() + phOverlay(ph.dlg); rl = ph.dlg?.kind === "trash" ? "废纸篓按钮 · 先问" : ph.dlg?.kind === "share" ? "分享按钮 · 分享面板" : "Files 标签页"; }
+    if (ph.step === "pshare") { left = phonePreview(); ll = "预览 · 右上角 Share"; right = phonePreview() + phOverlay(ph.dlg); rl = ph.dlg ? "分享面板 · Save to Files" : "预览"; }
+    if (ph.step === "pterm") { left = phoneTerm({ more: ph.menu === "term" }); ll = "终端页 · ⋯"; right = phoneTab({ root: lumen }); rl = "Show in Files · 它此刻的文件夹"; }
+    if (ph.step === "psess") { left = phoneSession({ menu: ph.menu === "sess" }); ll = "会话记录页 · ⋯"; right = phoneTab({ root: HOME + "/Projects/harbor-api" }); rl = "Show in Files · 会话的文件夹"; }
+  } else if (ph.tab) {
     left = phoneTab(); ll = ph.select ? "Files 标签页 · Select" : "Files 标签页";
     if (ph.chosen != null) { right = phoneTerm({ added: ph.added, p: PANES[ph.chosen] }); rl = "选了终端 · 它的回复框"; }
     else if (ph.choosing) { right = phoneTab({ chooser: true }); rl = "Add to Reply… · 给哪个终端"; }
@@ -1184,6 +1580,8 @@ function drawPhones() {
   el.innerHTML = `<div class="phonebox"><span class="lbl">${ll}</span><div class="phone ${look()}">${sb}${left}</div></div>
     <div class="phonebox"><span class="lbl">${rl}</span><div class="phone ${look()}">${sb}${right}</div></div>`;
   document.getElementById("capPhone").innerHTML = capPhone();
+  const pin = el.querySelector(".pin");
+  if (pin && S.ph.focusPin) { S.ph.focusPin = false; pin.focus({ preventScroll: true }); pin.select(); }
 }
 function phPreset(name) {
   const lumen = HOME + "/Projects/lumen";
@@ -1194,6 +1592,15 @@ function phPreset(name) {
   if (name === "reply") { S.ph.root = lumen + "/src"; S.ph.select = true; S.ph.sel = [lumen + "/src/app.ts", lumen + "/src/store.ts"]; S.ph.added = [...S.ph.sel]; }
   if (name === "tab") { S.ph.tab = true; S.ph.root = lumen + "/src"; S.ph.select = true; S.ph.sel = [lumen + "/src/app.ts", lumen + "/src/store.ts"]; S.ph.choosing = true; }
   if (name === "sensitive") { S.ph.hidden = true; S.ph.preview = lumen + "/.env"; S.ph.alert = { side: "right", add: [lumen + "/.env"], sens: [lumen + "/.env"], k: null }; }
+  // third draft (files-v0 §12.3, §12.4): the Files tab, each a pair — left what is done, right what comes of it
+  Object.assign(S.ph, { v3: ["pnew", "plong", "psel", "pshare", "pterm", "psess"].includes(name), menu: null, dlg: null, flash: null });
+  if (S.ph.v3) { S.ph.tab = true; buildTree(); S.undo = []; S.redo = []; S.note = null; }
+  if (name === "pnew") { S.ph.menu = "more"; S.ph.dlg = { kind: "new", type: "dir", title: "New Folder", value: "fixtures" }; }
+  if (name === "plong") { S.ph.root = lumen + "/src"; S.ph.menu = { kind: "row", path: lumen + "/src/app.ts" }; S.ph.dlg = { kind: "trash", paths: [lumen + "/src/app.ts"] }; }
+  if (name === "psel") { S.ph.root = lumen + "/src"; S.ph.select = true; S.ph.sel = [lumen + "/src/app.ts", lumen + "/src/store.ts"]; S.ph.dlg = { kind: "trash", paths: [...S.ph.sel] }; }
+  if (name === "pshare") { S.ph.root = lumen + "/docs"; S.ph.preview = lumen + "/docs/logo.png"; S.ph.dlg = { kind: "share", paths: [lumen + "/docs/logo.png"] }; }
+  if (name === "pterm") { S.ph.menu = "term"; }
+  if (name === "psess") { S.ph.menu = "sess"; }
 }
 function capPhone() {
   return {
@@ -1204,6 +1611,12 @@ function capPhone() {
     select: `<b>Select</b>：勾几项，底栏 <code>Add to Reply (2)</code>。点它回到终端页。`,
     reply: `<b>回到回复框</b>：光标处是 <code>[File #1] [File #2]</code>，上面一排小条写着 <code>on Mac</code>：文件在 Mac 上，发送时附件是路径（<code>{path}</code>），不上传。`,
     tab: `<b>Files 标签页</b>（用户定）：第五个标签，排在 Terminals 后面，五个正好不进“更多”。整页的文件浏览器，打开在上次的位置，第一次是家目录，跟着当前连着的那台。这里不知道要给谁，所以 <code>Select</code> 以后底栏是 <code>Add to Reply…</code>：先选哪个终端（右边，最近用过的在前），再落进它的回复框。点右边的一个终端试试。`,
+    pnew: `<b>新建</b>（第三稿）：文件夹页 <code>⋯</code> 最上面一组 <code>New Folder</code>、<code>New File</code>（iOS“文件”的摆法），点了是系统带输入框的提示框（同终端页的 <code>Rename</code>），<code>Create</code> 在名字空时是灰的。右边打的是 <code>fixtures</code>，点 <code>Create</code> 建好、列表里亮一下；改成 <code>docs</code> 再点，第二个提示框说“此位置已有……”，<code>OK</code> 回去改，打的字还在。名字里带 <code>/</code> 一次建几层。`,
+    plong: `<b>长按一项</b>（文件列表以前没有长按菜单）：行浮起来，下面是系统的菜单——<code>Add to Reply…</code>、<code>Share…</code>、<code>Copy Path</code>；<code>Rename…</code>；最后一组红字的 <code>Move to Trash</code>（Apple 的右键菜单规范：破坏性的在最后、红色）。文件夹没有 <code>Share…</code>；装着 AgentSwitch 凭据的没有改名和移到废纸篓。手机上移到废纸篓<b>先问</b>（右边）：废纸篓在 Mac 上，手机这边撤不回来；系统的确认面板，<code>Move to Trash</code> 红色在上，<code>Cancel</code> 另一块。演示里在左边任何一行上右键试试，点右边的 <code>Move to Trash</code> 真的移走。`,
+    psel: `<b>Select 的底栏</b>：标题下面的小字换成 <code>2 Selected</code>；底栏左边两个按钮——分享（选中里有文件夹时是灰的）、移到废纸篓，右边 <code>Add to Reply…</code>。点废纸篓先问（右边，几项一起：“将 2 项移到……”）；点分享是系统的分享面板。从终端 <code>+</code> 进来的那张 sheet 里只有 <code>Add to Reply (n)</code>：那里是给这个终端挑文件。`,
+    pshare: `<b>存到手机</b>（你说的“保存”，我的读法）：预览页右上角多一个 <code>Share</code> 按钮（长按菜单的 <code>Share…</code> 同样）。先把整个文件下到手机（同 <code>Open Preview</code> 的进度条），再开<b>系统的分享面板</b>：<code>Save to Files</code> 存到“文件”App 里你挑的位置，图片还有 <code>Save Image</code> 存进照片，也能 AirDrop。Apple 的规范要求用 Share 按钮、不另做一份“保存”。存在哪由你挑、在“文件”App 里能删——这回答了 10-17 那一问；应用自己下载的副本用完就删（当时的方案 1）。分享上限 200 MB。`,
+    pterm: `<b>终端页 › Show in Files</b>：导航栏 <code>⋯</code> 里单独一组 <code>Show in Files</code>，在 <code>Rename</code>、<code>Close</code> 上面（名字同 Mac 左边列表的右键菜单）。切到 <code>Files</code> 标签，到这个终端<b>此刻</b>所在的文件夹（右边）；终端页留在 Terminals 标签里，切回去还在。`,
+    psess: `<b>会话记录页 › Show in Files</b>：以前的会话（只读，底部 <code>Resume</code>）导航栏右边加 <code>⋯</code>，里面 <code>Show in Files</code>，到会话的文件夹（右边）。文件夹已经不在时到它还在的最近一层，上面一行说明。终端列表里长按会话行的菜单（<code>Resume</code>、<code>Resume As</code>、<code>Delete</code>）也加这一项，同 Mac。`,
     sensitive: `<b>可能含密码的文件</b>：<code>.env</code> 照常能预览（左边的 sheet 打开了隐藏文件，<code>⋯</code> › <code>Show Hidden Files</code>）；点 <code>Add to Reply</code> 时系统的提示框问一次。<code>Add</code> 以后小条上带${C() ? "琥珀色的三角" : "琥珀色的 <code>!</code>"}，发送时不再问。`,
   }[S.ph.step] ?? "";
 }
@@ -1243,17 +1656,19 @@ document.addEventListener("click", (e) => {
     draw(); return;
   }
   const mc = e.target.closest("[data-mac]");
-  if (mc) { document.querySelectorAll("#ctlMac button").forEach((b) => b.classList.toggle("on", b === mc)); preset(mc.dataset.mac); drawMac(); return; }
+  if (mc) { document.querySelectorAll("#ctlMac button, #ctlMac3 button").forEach((b) => b.classList.toggle("on", b === mc)); preset(mc.dataset.mac); drawMac(); return; }
   const pc = e.target.closest("[data-ph]");
-  if (pc) { document.querySelectorAll("#ctlPhone button").forEach((b) => b.classList.toggle("on", b === pc)); phPreset(pc.dataset.ph); drawPhones(); return; }
+  if (pc) { document.querySelectorAll("#ctlPhone button, #ctlPhone3 button").forEach((b) => b.classList.toggle("on", b === pc)); phPreset(pc.dataset.ph); draw(); return; }
   const inMac = e.target.closest("#win"), inPhone = e.target.closest("#phones"), inSet = e.target.closest("#setwrap");
   const a = e.target.closest("[data-act]");
   const act = a?.dataset.act;
-  if (inPhone) { phoneAct(act, a); return; }
+  if (inPhone) { phoneAct(act, a, e); return; }
   if (inSet) { setAct(act, a, e); return; }
   if (!inMac) return;
   const menuWas = S.menu;
   if (!e.target.closest(".menu")) S.menu = null;
+  // The line under the list is for what was just done; the next click in the window lets it go.
+  if (!e.target.closest("[data-mac]")) S.note = null;
   const paneEl = e.target.closest("[data-pane-body]");
   if (paneEl && !act) { S.focus = Number(paneEl.dataset.paneBody); }
   switch (act) {
@@ -1290,6 +1705,13 @@ document.addEventListener("click", (e) => {
     case "unreply": S.reply[Number(a.dataset.pane)].splice(Number(a.dataset.k), 1); break;
     case "qlclose": S.ql = false; break;
     case "showin": S.open = true; goTo(a.dataset.path); S.menu = null; break;
+    // third draft (files-v0 §12)
+    case "newmenu": S.menu = menuWas?.kind === "new" ? null : { kind: "new" }; break;
+    case "newfile": case "newfolder": startNew(act === "newfile" ? "file" : "dir", a.dataset.path || null); break;
+    case "rename": startRename(a.dataset.path); break;
+    case "trash": S.menu = null; toTrash(S.sel.includes(a.dataset.path) ? [...S.sel] : [a.dataset.path]); break;
+    case "dlgcancel": S.dlg = null; break;
+    case "dlgok": { const d = S.dlg; S.dlg = null; if (d.op === "rename") commitEdit({ force: true }); else toTrash(d.paths, { force: true }); break; }
     default: {
       const row = e.target.closest("[data-row]");
       if (row && row.dataset.col) {
@@ -1305,7 +1727,7 @@ document.addEventListener("click", (e) => {
   // A menu item that does nothing in the demo still closes its menu, as the system's would.
   if (!act && e.target.closest(".menu .it:not(.off)")) S.menu = null;
   drawMac();
-  if (e.target.closest(".files")) document.getElementById("fl")?.focus({ preventScroll: true });
+  if (e.target.closest(".files") && !S.edit) document.getElementById("fl")?.focus({ preventScroll: true });
 });
 document.addEventListener("dblclick", (e) => {
   const row = e.target.closest("#win [data-row]");
@@ -1314,6 +1736,12 @@ document.addEventListener("dblclick", (e) => {
   if (n && isDir(n) && !n.locked) { goTo(n.kind === "link" ? n.target : n.path); drawMac(); }
 });
 document.addEventListener("contextmenu", (e) => {
+  const pr = e.target.closest("#phones .pr[data-path]");
+  if (pr && S.ph.v3 && ["pnew", "plong", "psel"].includes(S.ph.step)) {
+    e.preventDefault();
+    Object.assign(S.ph, { menu: { kind: "row", path: pr.dataset.path }, dlg: null, preview: null });
+    drawPhones(); return;
+  }
   const fr = e.target.closest("#win .files [data-row]");
   if (fr) {
     e.preventDefault();
@@ -1323,6 +1751,13 @@ document.addEventListener("contextmenu", (e) => {
     S.menu = { kind: "file", path: n.path, hi: null };
     drawMac(); return;
   }
+  const bg = e.target.closest("#win .files .fl");
+  if (bg) {
+    e.preventDefault();
+    const body = document.querySelector("#win .body"), k = body.getBoundingClientRect().width / body.offsetWidth, b = body.getBoundingClientRect();
+    S.sel = []; S.menu = { kind: "bg", x: Math.min((e.clientX - b.left) / k, body.offsetWidth - 220), y: Math.min((e.clientY - b.top) / k, body.offsetHeight - 130) };
+    drawMac(); return;
+  }
   const r = e.target.closest("#win [data-ctx]");
   if (!r) return;
   e.preventDefault();
@@ -1330,6 +1765,21 @@ document.addEventListener("contextmenu", (e) => {
   drawMac();
 });
 document.addEventListener("keydown", (e) => {
+  if (e.target.id === "fin" && S.edit) {
+    if (e.key === "Enter") { e.preventDefault(); if (commitEdit() !== false) { drawMac(); document.getElementById("fl")?.focus({ preventScroll: true }); } }
+    else if (e.key === "Escape") { e.preventDefault(); S.edit = null; drawMac(); document.getElementById("fl")?.focus({ preventScroll: true }); }
+    return;
+  }
+  if (e.target.classList?.contains("pin")) {
+    if (e.key === "Enter") { const go = e.target.closest(".palert")?.querySelector(".go"); if (go && !go.disabled) go.click(); }
+    else if (e.key === "Escape") { S.ph.dlg = null; drawPhones(); }
+    return;
+  }
+  if (e.target.closest?.("#phones")) return;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && e.target.closest?.("#win")) {
+    e.preventDefault(); if (e.shiftKey) redo(); else undo(); drawMac(); document.getElementById("fl")?.focus({ preventScroll: true }); return;
+  }
+  if (e.key === "Escape" && S.dlg) { S.dlg = null; drawMac(); return; }
   if (e.key === "Escape") {
     if (S.menu || S.ql || S.warn) { S.menu = null; S.ql = false; S.warn = null; drawMac(); }
     // Floating, esc closes the column when the focus is in it; in a terminal esc is the terminal's.
@@ -1342,23 +1792,36 @@ document.addEventListener("keydown", (e) => {
   const at = cur ? vis.indexOf(cur) : -1;
   const move = (k) => { let j = at; do { j += k; } while (j >= 0 && j < vis.length && node(vis[j])?.locked); if (j >= 0 && j < vis.length) { S.sel = [vis[j]]; S.anchor = vis[j]; } };
   const n = cur ? node(cur) : null;
-  if (e.key === "ArrowDown") { move(at < 0 ? 1 : 1); }
+  const open = () => { if (n && isDir(n) && !n.locked) goTo(n.kind === "link" ? n.target : n.path); };
+  S.note = null;
+  if (e.metaKey && e.key === "Backspace") { toTrash([...S.sel]); }
+  else if (e.metaKey && e.altKey && e.code === "KeyN") { startNew("file"); }
+  else if (e.metaKey && e.shiftKey && e.code === "KeyN") { startNew("dir"); }
+  else if ((e.metaKey && e.key === "ArrowDown") || (e.metaKey && e.key.toLowerCase() === "o")) { open(); }
+  else if (e.key === "ArrowDown") { move(at < 0 ? 1 : 1); }
   else if (e.key === "ArrowUp") { move(-1); }
   else if (e.key === "Home") { S.sel = vis.length ? [vis[0]] : []; }
   else if (e.key === "End") { S.sel = vis.length ? [vis[vis.length - 1]] : []; }
   else if (e.key === "ArrowRight" && n && isDir(n)) { if (viewNow() === "tree") { if (!S.expanded.has(n.path)) S.expanded.add(n.path); else move(1); } else goTo(n.kind === "link" ? n.target : n.path); }
   else if (e.key === "ArrowLeft") { if (viewNow() === "tree" && n && S.expanded.has(n.path)) S.expanded.delete(n.path); else if (viewNow() === "tree" && n && parentOf(n.path) !== S.root) { S.sel = [parentOf(n.path)]; } else { const p = parentOf(S.root); if (p) goTo(p); } }
   else if (e.key === " ") { if (n && !isDir(n)) S.ql = !S.ql; }
-  else if (e.key === "Enter") { if (n && isDir(n) && !n.locked) goTo(n.kind === "link" ? n.target : n.path); else if (e.altKey) addToReply(); }
+  // ↩ renames, as in Finder and VS Code (files-v0 §12.2); ⌥↩ is Add to Reply.
+  else if (e.key === "Enter") { if (e.altKey) addToReply(); else if (n && S.sel.length === 1) startRename(n.path); }
   else if (e.key.length === 1 && /\S/.test(e.key)) { const k = e.key.toLowerCase(); const from = at + 1; const hit = [...vis.slice(from), ...vis.slice(0, from)].find((p) => baseName(p).replace(/^\./, "").toLowerCase().startsWith(k)); if (hit) S.sel = [hit]; else return; }
   else return;
   e.preventDefault();
   drawMac();
-  document.getElementById("fl")?.focus({ preventScroll: true });
+  // A name box just opened keeps the keys.
+  if (!S.edit) document.getElementById("fl")?.focus({ preventScroll: true });
   document.querySelector("#fl .sel")?.scrollIntoView({ block: "nearest" });
 });
-function phoneAct(act, a) {
+function phoneAct(act, a, e) {
   const ph = S.ph;
+  // A tap beside a menu, or beside the share sheet, closes it (the system's).
+  if (!act) {
+    if (e && !e.target.closest(".pmenu, .share, .palert, .asheet") && (ph.menu || ph.dlg?.kind === "share")) { ph.menu = null; if (ph.dlg?.kind === "share") ph.dlg = null; drawPhones(); }
+    return;
+  }
   // What lands in a reply: asked first when a file may hold a password (files-v0 §5).
   const land = (files, side, k = null) => {
     const sens = files.filter(isSensitive);
@@ -1386,6 +1849,46 @@ function phoneAct(act, a) {
     case "choose": land([...ph.sel], "right", Number(a.dataset.k)); break;
     case "alertadd": put(ph.alert.add, ph.alert.k); ph.alert = null; break;
     case "alertcancel": put(ph.alert.add.filter((p) => !ph.alert.sens.includes(p)), ph.alert.k); ph.alert = null; break;
+    // third draft (files-v0 §12.3, §12.4)
+    case "phmore": ph.menu = ph.menu === "more" ? null : "more"; break;
+    case "phnewfolder": case "phnewfile": ph.menu = null; ph.flash = null; ph.dlg = { kind: "new", type: act === "phnewfile" ? "file" : "dir", title: act === "phnewfile" ? "New File" : "New Folder", value: "" }; ph.focusPin = true; break;
+    case "phcreate": {
+      const d = ph.dlg, c = checkName(ph.root, d.value);
+      if (c.error) { d.err = c.error; break; }
+      ph.flash = makeItem(ph.root, d.value, d.type).top; ph.dlg = null; ph.menu = null;
+      break;
+    }
+    case "phdlgok": ph.dlg.err = null; ph.focusPin = true; break;
+    case "phdlgcancel": ph.dlg = null; break;
+    case "phmreply": ph.menu = null; break;
+    case "phmshare": ph.menu = null; ph.dlg = { kind: "share", paths: [a.dataset.path] }; break;
+    case "phmrename": ph.menu = null; ph.dlg = { kind: "rename", path: a.dataset.path, title: "Rename", value: baseName(a.dataset.path) }; ph.focusPin = true; break;
+    case "phpvrename": ph.menu = null; ph.dlg = { kind: "rename", path: ph.preview, title: "Rename", value: baseName(ph.preview) }; ph.focusPin = true; break;
+    case "phrenamego": {
+      const d = ph.dlg, c = checkName(parentOf(d.path), d.value, { renaming: d.path });
+      if (c.error) { d.err = c.error; break; }
+      const name = d.value.trim();
+      if (name !== baseName(d.path)) { const to = renameItem(d.path, name); if (ph.preview === d.path) ph.preview = to; ph.sel = ph.sel.map((x) => x === d.path ? to : x); ph.flash = to; }
+      ph.dlg = null;
+      break;
+    }
+    case "phmtrash": ph.menu = null; ph.dlg = { kind: "trash", paths: [a.dataset.path] }; break;
+    case "phpvtrash": ph.menu = null; ph.dlg = { kind: "trash", paths: [ph.preview] }; break;
+    case "phseltrash": if (ph.sel.length) ph.dlg = { kind: "trash", paths: [...ph.sel] }; break;
+    case "phselshare": if (ph.sel.length && ph.sel.every((x) => !isDir(node(x)))) ph.dlg = { kind: "share", paths: [...ph.sel] }; break;
+    case "phdotrash": {
+      const d = ph.dlg;
+      d.paths.filter((x) => node(x) && !fixed(x)).forEach(takeOut);
+      ph.sel = ph.sel.filter((x) => !d.paths.includes(x));
+      if (d.paths.includes(ph.preview)) ph.preview = null;
+      ph.dlg = null; ph.menu = null;
+      break;
+    }
+    case "phshare": ph.menu = null; ph.dlg = { kind: "share", paths: [ph.preview] }; break;
+    case "phpvmore": ph.menu = ph.menu === "pv" ? null : "pv"; break;
+    case "phtermmore": ph.menu = ph.menu === "term" ? null : "term"; break;
+    case "phsessmore": ph.menu = ph.menu === "sess" ? null : "sess"; break;
+    case "phshowin": ph.menu = null; break;
     default: return;
   }
   drawPhones();
@@ -1410,14 +1913,15 @@ function drawSet() {
   const pop = (dev) => `<button class="pop" data-act="spop" data-dev="${dev}">${MODES.find(([v]) => v === st[dev].mode)[1]}<i>${C() ? "⌃⌄" : "▾"}</i></button>`;
   const folders = (dev) => st[dev].mode !== "folders" ? "" : st[dev].folders.map((f, k) => `<div class="r sub2 ${st.read ? "" : "off"}"><span class="ic">${line("folder", 14)}</span><span class="m">${esc(f.replace(HOME, "~"))}</span><span class="sp"></span><button class="mini" data-act="sdel" data-dev="${dev}" data-k="${k}" aria-label="Remove">−</button></div>`).join("")
     + `<div class="r sub2 ${st.read ? "" : "off"}"><button class="lnk" data-act="sadd" data-dev="${dev}">Add Folder…</button></div>`;
-  const files = (dev) => `<div class="r sub ${st.read ? "" : "off"}"><span class="d">Files</span><span class="new">New</span><span class="sp"></span>${pop(dev)}</div>${folders(dev)}`;
+  const files = (dev) => `<div class="r sub ${st.read ? "" : "off"}"><span class="d">Files</span><span class="sp"></span>${pop(dev)}</div>${folders(dev)}`;
   const sl = (t) => `<div class="sl">${C() ? t : `// ${t}`}</div>`;
   const menu = st.menu ? `<div class="menu" style="right:30px; top:${st.menu.top}px; min-width:190px">${MODES.map(([v, label]) => `<div class="it ${st[st.menu.dev].mode === v ? "chk" : ""}" data-act="smode" data-dev="${st.menu.dev}" data-v="${v}">${label}</div>`).join("")}</div>` : "";
   const win = `<div class="setwin ${look()}"><div class="tb2"><div class="lights"><i></i><i></i><i></i></div>Nodes<small>Mac mini · Settings</small></div><div class="bd" id="setbd">
     ${sl("This Mac")}<div class="grp"><div class="r"><span>Mac mini</span><span class="sp"></span><span class="d">LAN 192.168.1.30 · Tailscale mac-mini</span></div>
       <div class="r"><span>Allow Pairing</span><span class="sp"></span>${tgl(true)}</div>
       <div class="r"><span>Paired Nodes May Type</span><span class="sp"></span>${tgl(true)}</div>
-      <div class="r"><span>Paired Nodes May Read Files</span><span class="new">New</span><span class="sp"></span>${tgl(st.read, "sread")}</div></div>
+      <div class="r"><span>Paired Nodes May Read Files</span><span class="sp"></span>${tgl(st.read, "sread")}</div>
+      <div class="r ${st.read ? "" : "off"}"><span>Paired Nodes May Change Files</span><span class="new">New</span><span class="sp"></span>${tgl(st.read && st.change, st.read ? "schange" : "")}</div></div>
     ${sl("Nodes")}<div class="grp">
       <div class="r"><span class="ic">${line("laptop", 16)}</span><span class="m">MacBook Pro</span><span class="d">Online · LAN · 2 ms</span><span class="sp"></span><button class="nbtn red">Remove…</button></div>
       <div class="r sub"><span class="d">This Mac Uses It</span><span class="sp"></span>${tgl(true)}</div>
@@ -1451,6 +1955,7 @@ function setAct(act, a) {
   if (act !== "spop") st.menu = null;
   switch (act) {
     case "sread": st.read = !st.read; break;
+    case "schange": st.change = !st.change; break;
     case "spop": st.menu = wasMenu?.dev === a.dataset.dev ? null : { dev: a.dataset.dev, top: 0 }; break;
     case "smode": {
       const dev = st[a.dataset.dev];
@@ -1475,9 +1980,27 @@ function capSet() {
         all: "iPhone 现在是 <b>All Files</b>：服务所在账户能读的一切；点路径里的 <code>/</code> 能看到整个磁盘。",
         folders: `iPhone 现在是 <b>Selected Folders</b>（${sc.folders.map((f) => `<code>${esc(f.replace(HOME, "~"))}</code>`).join("、") || "还没有文件夹"}）：家目录这一层只列通往它们的文件夹，底部写“仅显示授权范围内的项目。”；进到授权的文件夹里，一切照常。`,
         none: "iPhone 现在是 <b>None</b>：什么都不给读。" }[sc.mode];
-  return `<b>节点自己的开关</b> <code>Paired Nodes May Read Files</code> 在 <code>Paired Nodes May Type</code> 下面，默认开。<b>每个设备一个范围</b>：在 <code>It Uses This Mac</code> 下面多一行 <code>Files</code>，四档 <code>Home Folder</code>、<code>All Files</code>、<code>Selected Folders</code>、<code>None</code>，只在这台 Mac 自己身上定（Linux 节点用命令行）。${now} AgentSwitch 自己存凭据的地方在任何一档里都锁着。范围不是沙箱：配对的设备照样能开终端让 agent 读别处，设置里那句说明照写。右边的手机能点：文件夹、路径的每一层；左边的开关和弹出菜单也能点。`;
+  return `<b>第三稿</b>：下面多一个 <code>Paired Nodes May Change Files</code>（默认开；读的开关关着时它也灰）。关掉以后，手机和别的节点的新建、改名、移到废纸篓都不出现、接口回 <code>changes-off</code>；本机的应用不受影响。它是“文件栏里不许改”的总闸，不是沙箱：配对的设备本来就能在终端里以你的身份做这些。改得了的地方和读得到的一样，由下面每个设备的范围定。<b>节点自己的开关</b> <code>Paired Nodes May Read Files</code> 在 <code>Paired Nodes May Type</code> 下面，默认开。<b>每个设备一个范围</b>：在 <code>It Uses This Mac</code> 下面多一行 <code>Files</code>，四档 <code>Home Folder</code>、<code>All Files</code>、<code>Selected Folders</code>、<code>None</code>，只在这台 Mac 自己身上定（Linux 节点用命令行）。${now} AgentSwitch 自己存凭据的地方在任何一档里都锁着。范围不是沙箱：配对的设备照样能开终端让 agent 读别处，设置里那句说明照写。右边的手机能点：文件夹、路径的每一层；左边的开关和弹出菜单也能点。`;
 }
 
+// the name box: a click anywhere else makes what it holds, if the name is good, else lets it go (VS Code)
+document.addEventListener("pointerdown", (e) => {
+  if (!S.edit || S.dlg || e.target.closest("#fin") || e.target.closest("[data-mac]")) return;
+  if (commitEdit() === false) S.edit = null;
+  drawMac();
+}, true);
+document.addEventListener("input", (e) => {
+  if (e.target.id === "fin" && S.edit) {
+    S.edit.value = e.target.value;
+    const old = document.getElementById("ferr");
+    if (old) old.outerHTML = ferrHtml(Number(old.dataset.pad));
+  }
+  if (e.target.classList.contains("pin") && S.ph.dlg) {
+    S.ph.dlg.value = e.target.value;
+    const go = e.target.closest(".palert")?.querySelector(".go");
+    if (go) go.disabled = !e.target.value.trim();
+  }
+});
 // the column's width: its left edge dragged (240–560 points)
 document.addEventListener("pointerdown", (e) => {
   if (!e.target.closest("#win .drag")) return;
@@ -1510,9 +2033,9 @@ if (q.get("theme") === "light") S.light = true;
 document.querySelectorAll('[data-opt="look"] button').forEach((b) => b.classList.toggle("on", b.dataset.v === S.look));
 document.querySelectorAll('[data-opt="theme"] button').forEach((b) => b.classList.toggle("on", (b.dataset.v === "light") === S.light));
 const mac0 = q.get("mac") ?? "home", ph0 = q.get("ph") ?? "browse";
-preset(mac0); phPreset(ph0);
-document.querySelectorAll("#ctlMac button").forEach((b) => b.classList.toggle("on", b.dataset.mac === mac0));
-document.querySelectorAll("#ctlPhone button").forEach((b) => b.classList.toggle("on", b.dataset.ph === ph0));
+phPreset(ph0); preset(mac0);
+document.querySelectorAll("#ctlMac button, #ctlMac3 button").forEach((b) => b.classList.toggle("on", b.dataset.mac === mac0));
+document.querySelectorAll("#ctlPhone button, #ctlPhone3 button").forEach((b) => b.classList.toggle("on", b.dataset.ph === ph0));
 draw();
 </script>
 </body>
