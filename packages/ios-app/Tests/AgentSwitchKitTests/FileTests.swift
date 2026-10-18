@@ -172,4 +172,102 @@ final class FileTests: XCTestCase {
         XCTAssertEqual(FileTime.short(ms(DateComponents(year: 2025, month: 12, day: 31)), now: now, calendar: calendar), "2025/12/31")
         XCTAssertEqual(FileTime.short(0, now: now, calendar: calendar), "")
     }
+
+    // MARK: - changing files (docs/files-v0.md §12)
+
+    func testAListingSaysWhatIsNeverRenamedOrMovedFromHere() throws {
+        let level = try JSONDecoder().decode(MacFolder.self, from: Data(#"{"path":"/Users","parent":"/","home":"/Users/me","entries":[{"name":"me","kind":"dir","size":0,"mtime":1,"hidden":false,"fixed":true},{"name":"Shared","kind":"dir","size":0,"mtime":1,"hidden":false}]}"#.utf8))
+        XCTAssertEqual(level.entries.map(\.fixed), [true, false])
+        XCTAssertEqual(level.entries.map(\.changeable), [false, true])
+        XCTAssertFalse(MacFileEntry(name: ".secret-gate", kind: .dir, locked: true).changeable)
+        let home = try JSONDecoder().decode(MacFileDetails.self, from: Data(#"{"name":"me","kind":"dir","size":0,"mtime":1,"path":"/Users/me","items":3,"fixed":true}"#.utf8))
+        XCTAssertTrue(home.fixed)
+    }
+
+    func testChangesAreAskedForAsTheMacTakesThem() async throws {
+        let transport = FakeTransport { req, _ in
+            switch req.url?.path {
+            case "/files/folder": return (Data(#"{"path":"/p/fixtures/users","top":"/p/fixtures"}"#.utf8), httpResponse(req.url, status: 201))
+            case "/files/rename": return (Data(#"{"path":"/p/index.ts"}"#.utf8), httpResponse(req.url))
+            case "/files/trash": return (Data(#"{"moved":[{"path":"/p/a.md","trashed":"/Users/me/.Trash/a.md"},{"path":"/p/b.md","trashed":null}]}"#.utf8), httpResponse(req.url))
+            default: return (Data(#"{"path":"/p/docs/logo 2.png","name":"logo 2.png","size":3}"#.utf8), httpResponse(req.url, status: 201))
+            }
+        }
+        let api = AgentSwitchAPI(endpoints: FixedEndpoint(lan), transport: transport, token: "tok")
+        let made = try await api.newFolder("/p/fixtures/users")
+        XCTAssertEqual(made, MacMade(path: "/p/fixtures/users", top: "/p/fixtures"))
+        let renamed = try await api.rename("/p/app.ts", to: "index.ts", force: false)
+        XCTAssertEqual(renamed, "/p/index.ts")
+        let moved = try await api.trash(["/p/a.md", "/p/b.md"], force: true, permanent: false)
+        XCTAssertEqual(moved, [MacMoved(path: "/p/a.md", trashed: "/Users/me/.Trash/a.md"), MacMoved(path: "/p/b.md", trashed: nil)])
+        let bodies = transport.requests.prefix(3).map { try? JSONSerialization.jsonObject(with: $0.httpBody ?? Data()) as? [String: AnyHashable] }
+        XCTAssertEqual(bodies[0], ["path": "/p/fixtures/users"])
+        XCTAssertEqual(bodies[1], ["path": "/p/app.ts", "name": "index.ts"])
+        XCTAssertEqual(bodies[2], ["paths": ["/p/a.md", "/p/b.md"], "force": true])
+        // A file of this phone's: its bytes, the place and what to do with a name taken.
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("upload-\(UUID().uuidString).png")
+        try Data([1, 2, 3]).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let seen = LockedBox<[Double]>([])
+        let landed = try await api.upload(file, to: "/p/docs/logo.png", conflict: .keep) { p in seen.withLock { $0.append(p) } }
+        XCTAssertEqual(landed.name, "logo 2.png")
+        let put = try XCTUnwrap(transport.requests.last)
+        XCTAssertEqual(put.httpMethod, "PUT")
+        XCTAssertEqual(put.url?.path, "/files/content")
+        XCTAssertEqual(URLComponents(url: put.url!, resolvingAgainstBaseURL: false)?.queryItems, [URLQueryItem(name: "path", value: "/p/docs/logo.png"), URLQueryItem(name: "conflict", value: "keep")])
+        XCTAssertEqual(put.value(forHTTPHeaderField: "Content-Type"), "application/octet-stream")
+        XCTAssertEqual(put.httpBody, Data([1, 2, 3]))
+        XCTAssertEqual(seen.value.last, 1)
+    }
+
+    func testARefusalSaysWhatItNamed() async throws {
+        let transport = FakeTransport { req, n in
+            switch n {
+            case 0: return (Data(#"{"error":"in-use","terminals":[{"id":"t1","name":"排序改成最近使用"}]}"#.utf8), httpResponse(req.url, status: 409))
+            case 1: return (Data(#"{"error":"no-trash","paths":["/Volumes/NAS/big.iso"],"moved":[]}"#.utf8), httpResponse(req.url, status: 409))
+            case 2: return (Data(#"{"error":"changes-off"}"#.utf8), httpResponse(req.url, status: 403))
+            default: return (Data("Not Found".utf8), httpResponse(req.url, status: 404))
+            }
+        }
+        let api = AgentSwitchAPI(endpoints: FixedEndpoint(lan), transport: transport, token: "tok")
+        do { _ = try await api.trash(["/p/lumen"], force: false, permanent: false); XCTFail("refused") } catch let e as FileChangeError {
+            XCTAssertEqual(e.refusal, .inUse)
+            XCTAssertEqual(e.terminals, [FileChangeError.Terminal(id: "t1", name: "排序改成最近使用")])
+        }
+        do { _ = try await api.trash(["/Volumes/NAS/big.iso"], force: false, permanent: false); XCTFail("refused") } catch let e as FileChangeError {
+            XCTAssertEqual(e.refusal, .noTrash)
+            XCTAssertEqual(e.paths, ["/Volumes/NAS/big.iso"])
+        }
+        do { _ = try await api.newFile("/p/x.md"); XCTFail("refused") } catch let e as FileChangeError {
+            XCTAssertEqual(e.refusal, .changesOff)
+            XCTAssertEqual(e.refusal?.sentence(mac: "Mac mini"), "Mac mini 不允许配对的设备修改文件。可在 Mac mini 的“设置 › Nodes”中打开。")
+        }
+        // A Mac from before these routes.
+        do { _ = try await api.newFolder("/p/x"); XCTFail("refused") } catch let e as FileChangeError { XCTAssertEqual(e.refusal, .unsupported) }
+    }
+
+    func testANameIsCheckedAsTheMacsColumnChecksIt() {
+        let taken: Set<String> = ["docs", "src", "app.ts"]
+        XCTAssertEqual(FileNames.check("fixtures", taken: taken), .ok)
+        XCTAssertEqual(FileNames.check("", taken: taken), .error("请输入名称。"))
+        XCTAssertEqual(FileNames.check("   ", taken: taken), .error("请输入名称。"))
+        XCTAssertEqual(FileNames.check("docs", taken: taken), .error("此位置已有“docs”。请换一个名称。"))
+        XCTAssertEqual(FileNames.check("Docs", taken: taken), .error("此位置已有“docs”。请换一个名称。"))
+        XCTAssertEqual(FileNames.check("docs/api.md", taken: taken), .ok)
+        XCTAssertEqual(FileNames.check("a/../b", taken: taken), .error("名称不能是“.”或“..”。"))
+        XCTAssertEqual(FileNames.check(" notes.md", taken: taken), .warning("名称前后有空格。"))
+        XCTAssertTrue(FileNames.check(" notes.md", taken: taken).allowed)
+        // Renaming: a slash is not a name; the same name in another case is a rename.
+        XCTAssertEqual(FileNames.check("x/y.ts", taken: taken, renaming: "app.ts"), .error("名称不能包含“/”。"))
+        XCTAssertEqual(FileNames.check("App.ts", taken: taken, renaming: "app.ts"), .ok)
+        XCTAssertEqual(FileNames.check("src", taken: taken, renaming: "app.ts"), .error("此位置已有“src”。请换一个名称。"))
+    }
+
+    func testTheSecondOfTwoIsNamedAsFinderNamesIt() {
+        XCTAssertEqual(FileNames.keepBoth("logo.png", taken: ["logo.png"]), "logo 2.png")
+        XCTAssertEqual(FileNames.keepBoth("logo.png", taken: ["logo.png", "logo 2.png"]), "logo 3.png")
+        XCTAssertEqual(FileNames.keepBoth("src", taken: ["src"]), "src 2")
+        XCTAssertEqual(FileNames.keepBoth("IMG_0412.HEIC", taken: []), "IMG_0412 2.HEIC")
+        XCTAssertEqual(FileNames.keepBoth(".env", taken: [".env"]), ".env 2")
+    }
 }

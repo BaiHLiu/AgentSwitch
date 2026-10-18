@@ -16,6 +16,41 @@ final class FilesStore {
     var handoff: Handoff?
     /// The Mac's home folder, as its last answer said (`~` in the terminals' folders).
     var home: String?
+    /// Files on their way to the Mac (docs/files-v0.md §12.8): kept here, not on a page, so they go on when the page is
+    /// left; one at a time, in the order picked.
+    var uploads: [Upload] = []
+    /// What changed on the Mac from this phone just now (a file landed, a folder made, something moved): the pages
+    /// showing it read their level again at once instead of at their next turn.
+    var changed = 0
+    /// A path just made or landed: its row lights up once.
+    var lit: String?
+    @ObservationIgnored var sending: (id: UUID, task: Task<MacUploaded, Error>)?
+    /// The Mac's name, for what a failed upload says.
+    @ObservationIgnored var macName = "Mac"
+    @ObservationIgnored var pumping = false
+
+    /// One file of this phone's on its way into a folder on the Mac.
+    struct Upload: Identifiable, Equatable {
+        let id = UUID()
+        var name: String
+        let size: Int64
+        let dir: String
+        /// The copy on this phone it is read from (gone once it has landed or is let go).
+        let file: URL
+        var conflict: UploadConflict = .fail
+        var progress: Double = 0
+        var state: State = .waiting
+
+        enum State: Equatable {
+            case waiting
+            /// Its name is taken there: asked about first.
+            case asking
+            case sending
+            case failed(String)
+        }
+
+        var path: String { MacPath.join(dir, name) }
+    }
 
     struct Handoff: Equatable {
         let terminal: String
@@ -58,6 +93,9 @@ final class FolderModel {
     private var hiddenAsked: Bool?
     /// Folders opened in place (pixel), by path, with their entries once read.
     private(set) var opened: [String: [MacFileEntry]] = [:]
+    /// The folder asked for, when it is gone and its nearest level still there is shown instead (a session's folder
+    /// moved away, files-v0 §12.4).
+    private(set) var gone: String?
 
     static let pollInterval: Duration = .seconds(3)
 
@@ -71,15 +109,32 @@ final class FolderModel {
         loading = folder == nil
         defer { loading = false }
         do {
-            if let got = try await source.folder(asked ?? folder?.path, hidden: hidden, etag: etag) {
+            if let got = try await source.folder(gone != nil ? folder?.path : (asked ?? folder?.path), hidden: hidden, etag: etag) {
                 folder = got.folder
                 etag = got.etag
             }
             refusal = nil
             failure = nil
         } catch {
+            if FileRefusal.of(error) == .notFound, gone == nil, folder == nil, let asked, let up = await nearest(asked, source, hidden: hidden) {
+                gone = asked
+                folder = up.folder
+                etag = up.etag
+                refusal = nil
+                return
+            }
             if let r = FileRefusal.of(error) { refusal = r; folder = nil; etag = nil } else { failure = error.localizedDescription }
         }
+    }
+
+    /// The nearest level above `path` the Mac still has.
+    private func nearest(_ path: String, _ source: any MacFileSource, hidden: Bool) async -> (folder: MacFolder, etag: String?)? {
+        var at = MacPath.parent(path)
+        while let p = at {
+            if let got = try? await source.folder(p, hidden: hidden, etag: nil) { return got }
+            at = MacPath.parent(p)
+        }
+        return nil
     }
 
     /// While the page is on screen.
@@ -136,6 +191,70 @@ final class FilesSession {
     var asking: Asking?
     /// The Files tab: picks checked and waiting for a terminal to go to.
     var choosing: [MacPick]?
+    // Changing the Mac's files (docs/files-v0.md §12.3): one question at a time, over whichever page is open.
+    /// A name being asked for: a new folder or file, or a new name.
+    var naming: Naming?
+    /// What is about to go to the Mac's Trash, asked about first.
+    var trashing: Trashing?
+    /// A folder a terminal runs in, about to be renamed: asked about first.
+    var renameAsk: RenameAsk?
+    /// The names an upload found taken there, asked about once for all of them.
+    var clashing: Clashing?
+    /// Files fetched to this phone to be shared (the system's share sheet once they are here).
+    var sharing: Sharing?
+    /// A change the Mac refused, said in a sentence.
+    var refused: String?
+
+    struct Naming: Identifiable {
+        enum Kind: Equatable { case folder(in: String), file(in: String), rename(String) }
+        let id = UUID()
+        let kind: Kind
+        /// The names in that folder now (checked against as typed).
+        let taken: Set<String>
+        var value: String
+        /// Why the last name tried cannot be used: said in a second alert, the name kept to be changed.
+        var error: String?
+
+        var title: String {
+            switch kind {
+            case .folder: return "New Folder"
+            case .file: return "New File"
+            case .rename: return "Rename"
+            }
+        }
+        var renaming: Bool { if case .rename = kind { return true } else { return false } }
+    }
+
+    struct Trashing: Identifiable {
+        let id = UUID()
+        let paths: [String]
+        /// A terminal running in one of them: said, and the Mac told it was asked.
+        var terminal: String?
+        /// The Trash would not take them: deleted for good if confirmed.
+        var permanent = false
+    }
+
+    struct RenameAsk: Identifiable {
+        let id = UUID()
+        let path: String
+        let name: String
+        let terminal: String
+    }
+
+    struct Clashing: Identifiable {
+        let id = UUID()
+        let uploads: [UUID]
+        let names: [String]
+    }
+
+    struct Sharing: Identifiable {
+        let id = UUID()
+        let paths: [String]
+        var progress: Double = 0
+        /// The copies on this phone, once all are here.
+        var files: [URL]?
+        var failed: String?
+    }
 
     struct Asking: Identifiable {
         let id = UUID()

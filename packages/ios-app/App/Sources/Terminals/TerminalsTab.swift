@@ -163,6 +163,8 @@ struct TerminalsTab: View {
                         for p in choices.profiles where p.id != (m.session.profile ?? "default") { items.append(.init(label: "Resume As \(p.name)") { Task { await resume(m.session, as: p.id) } }) }
                     }
                 }
+                // Its folder on the Files tab, as on the Mac's list (docs/files-v0.md §12.4).
+                if !m.session.cwd.isEmpty { items.append(.init(label: "Show in Files") { model.showInFiles(m.session.cwd) }) }
                 if TerminalsTab.deletable.contains(m.session.harness) { items.append(.init(label: "Delete", role: .destructive) { deletingSession = m.session }) }
                 return PixelBox(cancel: nil, actions: items, anchor: m.anchor)
             }

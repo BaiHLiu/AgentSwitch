@@ -6,7 +6,9 @@ import SwiftUI
 /// A file of the Mac's, opened from the browser (docs/files-v0.md §5 预览): a text file's first 64 KB shown here
 /// (monospaced, sideways to read a long line, numbered in the pixel look); a picture's small copy, then `Open Preview`
 /// fetches the whole of it for the system's Quick Look, as for a PDF and the rest; a file over 25 MB is not fetched.
-/// Under it `Add to Reply` (`Add to Reply…` on the Files tab) and `Copy Path`.
+/// Under it `Add to Reply` (`Add to Reply…` on the Files tab) and `Copy Path`; in the bar `Share` (fetched, then the
+/// system's share sheet: Save to Files keeps it on the phone) and `⋯` with `Rename…` and `Move to Trash` (files-v0 §12.3).
+/// What Quick Look was given is deleted once it closes.
 struct FilePreviewPage: View {
     let path: String
     let session: FilesSession
@@ -39,8 +41,26 @@ struct FilePreviewPage: View {
                         if let details { Text(Self.facts(details)).mono(11).foregroundStyle(.secondary).lineLimit(1) }
                     }
                 }
+                // Share (HIG Activity views: the Share button opens the system's sheet), and what else may be done to it.
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button { session.share([path], model.fileSource) } label: {
+                        if look.isClassic { Image(systemName: "square.and.arrow.up") } else { PixelSprite(rows: PixelArt.share, pixel: 2, color: Theme.ink, strength: 1, shadow: false) }
+                    }
+                    .tint(look.isClassic ? Theme.signal : Theme.ink)
+                    .accessibilityLabel("Share")
+                    .disabled(details == nil || (details?.size ?? 0) > AgentSwitchAPI.maxFileShare)
+                    if let details, !details.fixed {
+                        Menu {
+                            Section { Button("Rename…", systemImage: "pencil") { session.naming = FilesSession.Naming(kind: .rename(path), taken: [], value: details.name) } }
+                            Section { Button("Move to Trash", systemImage: "trash", role: .destructive) { session.trashing = FilesSession.Trashing(paths: [path]) } }
+                        } label: { LookGlyph.more }
+                        .tint(look.isClassic ? Theme.signal : Theme.ink)
+                    }
+                }
             }
             .quickLookPreview($quickLook)
+            // The copy was for looking at only (files-v0 §12.3; the Mac keeps the file, Share keeps one on the phone).
+            .onChange(of: quickLook) { old, new in if new == nil, let old { try? FileManager.default.removeItem(at: old.deletingLastPathComponent()) } }
             .task { await load() }
     }
 
@@ -170,7 +190,6 @@ struct FilePreviewPage: View {
         guard let source = model.fileSource, !tooLarge else { return }
         do {
             let file = try Self.cacheURL(path)
-            if FileManager.default.fileExists(atPath: file.path) { quickLook = file; return }
             downloading = 0
             defer { downloading = nil }
             try await source.downloadFile(path, to: file) { p in Task { @MainActor in downloading = p } }

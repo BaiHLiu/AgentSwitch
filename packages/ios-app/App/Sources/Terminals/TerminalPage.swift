@@ -147,6 +147,9 @@ struct TerminalPage: View {
                         }
                     }
                     Divider()
+                    // Its folder on the Files tab, where the agent works now (docs/files-v0.md §12.4).
+                    Button("Show in Files", systemImage: "folder") { model.showInFiles(workdir) }
+                    Divider()
                     Button("Rename", systemImage: "pencil") { newName = page.name; renaming = true }
                     Button("Close", systemImage: "xmark", role: .destructive) { if page.status == .exited && !canDeleteRecord { Task { await close() } } else { confirmClose = true } }
                 } label: { if look.isClassic { Image(systemName: "ellipsis.circle") } else { Text("⋯").mono(17) } }

@@ -25,13 +25,18 @@ public struct MacFileEntry: Decodable, Sendable, Equatable, Identifiable {
     public let dim: Bool
     /// One of AgentSwitch's own credential places: its name only, it cannot be opened.
     public let locked: Bool
+    /// Not renamed or moved to the Trash from here (docs/files-v0.md §12.2): it holds AgentSwitch's places (the home
+    /// folder), or it is right under `/`. A locked one is never changed either.
+    public let fixed: Bool
     public let link: Link?
 
     public var id: String { name }
+    /// May be renamed and moved to the Trash from the phone.
+    public var changeable: Bool { !locked && !fixed }
     /// A folder, or a link to one: it opens as a folder.
     public var isFolder: Bool { kind == .dir || (kind == .link && link?.kind == "dir") }
 
-    public init(name: String, kind: Kind, size: Int64 = 0, mtime: Double = 0, hidden: Bool? = nil, dim: Bool = false, locked: Bool = false, link: Link? = nil) {
+    public init(name: String, kind: Kind, size: Int64 = 0, mtime: Double = 0, hidden: Bool? = nil, dim: Bool = false, locked: Bool = false, fixed: Bool = false, link: Link? = nil) {
         self.name = name
         self.kind = kind
         self.size = size
@@ -39,10 +44,11 @@ public struct MacFileEntry: Decodable, Sendable, Equatable, Identifiable {
         self.hidden = hidden ?? name.hasPrefix(".")
         self.dim = dim
         self.locked = locked
+        self.fixed = fixed
         self.link = link
     }
 
-    private enum CodingKeys: String, CodingKey { case name, kind, size, mtime, hidden, dim, locked, link }
+    private enum CodingKeys: String, CodingKey { case name, kind, size, mtime, hidden, dim, locked, fixed, link }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -53,6 +59,7 @@ public struct MacFileEntry: Decodable, Sendable, Equatable, Identifiable {
         hidden = (try? c.decodeIfPresent(Bool.self, forKey: .hidden)) ?? name.hasPrefix(".")
         dim = (try? c.decodeIfPresent(Bool.self, forKey: .dim)) ?? false
         locked = (try? c.decodeIfPresent(Bool.self, forKey: .locked)) ?? false
+        fixed = (try? c.decodeIfPresent(Bool.self, forKey: .fixed)) ?? false
         link = try? c.decodeIfPresent(Link.self, forKey: .link)
     }
 }
@@ -118,11 +125,14 @@ public struct MacFileDetails: Decodable, Sendable, Equatable {
     /// Why it may hold a password or a key (`ssh`, `env`, `login`, `key`, …); nil when it is not thought to.
     public let sensitive: String?
     public let link: MacFileEntry.Link?
+    /// Not renamed or moved from here (`MacFileEntry.fixed`).
+    public let fixed: Bool
 
     public var isFolder: Bool { items != nil || kind == .dir }
 
     public init(name: String, kind: MacFileEntry.Kind, size: Int64, mtime: Double, path: String, type: MacFileType? = nil, lines: Int? = nil,
-                items: Int? = nil, sensitive: String? = nil, link: MacFileEntry.Link? = nil) {
+                items: Int? = nil, sensitive: String? = nil, link: MacFileEntry.Link? = nil, fixed: Bool = false) {
+        self.fixed = fixed
         self.name = name
         self.kind = kind
         self.size = size
@@ -135,7 +145,7 @@ public struct MacFileDetails: Decodable, Sendable, Equatable {
         self.link = link
     }
 
-    private enum CodingKeys: String, CodingKey { case name, kind, size, mtime, path, type, lines, items, sensitive, link }
+    private enum CodingKeys: String, CodingKey { case name, kind, size, mtime, path, type, lines, items, sensitive, link, fixed }
     private struct Sensitive: Decodable { let reason: String }
 
     public init(from decoder: Decoder) throws {
@@ -150,6 +160,7 @@ public struct MacFileDetails: Decodable, Sendable, Equatable {
         items = try? c.decodeIfPresent(Int.self, forKey: .items)
         sensitive = (try? c.decodeIfPresent(Sensitive.self, forKey: .sensitive))?.reason
         link = try? c.decodeIfPresent(MacFileEntry.Link.self, forKey: .link)
+        fixed = (try? c.decodeIfPresent(Bool.self, forKey: .fixed)) ?? false
     }
 }
 
@@ -172,6 +183,8 @@ public struct MacFilePreview: Decodable, Sendable, Equatable {
 public enum FileRefusal: String, Sendable, Equatable {
     case badPath = "bad-path", notFolder = "not-folder", folder, notFound = "not-found", locked, scope, permission
     case filesOff = "files-off", tooLarge = "too-large", notText = "not-text", noThumbnail = "no-thumbnail"
+    // Changing files (files-v0 §12.5).
+    case exists, badName = "bad-name", noTrash = "no-trash", inUse = "in-use", changesOff = "changes-off", notTrash = "not-trash"
     /// The Mac has no Files routes (an AgentSwitch from before them).
     case unsupported
 
@@ -196,6 +209,12 @@ public enum FileRefusal: String, Sendable, Equatable {
         case .notText: return "无法预览此类文件。"
         case .noThumbnail: return "无法生成预览图。"
         case .unsupported: return "\(mac) 上的 AgentSwitch 版本不支持浏览文件，请先更新。"
+        case .exists: return "此位置已有同名的项目。请换一个名称。"
+        case .badName: return "此名称不能使用。"
+        case .noTrash: return "无法移到废纸篓。"
+        case .inUse: return "有终端正在此文件夹中运行。"
+        case .changesOff: return "\(mac) 不允许配对的设备修改文件。可在 \(mac) 的“设置 › Nodes”中打开。"
+        case .notTrash: return "此项目不在废纸篓中。"
         }
     }
 }
@@ -336,4 +355,15 @@ public protocol MacFileSource: Sendable {
     func fileThumbnail(_ path: String) async throws -> Data
     /// The bytes into `file`; `progress` from 0 to 1 as they come.
     func downloadFile(_ path: String, to file: URL, progress: @escaping @Sendable (Double) -> Void) async throws
+    // Changing files (docs/files-v0.md §12.5, §12.8). A refusal is a `FileChangeError`.
+    /// A new folder at `path` (and the folders on the way).
+    func newFolder(_ path: String) async throws -> MacMade
+    /// A new empty file at `path` (and the folders on the way).
+    func newFile(_ path: String) async throws -> MacMade
+    /// `path` given another name in its folder; `force` once a terminal running in it has been asked about.
+    func rename(_ path: String, to name: String, force: Bool) async throws -> String
+    /// To the Mac's Trash; `permanent` only after the Trash would not take them.
+    func trash(_ paths: [String], force: Bool, permanent: Bool) async throws -> [MacMoved]
+    /// The bytes of `file` (on this phone) into `path` on the Mac; `progress` from 0 to 1 as they go.
+    func upload(_ file: URL, to path: String, conflict: UploadConflict, progress: @escaping @Sendable (Double) -> Void) async throws -> MacUploaded
 }

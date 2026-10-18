@@ -64,6 +64,30 @@ extension FilesTab {
             UserDefaults.standard.set(true, forKey: FilesPrefs.hiddenKey)
             session.stack = [.file("\(p)/.env")]
             session.choosing = [MacPick(path: "\(p)/.env", isFolder: false, sensitive: true)]
+        // Changing files (docs/files-v0.md §12), as ⋯, a long press and Select would open them.
+        case "filesnew":
+            session.root = p
+            session.naming = FilesSession.Naming(kind: .folder(in: p), taken: ["docs", "src", "node_modules", "README.md", "package.json"], value: "fixtures")
+        case "filesnameerror":
+            session.root = p
+            session.naming = FilesSession.Naming(kind: .folder(in: p), taken: ["docs"], value: "docs", error: "此位置已有“docs”。请换一个名称。")
+        case "filestrash": session.root = "\(p)/src"; session.trashing = FilesSession.Trashing(paths: ["\(p)/src/app.ts"])
+        case "filestrashbusy": session.root = p; session.trashing = FilesSession.Trashing(paths: ["\(p)/src"], terminal: "iPhone 终端标签页")
+        case "filesselectbar":
+            session.root = "\(p)/src"
+            session.selecting = true
+            session.togglePick(MacPick(path: "\(p)/src/app.ts", isFolder: false))
+            session.togglePick(MacPick(path: "\(p)/src/store.ts", isFolder: false))
+        case "filesshare": session.root = "\(p)/docs"; session.stack = [.file("\(p)/docs/logo.png")]; session.share(["\(p)/docs/logo.png"], model.fileSource)
+        case "filesupload", "filesclash":
+            session.root = "\(p)/docs"
+            let made = ["IMG_0412.HEIC", "IMG_0413.HEIC"] + (UserDefaults.standard.string(forKey: "uiDemoScreen") == "filesclash" ? ["logo.png"] : [])
+            let files = made.compactMap { name -> URL? in
+                let to = FilesStore.holder().appendingPathComponent(name)
+                return (try? Data(count: 2_400_000).write(to: to)) != nil ? to : nil
+            }
+            let asking = model.files.send(files, to: "\(p)/docs", taken: ["files-v0.md", "logo.png"]) { model.fileSource }
+            if !asking.isEmpty { session.clashing = FilesSession.Clashing(uploads: asking, names: ["logo.png"]) }
         default: break
         }
     }

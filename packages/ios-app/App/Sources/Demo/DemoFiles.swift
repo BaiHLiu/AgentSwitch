@@ -65,7 +65,27 @@ struct DemoFiles: MacFileSource {
     private static let env = "PORT=5173\nAPI_BASE=http://127.0.0.1:8080\nSESSION_SECRET=change-me\n"
     private static let key = "-----BEGIN OPENSSH PRIVATE KEY-----\n（示例，不是真的密钥）\n-----END OPENSSH PRIVATE KEY-----\n"
 
-    private static let tree: [String: Node] = {
+    /// The disk as it is now: it changes as the demo screens make, rename, move and receive files (files-v0 §12).
+    private final class Disk: @unchecked Sendable {
+        private let lock = NSLock()
+        private var nodes: [String: Node]
+        init(_ nodes: [String: Node]) { self.nodes = nodes }
+        subscript(path: String) -> Node? {
+            get { lock.withLock { nodes[path] } }
+            set { lock.withLock { nodes[path] = newValue } }
+        }
+        func filter(_ isIncluded: ((key: String, value: Node)) -> Bool) -> [String: Node] { lock.withLock { nodes.filter(isIncluded) } }
+        func move(_ from: String, to: String) {
+            lock.withLock {
+                for (k, v) in nodes where k == from || k.hasPrefix(from + "/") { nodes[k] = nil; nodes[to + k.dropFirst(from.count)] = v }
+            }
+        }
+        func remove(_ path: String) { lock.withLock { for k in nodes.keys where k == path || k.hasPrefix(path + "/") { nodes[k] = nil } } }
+    }
+
+    private static let tree = Disk(made)
+
+    private static let made: [String: Node] = {
         var t: [String: Node] = [:]
         func dir(_ p: String, _ m: Double, dim: Bool = false, locked: Bool = false) { t[p] = Node(kind: .dir, mtime: m, locked: locked, dim: dim) }
         func file(_ p: String, _ m: Double, size: Int64? = nil, text: String? = nil, sensitive: String? = nil, locked: Bool = false) {
@@ -106,8 +126,8 @@ struct DemoFiles: MacFileSource {
         Self.tree.filter { MacPath.parent($0.key) == p && $0.key != "/" }.map { (MacPath.name($0.key), $0.value) }
     }
 
-    private func entry(_ name: String, _ n: Node) -> MacFileEntry {
-        MacFileEntry(name: name, kind: n.kind, size: n.locked ? 0 : n.size, mtime: n.locked ? 0 : n.mtime, dim: n.dim, locked: n.locked)
+    private func entry(_ name: String, _ n: Node, in dir: String) -> MacFileEntry {
+        MacFileEntry(name: name, kind: n.kind, size: n.locked ? 0 : n.size, mtime: n.locked ? 0 : n.mtime, dim: n.dim, locked: n.locked, fixed: !n.locked && fixed(MacPath.join(dir, name)))
     }
 
     private func refuse(_ code: String, _ status: Int = 403) -> APIError { .http(status: status, message: code) }
@@ -129,7 +149,7 @@ struct DemoFiles: MacFileSource {
         }
         let version = "\"\(p)|\(hidden)\""
         if etag == version { return nil }
-        let level = MacFolder(path: p, parent: MacPath.parent(p), home: Self.home, entries: sorted.map { entry($0.0, $0.1) },
+        let level = MacFolder(path: p, parent: MacPath.parent(p), home: Self.home, entries: sorted.map { entry($0.0, $0.1, in: p) },
                               hiddenCount: kids.count - shown.count, scoped: scoped)
         return (level, version)
     }
@@ -161,6 +181,64 @@ struct DemoFiles: MacFileSource {
             }
         }
         return image.jpegData(compressionQuality: 0.8) ?? Data()
+    }
+
+    // MARK: changes (docs/files-v0.md §12)
+
+    private func fail(_ refusal: FileRefusal, status: Int = 409) -> FileChangeError { FileChangeError(refusal: refusal, status: status) }
+    /// Not to be renamed or moved: AgentSwitch's places, home and what holds them, what is right under `/`.
+    private func fixed(_ p: String) -> Bool {
+        p == "/" || MacPath.parent(p) == "/" || Self.tree[p]?.locked == true || [Self.home, "/Users", "\(Self.home)/.agentswitch"].contains(p)
+    }
+
+    private func make(_ path: String, kind: MacFileEntry.Kind) throws -> MacMade {
+        if Self.tree[path] != nil { throw fail(.exists) }
+        var top: String?
+        var at = path
+        var chain: [String] = []
+        while Self.tree[at] == nil, let up = MacPath.parent(at) { chain.insert(at, at: 0); at = up }
+        guard Self.tree[at]?.kind == .dir, Self.tree[at]?.locked == false, at != "/" else { throw fail(.locked, status: 403) }
+        for (i, p) in chain.enumerated() {
+            Self.tree[p] = i == chain.count - 1 && kind == .file ? Node(kind: .file, size: 0, mtime: Self.now, text: "") : Node(kind: .dir, mtime: Self.now)
+            top = top ?? p
+        }
+        return MacMade(path: path, top: top ?? path)
+    }
+
+    func newFolder(_ path: String) async throws -> MacMade { try make(path, kind: .dir) }
+    func newFile(_ path: String) async throws -> MacMade { try make(path, kind: .file) }
+
+    func rename(_ path: String, to name: String, force: Bool) async throws -> String {
+        guard Self.tree[path] != nil else { throw fail(.notFound, status: 404) }
+        if fixed(path) { throw fail(.locked, status: 403) }
+        let to = MacPath.join(MacPath.parent(path) ?? "/", name)
+        if Self.tree[to] != nil && to.lowercased() != path.lowercased() { throw fail(.exists) }
+        Self.tree.move(path, to: to)
+        return to
+    }
+
+    func trash(_ paths: [String], force: Bool, permanent: Bool) async throws -> [MacMoved] {
+        for p in paths { if fixed(p) { throw fail(.locked, status: 403) } }
+        for p in paths { Self.tree.remove(p) }
+        return paths.map { MacMoved(path: $0, trashed: "\(Self.home)/.Trash/\(MacPath.name($0))") }
+    }
+
+    func upload(_ file: URL, to path: String, conflict: UploadConflict, progress: @escaping @Sendable (Double) -> Void) async throws -> MacUploaded {
+        let size = Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        // A made-up link: the bytes go in twenty steps.
+        for step in 1...20 { try await Task.sleep(for: .milliseconds(150)); progress(Double(step) / 20) }
+        var target = path
+        if Self.tree[path] != nil {
+            switch conflict {
+            case .fail: throw fail(.exists)
+            case .replace: Self.tree.remove(path)
+            case .keep:
+                let dir = MacPath.parent(path) ?? "/"
+                target = MacPath.join(dir, FileNames.keepBoth(MacPath.name(path), taken: Set(children(of: dir).map(\.0))))
+            }
+        }
+        Self.tree[target] = Node(kind: .file, size: size, mtime: Date().timeIntervalSince1970 * 1000)
+        return MacUploaded(path: target, name: MacPath.name(target), size: size)
     }
 
     func downloadFile(_ path: String, to file: URL, progress: @escaping @Sendable (Double) -> Void) async throws {

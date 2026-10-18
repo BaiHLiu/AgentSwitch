@@ -34,6 +34,20 @@ public protocol HTTPTransport: Sendable {
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse)
     /// Response head, then the body as it arrives, in chunks of any size.
     func stream(_ request: URLRequest) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, Error>)
+    /// `request` with the bytes of `file` as its body, read as they go (not into memory); `progress` from 0 to 1.
+    func upload(_ request: URLRequest, fromFile file: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> (Data, HTTPURLResponse)
+}
+
+extension HTTPTransport {
+    /// A transport with no way to tell how far a body has gone (the tests' fakes): the file read whole, sent once.
+    public func upload(_ request: URLRequest, fromFile file: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> (Data, HTTPURLResponse) {
+        var req = request
+        req.httpBody = try Data(contentsOf: file)
+        progress(0)
+        let reply = try await send(req)
+        progress(1)
+        return reply
+    }
 }
 
 /// URLSession with every connection pinned to the paired certificate fingerprint. One per paired Mac; it serves all of
@@ -66,6 +80,17 @@ public final class PinnedSessionTransport: HTTPTransport {
     public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         do {
             let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else { throw APIError.transport("not an HTTP response") }
+            return (data, http)
+        } catch {
+            throw mapped(error, request: request)
+        }
+    }
+
+    public func upload(_ request: URLRequest, fromFile file: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> (Data, HTTPURLResponse) {
+        do {
+            // The task's own delegate hears how far the body has gone; the session's still answers the certificate.
+            let (data, response) = try await session.upload(for: request, fromFile: file, delegate: UploadProgress(progress))
             guard let http = response as? HTTPURLResponse else { throw APIError.transport("not an HTTP response") }
             return (data, http)
         } catch {
@@ -125,5 +150,17 @@ public final class PinnedSessionTransport: HTTPTransport {
             return APIError.transport(urlError.localizedDescription)
         }
         return APIError.transport(error.localizedDescription)
+    }
+}
+
+/// How far an upload's body has gone, told to its caller.
+private final class UploadProgress: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let progress: @Sendable (Double) -> Void
+
+    init(_ progress: @escaping @Sendable (Double) -> Void) { self.progress = progress }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+        guard totalBytesExpectedToSend > 0 else { return }
+        progress(min(1, Double(totalBytesSent) / Double(totalBytesExpectedToSend)))
     }
 }

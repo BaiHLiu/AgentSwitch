@@ -24,6 +24,7 @@ struct FilesBrowser: View {
                 }
         }
         .sensitiveQuestion(session)
+        .fileChangeQuestions(session)
     }
 }
 
@@ -56,6 +57,10 @@ struct FolderPage: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage(FilesPrefs.hiddenKey) private var hidden = false
     @AppStorage(FilesPrefs.sortKey) private var sortRaw = FileSort.name.rawValue
+    // ⋯ › Upload's three sources (as the terminal page's `+`, files-v0 §12.8).
+    @State private var takingPhoto = false
+    @State private var pickingPhotos = false
+    @State private var pickingFiles = false
 
     init(path: String?, session: FilesSession, onPick: @escaping ([MacPick]) -> Void, first: Bool) {
         self.session = session
@@ -82,7 +87,13 @@ struct FolderPage: View {
             }
             .background(Theme.base)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) { if session.selecting { SelectBar(session: session, give: give) } }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if session.selecting {
+                SelectBar(session: session, give: { give(session.picked) },
+                          share: session.inTab ? { session.share(session.picked.map(\.path), model.fileSource) } : nil,
+                          trash: session.inTab ? { askTrash(session.picked.map(\.path)) } : nil)
+            }
+        }
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(false)
         .toolbar(session.selecting && session.inTab ? .hidden : .automatic, for: .tabBar)
@@ -103,13 +114,56 @@ struct FolderPage: View {
         // Back on this page from one further in: this is where the tab is now.
         .onAppear { if session.inTab, let path = folder.folder?.path { model.files.remember(path, on: model.profile?.fingerprint) } }
         .refreshable { await folder.load(model.fileSource, hidden: hidden) }
+        // Changed from this phone just now (made, renamed, moved, landed): read again at once.
+        .onChange(of: model.files.changed) { Task { await folder.load(model.fileSource, hidden: hidden) } }
+        // What was just made or landed lights up once.
+        .task(id: model.files.lit) {
+            guard model.files.lit != nil else { return }
+            try? await Task.sleep(for: .milliseconds(1600))
+            model.files.lit = nil
+        }
+        .sheet(isPresented: $pickingPhotos) { PhotoFilesPicker { send($0) }.ignoresSafeArea() }
+        .fileImporter(isPresented: $pickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result { send(FilesStore.copies(of: urls)) }
+        }
+        .fullScreenCover(isPresented: $takingPhoto) {
+            CameraPicker { jpeg in
+                takingPhoto = false
+                if let jpeg, let file = FilesStore.cameraFile(jpeg) { send([file]) }
+            }
+            .ignoresSafeArea()
+        }
+    }
+
+    /// The names in this folder now: what a new name is checked against, and what an upload asks about.
+    private var taken: Set<String> { Set(folder.folder?.entries.map(\.name) ?? []) }
+
+    /// Picked files on their way into this folder; a name taken here is asked about once for all of them.
+    private func send(_ files: [URL]) {
+        guard let dir = folder.folder?.path, !files.isEmpty else { return }
+        model.files.macName = mac
+        let asking = model.files.send(files, to: dir, taken: taken) { model.fileSource }
+        if !asking.isEmpty {
+            session.clashing = FilesSession.Clashing(uploads: asking, names: model.files.uploads.filter { asking.contains($0.id) }.map(\.name))
+        }
+    }
+
+    /// To the Mac's Trash, asked about first; a folder a terminal runs in says so (files-v0 §12.3).
+    private func askTrash(_ paths: [String]) {
+        guard !paths.isEmpty else { return }
+        let running = paths.lazy.compactMap { FilesSession.runningIn($0, model.terminals.terminals) }.first
+        session.trashing = FilesSession.Trashing(paths: paths, terminal: running?.name)
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .principal) {
             VStack(spacing: 1) {
                 Text(folder.path.map(MacPath.name) ?? "Files").font(.headline).lineLimit(1)
-                Text(look.isClassic ? "On \(mac)" : "@ \(mac)").mono(11).foregroundStyle(look.isClassic ? Color.secondary : Theme.signal).lineLimit(1)
+                if session.selecting && session.inTab {
+                    Text("\(session.picked.count) Selected").mono(11).foregroundStyle(.secondary).lineLimit(1)
+                } else {
+                    Text(look.isClassic ? "On \(mac)" : "@ \(mac)").mono(11).foregroundStyle(look.isClassic ? Color.secondary : Theme.signal).lineLimit(1)
+                }
             }
         }
         if first, !session.inTab, !session.selecting {
@@ -129,6 +183,17 @@ struct FolderPage: View {
         }
         ToolbarItem(placement: .primaryAction) {
             Menu {
+                // New and Upload first, into the folder shown (files-v0 §12.3, §12.8).
+                Section {
+                    Button("New Folder", systemImage: "folder.badge.plus") { if let dir = folder.folder?.path { session.naming = FilesSession.Naming(kind: .folder(in: dir), taken: taken, value: "") } }
+                    Button("New File", systemImage: "doc.badge.plus") { if let dir = folder.folder?.path { session.naming = FilesSession.Naming(kind: .file(in: dir), taken: taken, value: "") } }
+                    Menu {
+                        Button("Camera", systemImage: "camera") { takingPhoto = true }.disabled(!CameraPicker.isAvailable)
+                        Button("Photos", systemImage: "photo.on.rectangle") { pickingPhotos = true }
+                        Button("Files", systemImage: "folder") { pickingFiles = true }
+                    } label: { Label("Upload", systemImage: "arrow.up.doc") }
+                }
+                .disabled(folder.folder == nil || folder.folder?.path == "/")
                 Toggle(isOn: $hidden) { Label("Show Hidden Files", systemImage: "eye") }
                 Picker(selection: $sortRaw) {
                     ForEach(FileSort.allCases, id: \.rawValue) { s in Text(s.title).tag(s.rawValue) }
@@ -146,8 +211,15 @@ struct FolderPage: View {
             note(refusal.sentence(mac: mac), home: refusal == .scope || refusal == .notFound)
         } else if let level = folder.folder {
             if let failure = folder.failure { Text(failure).font(.footnote).foregroundStyle(Theme.failed).padding(Theme.Space.l) }
+            if let gone = folder.gone {
+                Text("“\(MacPath.name(gone))”已不在 \(mac) 上，已打开它还在的上一层。").font(.footnote).foregroundStyle(.secondary)
+                    .padding(.horizontal, Theme.Space.l).padding(.top, Theme.Space.m)
+            }
+            ForEach(model.files.uploads.filter { $0.dir == level.path }) { up in
+                UploadRow(upload: up, stop: { model.files.stop(up.id) }, retry: { model.files.retry(up.id) { model.fileSource } })
+            }
             let entries = sort.sorted(level.entries)
-            if entries.isEmpty {
+            if entries.isEmpty && !model.files.uploads.contains(where: { $0.dir == level.path }) {
                 note(level.scoped ? "仅显示授权范围内的项目。" : "此文件夹为空。")
             } else {
                 ForEach(Array(entries.enumerated()), id: \.element.id) { i, entry in
@@ -197,19 +269,38 @@ struct FolderPage: View {
         let path = MacPath.join(dir, entry.name)
         let pick = MacPick(path: path, isFolder: entry.isFolder)
         // A tap on the row, not a button around it: the pixel look's `▸` in it is a button of its own.
-        return FileRow(entry: entry, picked: session.isPicked(path), selecting: session.selecting, last: last, depth: depth, underLast: underLast,
+        return FileRow(entry: entry, picked: session.isPicked(path) || model.files.lit == path, selecting: session.selecting, last: last, depth: depth, underLast: underLast,
                        open: folder.isOpen(path), toggle: entry.isFolder && depth == 0 && !entry.locked ? { Task { await folder.toggle(path, model.fileSource, hidden: hidden) } } : nil)
             .onTapGesture {
                 guard !entry.locked else { return }
                 if session.selecting { session.togglePick(pick) } else { session.stack.append(entry.isFolder ? .folder(path) : .file(path)) }
             }
+            .contextMenu { if !entry.locked && !session.selecting { rowMenu(entry, path: path, dir: dir) } }
             .accessibilityAddTraits(entry.locked ? [] : .isButton)
             .accessibilityHint(entry.locked ? "此处存放 AgentSwitch 的凭据，无法在此打开。" : "")
     }
 
+    /// A long press on a row (files-v0 §12.3, iOS Files): give it, share it, its path; its new name; the Mac's Trash
+    /// last and red (HIG Context menus). What cannot be changed here has no Rename… or Move to Trash; a folder no Share….
+    @ViewBuilder private func rowMenu(_ entry: MacFileEntry, path: String, dir: String) -> some View {
+        Section {
+            Button(session.inTab ? "Add to Reply…" : "Add to Reply", systemImage: "arrowshape.turn.up.left") { give([MacPick(path: path, isFolder: entry.isFolder)]) }
+            if !entry.isFolder { Button("Share…", systemImage: "square.and.arrow.up") { session.share([path], model.fileSource) } }
+            Button("Copy Path", systemImage: "doc.on.doc") { UIPasteboard.general.string = path }
+        }
+        if entry.changeable {
+            Section {
+                Button("Rename…", systemImage: "pencil") {
+                    let names = dir == folder.folder?.path ? taken : Set(folder.opened[dir]?.map(\.name) ?? [])
+                    session.naming = FilesSession.Naming(kind: .rename(path), taken: names, value: entry.name)
+                }
+            }
+            Section { Button("Move to Trash", systemImage: "trash", role: .destructive) { askTrash([path]) } }
+        }
+    }
+
     /// `Add to Reply` (here) or `Add to Reply…` (the Files tab): each file asked about on the Mac first.
-    private func give() {
-        let picks = session.picked
+    private func give(_ picks: [MacPick]) {
         guard !picks.isEmpty else { return }
         Task {
             let checked = await session.checked(picks, model.fileSource)
@@ -402,16 +493,26 @@ struct PathRow: View {
     }
 }
 
-/// While selecting: how many, and where they go.
+/// While selecting: where they go; on the Files tab also share them and move them to the Mac's Trash (iOS Files' select
+/// bar; files-v0 §12.3), the count then under the title.
 struct SelectBar: View {
     let session: FilesSession
     let give: () -> Void
+    var share: (() -> Void)?
+    var trash: (() -> Void)?
+    @Environment(\.interfaceLook) private var look
 
     var body: some View {
         VStack(spacing: 0) {
             HairRule()
             HStack(spacing: Theme.Space.m) {
-                Text("\(session.picked.count) Selected").mono(13).foregroundStyle(.secondary)
+                if let share, let trash {
+                    let files = !session.picked.isEmpty && session.picked.allSatisfy { !$0.isFolder }
+                    icon(PixelArt.share, "square.and.arrow.up", "Share", action: share).disabled(!files)
+                    icon(PixelArt.trash, "trash", "Move to Trash", action: trash).disabled(session.picked.isEmpty)
+                } else {
+                    Text("\(session.picked.count) Selected").mono(13).foregroundStyle(.secondary)
+                }
                 Spacer(minLength: 8)
                 if session.checking { BrailleSpinner(color: .secondary) }
                 Button(action: give) { ButtonWord(session.inTab ? "Add to Reply…" : "Add to Reply (\(session.picked.count))") }
@@ -422,5 +523,16 @@ struct SelectBar: View {
             .padding(.vertical, 10)
         }
         .background(Theme.base)
+    }
+
+    private func icon(_ rows: [String], _ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Group {
+                if look.isClassic { Image(systemName: symbol).font(.system(size: 19)) } else { PixelSprite(rows: rows, pixel: 2, color: Theme.ink, strength: 1, shadow: false) }
+            }
+            .frame(minWidth: 36, minHeight: 32)
+        }
+        .tint(look.isClassic ? Theme.signal : Theme.ink)
+        .accessibilityLabel(label)
     }
 }

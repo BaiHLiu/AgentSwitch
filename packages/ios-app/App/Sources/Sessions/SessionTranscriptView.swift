@@ -12,6 +12,7 @@ struct SessionTranscriptView: View {
     var resuming = false
     var resume: (() -> Void)?
     @Environment(AppModel.self) private var model
+    @Environment(\.interfaceLook) private var look
     @State private var record = SessionRecordModel()
     @State private var changes: Changes?
 
@@ -75,6 +76,16 @@ struct SessionTranscriptView: View {
         }
         .navigationTitle(MessageDisplay.readable(shown.displayTitle))
         .navigationBarTitleDisplayMode(.inline)
+        // The session's folder on the Files tab (docs/files-v0.md §12.4); gone, its nearest level still there.
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button("Show in Files", systemImage: "folder") { model.showInFiles(shown.cwd) }
+                } label: { LookGlyph.more }
+                .tint(look.isClassic ? Theme.signal : Theme.ink)
+                .disabled(shown.cwd.isEmpty)
+            }
+        }
         .sheet(item: $changes) { ChangesSheet(harness: session.harness, session: session.sessionId, work: $0.work) }
         .refreshable { await load() }
         .task {
