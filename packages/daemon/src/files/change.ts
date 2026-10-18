@@ -9,7 +9,7 @@
 
 import { execFile } from "node:child_process";
 import { accessSync, closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readdirSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { canonicalPath, isWithin, lineage } from "../core/paths.js";
 import { holdsFixed, inScope, isLocked, type Refusal, type Viewer } from "./browse.js";
@@ -166,11 +166,16 @@ export async function toTrash(paths: readonly string[], viewer: Viewer, running:
   return refused.length ? no("no-trash", { paths: refused, moved }) : ok({ moved });
 }
 
-/** The Trash folders an undo may take something back out of: the user's, a volume's own, the freedesktop one. */
+/** The user's own home as the system knows it, whatever `$HOME` says: where the system's Trash is (a service started
+ *  with another `$HOME` still has its items moved to the user's `~/.Trash`). */
+export const accountHome = (): string => { try { return userInfo().homedir; } catch { return homedir(); } };
+
+/** The Trash folders an undo may take something back out of: the user's (under `home` and under the account's own
+ *  home), a volume's own, the freedesktop one. */
 export function inTrash(real: string, home: string = homedir()): boolean {
   const uid = process.getuid?.() ?? 0;
   const h = canonicalPath(home);
-  const roots = [join(h, ".Trash"), join(canonicalPath(process.env.XDG_DATA_HOME ?? join(h, ".local", "share")), "Trash", "files")];
+  const roots = [join(h, ".Trash"), join(canonicalPath(accountHome()), ".Trash"), join(canonicalPath(process.env.XDG_DATA_HOME ?? join(h, ".local", "share")), "Trash", "files")];
   if (roots.some((r) => real.startsWith(r + "/"))) return true;
   return /^\/Volumes\/[^/]+\/\.Trashes\/\d+\//.test(real) && real.split("/")[4] === String(uid);
 }
@@ -250,7 +255,7 @@ export function unlinkQuiet(p: string): void {
  *  Mac has — no separate tool to ship. The bridge cannot be trusted to hand back where the item went (reading the
  *  method's out-argument crashed the script, 2026-10-18), so it is only asked to move it, and the item is found again
  *  in that disk's Trash by its identity: a move within one disk keeps the inode. */
-export function macTrash(home: string = homedir()): Trasher {
+export function macTrash(home: string = accountHome()): Trasher {
   return (real) => new Promise((resolve, reject) => {
     const before = lstatOf(real);
     if (!before) return reject(new TrashError("not-found", real));
@@ -272,7 +277,7 @@ function run(argv) { return $.NSFileManager.defaultManager.trashItemAtURLResulti
 
 /** Where an item now in a Trash is: the Trash on its own disk (the user's for the startup disk, `.Trashes/<uid>` for
  *  another), searched by device and inode. */
-export function foundInTrash(was: Stats, home: string = homedir()): string | null {
+export function foundInTrash(was: Stats, home: string = accountHome()): string | null {
   const uid = process.getuid?.() ?? 0;
   const places = [join(home, ".Trash")];
   try { for (const v of readdirSync("/Volumes")) places.push(join("/Volumes", v, ".Trashes", String(uid))); } catch { /* none */ }
