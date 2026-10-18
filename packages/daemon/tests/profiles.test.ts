@@ -287,24 +287,23 @@ describe("profiles over HTTP", () => {
   function served() {
     const w = world();
     const app = new Hono();
-    const exits = pool(), direct: string[] = [];
-    mountProfiles(app, { profiles: w.store, exits, clash: { addDirect: async (address: string) => { direct.push(address); } } } as unknown as ApiDeps);
+    const exits = pool();
+    mountProfiles(app, { profiles: w.store, exits } as unknown as ApiDeps);
     const call = async (method: string, path: string, body?: unknown, env: object = {}) => {
       const res = await app.request(path, { method, ...(body ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}) }, env);
       return { status: res.status, json: (await res.json()) as Record<string, any> };
     };
-    return { ...w, call, direct };
+    return { ...w, call };
   }
 
-  it("sets a profile's proxy on the Mac, checks it at once, and has Clash send its host direct", async () => {
-    const { call, direct, store } = served();
+  it("sets a profile's proxy on the Mac and checks it at once", async () => {
+    const { call, store } = served();
     const far = await upstream();
     const id = (await call("POST", "/profiles", { agent: "claude-code", name: "Work" })).json.profile.id as string;
     const set = await call("PUT", `/profiles/claude-code/${id}/proxy`, { server: far.server });
     expect(set.status).toBe(200);
     expect(set.json.agents["claude-code"].profiles[1]).toMatchObject({ proxy: { server: far.server, sealed: false }, exit: { ip: "203.0.113.9", place: "Tokyo" } });
     expect(set.json.problem).toBeUndefined();
-    expect(direct).toEqual(["127.0.0.1"]);
     // Asked again from any screen; a paired device checks and sets as the Mac does (§4.2) — a password still only
     // as a ciphertext.
     const phone = markRemote({}, { deviceId: "phone" });

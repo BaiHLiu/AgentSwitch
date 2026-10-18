@@ -132,7 +132,7 @@ function draw() {
     phone("CLASH · RULES, DIRECT, CHECK", "Clash",
       card("Rules", [sw("Only My Rules", "own"), sw("Domestic & Local Direct", "domestic"), row("Edit", "169 Rules", { chev: true }), sw("Block Ads & Trackers", "block"), row("Edit", "27 Rules", { chev: true }),
         sw("DNS", "dns"), row("Edit", "Template", { chev: true }), ...(S.sw.own ? [] : [sw("Rename 节点选择 to Manual", "rename")])], "Only My Rules：订阅的分组和规则都不要，只留它的节点，其余走 Manual；国内模版跟着打开。规则模版打开就加进 Clash，关掉就拿走，都立刻生效。Only My Rules 和 DNS 改的是订阅正文，要 Clash Verge 重新取一次才生效。")
-      + card("Go Direct", [`<div class="r code">5.102.107.254</div>`, row(`<span class="code" style="color:var(--ink3)">host or IP</span>`, "Add")], "这些地址不经任何节点，直接连出去：配置自己的代理的地址会自己加进来。向左滑删除。")
+      + card("Go Direct", [`<div class="r code">5.102.107.254</div>`, row(`<span class="code" style="color:var(--ink3)">host or IP</span>`, "Add")], "这些地址不经任何节点，直接连出去。向左滑删除。")
       + card("Routing Check", [
         `<div class="chk"><b>Claude<i class="ok">OK</i></b><span class="code">claude.ai</span><span>RuleSet as-claude → Claude → Claude自动选择 → 🇯🇵 日本家宽-01</span><span class="code">JP 126.36.1.2 · 362 ms</span></div>`,
         `<div class="chk"><b>Domestic<i class="ok">OK</i></b><span class="code">www.baidu.com</span><span>RuleSet as-domestic → DIRECT</span></div>`,

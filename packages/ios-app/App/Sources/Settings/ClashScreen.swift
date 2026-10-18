@@ -279,7 +279,7 @@ struct ClashScreen: View {
         } header: {
             SectionLabel("Go Direct")
         } footer: {
-            Text("这些地址不经任何节点，直接连出去：配置自己的代理的地址会自己加进来。向左滑删除。")
+            Text("这些地址不经任何节点，直接连出去。向左滑删除。")
         }
     }
 

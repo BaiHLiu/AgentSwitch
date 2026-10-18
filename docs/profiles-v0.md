@@ -231,7 +231,7 @@ Codex
 - **在这个配置名下开终端之前再查一次**，查到了才开。查不到：不开，说出原因，不退回直连。
 - 查到的出口记在这个终端上，**写在底栏**配置名后面：`claude · cwork1 · Tokyo 203.0.113.9`。
 - agent 进程拿到的是转发口（`HTTPS_PROXY` 等，大小写两种写法都设；`NO_PROXY` 是这台 Mac 自己），Claude Code 另在启动时叠的那层设置里也写一份，免得用户 `settings.json` 里的 `env` 盖掉。
-- 代理服务器的主机自动加进 Clash 页的 `Go Direct`（clash-v0 §3）：开着 TUN 时去代理的这一段不再绕别的节点。拿掉代理时不自动删这一条（别处可能也在用），在 `Go Direct` 里手动删。
+- ~~代理服务器的主机自动加进 Clash 页的 `Go Direct`~~：2026-10-18 去掉（clash-v0 §3）。去代理的这一段照 Clash 的规则走（开着 TUN 时多半经 `Manual` 的节点）；要它直连，自己加进 `Go Direct`。
 
 **做了的**：服务（`src/browser/exits.ts` 出口池：一个配置一个转发口，复用浏览器的转发层与出口查询；`profiles/store.ts` 存代理与上次查到的出口；`PUT /profiles/<agent>/<id>/proxy`、`POST …/check`；开终端前的检查在 `api/profiles.ts` 的 `exitFor`）、Mac（`Proxy…` 弹窗；列表右边原来写 `This Mac` 的地方改写出口；底栏）。
 

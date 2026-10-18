@@ -5,7 +5,6 @@
 import type { Hono } from "hono";
 import { z } from "zod";
 import { checkedProxy, ExitError, ExitPool } from "../browser/exits.js";
-import { proxyPlace } from "../browser/identity.js";
 import { remoteCaller } from "../core/caller.js";
 import { PROFILE_AGENTS, PROFILE_COLORS, ProfileError, type ProfileAgent, type ProfileProxy } from "../profiles/store.js";
 import { SessionKeyError } from "../browser/sessionKey.js";
@@ -98,9 +97,6 @@ export function mountProfiles(app: Hono<any>, deps: ApiDeps): void {
       const proxy = checkedProxy({ server: body.data.server, username: body.data.username, password });
       store.setProxy(agent.data, id, proxy);   // refuses one that is not there before anything listens for it
       const problem = await checked(store, deps.exits, agent.data, id, proxy);
-      // With Clash's TUN on, the way to the proxy itself must not be through another node (docs/clash-v0.md §3).
-      const place = proxyPlace(proxy.server);
-      if (place) await deps.clash?.addDirect(place.host).catch(() => undefined);
       return c.json({ agents: store.all(), ...(problem ? { problem } : {}) });
     } catch (err) {
       if (err instanceof ExitError) return c.json({ error: err.message }, 400);

@@ -672,7 +672,7 @@ private struct ClashDirectSection: View {
         } header: {
             Text("Go Direct")
         } footer: {
-            Footer("这些地址不经任何节点，直接连出去。用于配置里填的代理服务器：开着 TUN 时免得先绕一遍 Clash。改动立刻生效。")
+            Footer("这些地址不经任何节点，直接连出去。改动立刻生效。")
         }
     }
 

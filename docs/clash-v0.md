@@ -1,4 +1,4 @@
-# clash-v0：Clash Integration——为 Claude、OpenAI 单独配置代理，配置的代理直连
+# clash-v0：Clash Integration——为 Claude、OpenAI 单独配置代理
 
 2026-10-08 用户：可以和clash进行interactive吗；也就是理论上我可以直接用agentswitch修改配置文件？；需要加一栏 clash-intergration……当前我的clash配置文件中有关于Claude和openai的配置，clash-intergration中要有 “为Claude单独配置代理” 和 “为openai单独配置代理“的功能；可以读取当前订阅文件的所有节点，然后”为Claude配置单独代理” 可以单独按照优先级拖进来几个节点，根据优先级fallback（可以选择自动fallback也可以手动选择节点） openai的同理；设置之后就和我现在的配置文件差不多；然后可以设置claude code profile中添加的代理直接直连（通过agent switch添加的规则必须可逆）然后以后也可以手动删除。
 
@@ -6,7 +6,7 @@
 
 ## 0. 要点
 
-- 设置里新的一页 `Clash Integration`，三样：`Separate Proxy for Claude`、`Separate Proxy for OpenAI`、`Profile Proxies Go Direct`。
+- 设置里新的一页 `Clash Integration`，两样：`Separate Proxy for Claude`、`Separate Proxy for OpenAI`。（原来的第三样“配置的代理直连”2026-10-18 去掉了，见 §3。）
 - **读**走 Clash 自己的控制接口；**写**只写 Clash Verge 为“扩展”准备的那几个文件里 AgentSwitch 自己的条目，带标记，一键撤掉后和没接入过一样。
 - 写之前给你看要加什么、删什么，由你点 `Apply`；加载失败立刻还原。
 
@@ -30,7 +30,10 @@
 - 你已经手写了一套时：页面先认出来并说明（“订阅里已经有 `Claude` 分组和它的规则”），由你选：接着用自己的（AgentSwitch 只显示、只切换选中的节点，不写文件），还是换成 AgentSwitch 管的（它的规则排在前面，优先生效；你原来的不删）。
 - 手动选节点、看延迟走控制接口，不改文件。
 
-## 3. 配置的代理直连
+## 3. 配置的代理直连（2026-10-18 去掉）
+
+**已去掉**（2026-10-18，用户：所以这个给添加的代理加直连的功能是不必要的，删除吧）：配置填了代理，不再自动把它的地址加进 `Go Direct`。`Go Direct` 本身留着，由用户自己加删。下面是原来的设计和去掉它的经过。
+
 
 - Claude Code 的某个配置填了自己的代理（profiles-v0 §4）时，开着 TUN 会让“去那个代理服务器”的连接先绕一遍 Clash 的节点。
 - `Profile Proxies Go Direct` 打开后，AgentSwitch 为每个配置的代理地址加一条直连规则（地址是 IP 用 `IP-CIDR,…/32,DIRECT`，是域名用 `DOMAIN,…,DIRECT`），排在最前。
@@ -39,7 +42,7 @@
   - 用户在 AdsPower 的一个环境里也用了同一个代理（SOCKS5，美国）。直连规则对所有程序生效，加上后 SunBrowser 去这个代理也改走直连。
   - 实测：从用户的网络直连这个代理，有一阵子 20 次里 13 次连不上（握手前就超时，和 Clash 日志里的 `dial … i/o timeout` 一样），几分钟后又 12 次全通；同一时间经 `Manual` 的节点去，20 次全通。像是明文的 SOCKS5 被线路一阵一阵地掐断，经节点时它包在节点的加密里，不受影响。SunBrowser 一次开很多连接，碰上掐断的那阵子就不通。
   - 终端“去掉直连就连不上”是另一件事：那个终端的本机转发口已经没了（见 profiles-v0 §4 “转发口不换”），走哪条路都不通。把直连规则临时拿掉、经节点做出口检查，6 次全通。
-  - 所以对用户这条线路，这个代理经节点比直连可靠。直连规则现在仍按配置自动加；要不要改成可选、或只对 AgentSwitch 自己的进程直连，等用户定。
+  - 所以对用户这条线路，这个代理经节点比直连可靠；自动加的直连规则反而害了同一台 Mac 上用这个代理的别的程序。用户定：去掉自动加（服务 `api/profiles.ts` 不再调用、`ClashIntegration.addDirect` 删掉；两端 `Go Direct` 的说明不再说“配置的代理会自己加进来”）。已经加进去的那一条也从用户的 `Go Direct` 里删了。
 
 ## 4. 怎么写、怎么撤
 
@@ -85,7 +88,7 @@
 订阅整份更新要 Clash Verge 去重新取（你点更新，或它的定时更新），不是立刻的。所以日常会变的东西不直接写在订阅正文里，而是放进订阅里声明的规则集与节点集，它们同样由 AgentSwitch 在本机提供：
 
 - 换节点、调优先级：改节点集，再让内核只刷新这一个（控制接口）。
-- 配置的代理直连：改规则集，同样只刷新这一个。
+- `Go Direct` 里的地址：改规则集，同样只刷新这一个。
 - 手动选哪个节点：直接走控制接口。
 - 只有结构变了（多了一个分组）才需要重新取订阅，界面提示你去点一次更新。
 
