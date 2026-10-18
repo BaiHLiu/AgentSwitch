@@ -13,7 +13,7 @@ import { MAX_UPLOAD, mountFileChanges } from "../src/api/fileChanges.js";
 import { localRefusal } from "../src/api/localGuard.js";
 import { markRemote } from "../src/core/caller.js";
 import type { ProtectedPaths } from "../src/executors/protected.js";
-import type { FileScope, Viewer } from "../src/files/browse.js";
+import { details, listLevel, type FileScope, type Viewer } from "../src/files/browse.js";
 import { fixedPlace, freedesktopTrash, goodName, inTrash, keepBothName, newFile, newFolder, renameItem, restore, TrashError, toTrash, type Running, type Trasher } from "../src/files/change.js";
 import { remoteAllowed } from "../src/remote/routes.js";
 
@@ -89,6 +89,17 @@ describe("what is never changed here", () => {
     const v = d.viewer();
     for (const fixed of ["/", "/Users", d.home, d.p(".agentswitch"), d.p(".agentswitch/nodes"), d.p(".secret-gate"), d.p(".agentswitch/local-token")]) expect(fixedPlace(fixed, v), fixed).toBe(true);
     for (const free of [d.p("Projects"), d.p("Projects/lumen"), d.p("Documents/plan.md")]) expect(fixedPlace(free, v), free).toBe(false);
+  });
+
+  it("are told in the listing, so a screen leaves Rename… and Move to Trash out of their menus", () => {
+    const d = disk();
+    const at = (dir: string) => { const r = listLevel(dir, d.viewer(), { hidden: true }); return r.ok ? Object.fromEntries(r.value.entries.map((e) => [e.name, e.fixed ?? e.locked ?? false])) : {}; };
+    expect(at(d.p("Projects"))).toEqual({ "gate-link": true, harbor: false, lumen: false });
+    expect(at(d.home)).toMatchObject({ ".agentswitch": true, ".secret-gate": true, Documents: false, Projects: false });
+    expect(at(join(d.root, "Users"))).toMatchObject({ you: true });
+    expect(details(d.home, d.viewer())).toMatchObject({ ok: true, value: { fixed: true } });
+    expect(details(d.p("Projects/lumen"), d.viewer())).toMatchObject({ ok: true, value: { name: "lumen" } });
+    expect((details(d.p("Projects/lumen"), d.viewer()) as { value: { fixed?: true } }).value.fixed).toBeUndefined();
   });
 });
 

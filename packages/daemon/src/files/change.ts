@@ -12,7 +12,7 @@ import { accessSync, closeSync, constants, existsSync, lstatSync, mkdirSync, ope
 import { homedir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { canonicalPath, isWithin, lineage } from "../core/paths.js";
-import { inScope, isLocked, type Refusal, type Viewer } from "./browse.js";
+import { holdsFixed, inScope, isLocked, type Refusal, type Viewer } from "./browse.js";
 
 export type ChangeRefusal = Refusal | "exists" | "bad-name" | "no-trash" | "in-use" | "not-trash";
 export type ChangeResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: ChangeRefusal; readonly more?: Record<string, unknown> };
@@ -44,9 +44,7 @@ const lstatOf = (p: string): Stats | null => { try { return lstatSync(p); } catc
 /** One of the places nothing here changes: `/` and what is right under it, AgentSwitch's credential places, and the
  *  folders that hold one. `real` is where the thing really is. */
 export function fixedPlace(real: string, viewer: Viewer): boolean {
-  if (real === "/" || dirname(real) === "/") return true;
-  if (isLocked(real, viewer)) return true;
-  return (viewer.denied.readDenied ?? []).some((r) => isWithin(canonicalPath(r), real) || isWithin(r, real));
+  return isLocked(real, viewer) || holdsFixed(real, viewer);
 }
 
 /** Where an existing item really is, and that it may be changed by this viewer: in its scope, not a fixed place. The

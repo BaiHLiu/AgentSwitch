@@ -38,6 +38,9 @@ export type Entry = {
   readonly dim?: true;
   /** One of AgentSwitch's own credential places: its name only, nothing more of it is given. */
   readonly locked?: true;
+  /** Not to be renamed or moved to the Trash here (docs/files-v0.md §12.2): it holds one of AgentSwitch's places (the
+   *  home folder, `~/.agentswitch`), or it is right under `/`. Screens leave those items out of its menu. */
+  readonly fixed?: true;
   /** A symbolic link: where it points, and what is there. */
   readonly link?: { readonly target: string; readonly kind: "dir" | "file" | "other" | "missing" };
 };
@@ -105,6 +108,13 @@ function realOf(p: string): Result<string> {
 function errno(err: unknown): Refusal {
   const code = (err as NodeJS.ErrnoException).code;
   return code === "EACCES" || code === "EPERM" ? "permission" : code === "ENOTDIR" ? "not-folder" : "not-found";
+}
+
+/** `/` and what is right under it, and every folder holding one of AgentSwitch's credential places: what the Files
+ *  column never renames or moves (files/change.ts `fixedPlace` is the same rule, with the locked places themselves). */
+export function holdsFixed(real: string, viewer: Viewer): boolean {
+  if (real === "/" || dirname(real) === "/") return true;
+  return (viewer.denied.readDenied ?? []).some((r) => isWithin(canonicalPath(r), real) || isWithin(r, real));
 }
 
 /** True when `real` is one of AgentSwitch's credential places or inside one. */
@@ -216,7 +226,9 @@ export function listLevel(p: string, viewer: Viewer, opts: { readonly hidden?: b
   keyed.sort((x, y) => Number(y.folder) - Number(x.folder) || collator.compare(sortKey(x.d.name), sortKey(y.d.name)) || collator.compare(x.d.name, y.d.name));
   const limit = Math.max(1, Math.min(opts.limit ?? DEFAULT_LIMIT, MAX_LIMIT));
   const locked = lockedIds(viewer);
-  const entries = keyed.slice(0, limit).map(({ d }) => entryOf(p, d.name, viewer, locked)).filter((e): e is Entry => e !== null);
+  const realDir = where.value.real;
+  const entries = keyed.slice(0, limit).map(({ d }) => entryOf(p, d.name, viewer, locked)).filter((e): e is Entry => e !== null)
+    .map((e) => (!e.locked && holdsFixed(realDir === "/" ? `/${e.name}` : join(realDir, e.name), viewer) ? { ...e, fixed: true as const } : e));
   const parent = p === "/" ? null : dirname(p);
   return ok({ path: p, parent, home: viewer.home, entries, more: Math.max(0, keyed.length - limit), hiddenCount: dirents.length - shown.length, ...(where.value.scoped ? { scoped: true as const } : {}) });
 }
@@ -244,7 +256,10 @@ export function details(p: string, viewer: Viewer): Result<Details> {
   if (!entry) return no("not-found");
   if (entry.locked) return no("locked");
   const real = where.value.real;
-  const base: Details = { ...entry, path: p, ...(real !== canonicalPath(p) || entry.kind === "link" ? { real } : {}) };
+  // The item itself where it is (a link is not followed for this): its folder as it really is, and its name.
+  const up = p === "/" ? null : realOf(dirname(p));
+  const own = p === "/" ? "/" : join(up?.ok ? up.value : dirname(p), name);
+  const base: Details = { ...entry, path: p, ...(real !== canonicalPath(p) || entry.kind === "link" ? { real } : {}), ...(holdsFixed(own, viewer) ? { fixed: true as const } : {}) };
   let st: Stats;
   try { st = statSync(p); } catch (err) { return no(errno(err)); }
   if (st.isDirectory()) {
