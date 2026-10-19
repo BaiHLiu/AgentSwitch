@@ -117,6 +117,8 @@ struct DemoFiles: MacFileSource {
         file("\(project)/docs/design/concepts/split.html", ago(90), text: "<!doctype html>\n<title>Split</title>\n<p>分屏的演示页（示例）。</p>\n")
         dir("\(project)/node_modules", ago(9000), dim: true)
         dir("\(project)/src", ago(5)); file("\(project)/src/app.ts", ago(5), text: app); file("\(project)/src/store.ts", ago(12), size: 3980, text: app)
+        // A minified file: one long line (`filespreviewlong`).
+        dir("\(project)/dist", ago(5)); file("\(project)/dist/app.min.js", ago(5), text: String(repeating: "(()=>{\"use strict\";var e={812:(e,t,n)=>{n.d(t,{A:()=>r});const r=function(e){return e.split(\"/\").filter(Boolean)}}};", count: 40))
         file("\(project)/src/main.ts", ago(3000), text: "import { serve } from \"./app\";\n\nserve(8080);\n")
         file("\(project)/README.md", ago(300), text: readme); file("\(project)/package.json", ago(9000), text: pkg)
         return t

@@ -53,6 +53,7 @@ extension FilesTab {
         let p = DemoFiles.project
         switch UserDefaults.standard.string(forKey: "uiDemoScreen") {
         case "filespreview": session.root = "\(p)/src"; session.stack = [.file("\(p)/src/app.ts")]
+        case "filespreviewlong": session.root = "\(p)/dist"; session.stack = [.file("\(p)/dist/app.min.js")]
         case "filesimage": session.root = "\(p)/docs"; session.stack = [.file("\(p)/docs/logo.png")]
         case "filesselect", "fileschoose":
             session.root = "\(p)/src"

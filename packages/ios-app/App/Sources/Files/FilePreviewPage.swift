@@ -4,7 +4,7 @@ import QuickLook
 import SwiftUI
 
 /// A file of the Mac's, opened from the browser (docs/files-v0.md §5 预览): a text file's first 64 KB shown here
-/// (monospaced, sideways to read a long line, numbered in the pixel look); a picture's small copy, then `Open Preview`
+/// (monospaced, long lines wrapped, numbered in the pixel look); a picture's small copy, then `Open Preview`
 /// fetches the whole of it for the system's Quick Look, as for a PDF and the rest; a file over 25 MB is not fetched.
 /// Under it `Add to Reply` (`Add to Reply…` on the Files tab) and `Copy Path`; in the bar `Share` (fetched, then the
 /// system's share sheet: Save to Files keeps it on the phone) and `⋯` with `Rename…` and `Move to Trash` (files-v0 §12.3).
@@ -84,27 +84,29 @@ struct FilePreviewPage: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// The text and, in the pixel look, its line numbers beside it: two columns of the same type, so they keep in line.
+    /// The text a line to a row, long lines wrapped to the page's width (a minified file is one line);
+    /// in the pixel look each row's number beside its first row, in a column as wide as the largest number.
     private func textView(_ p: MacFilePreview) -> some View {
         let body = p.text.hasSuffix("\n") ? String(p.text.dropLast()) : p.text
-        let count = body.split(separator: "\n", omittingEmptySubsequences: false).count
+        let lines = body.split(separator: "\n", omittingEmptySubsequences: false)
+        let digits = String(lines.count).count
         return ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: 0) {
-                ScrollView(.horizontal, showsIndicators: false) {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
                     HStack(alignment: .top, spacing: 12) {
                         if !look.isClassic {
-                            Text((1...max(1, count)).map(String.init).joined(separator: "\n")).code(11.5).foregroundStyle(Theme.inkDim)
-                                .multilineTextAlignment(.trailing).fixedSize()
+                            Text(String(repeating: " ", count: digits - String(i + 1).count) + String(i + 1)).code(11.5).foregroundStyle(Theme.inkDim)
                         }
-                        Text(body.isEmpty ? " " : body).code(11.5).foregroundStyle(Theme.ink).fixedSize().textSelection(.enabled)
+                        Text(line.isEmpty ? " " : String(line)).code(11.5).foregroundStyle(Theme.ink)
+                            .frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
                     }
-                    .padding(Theme.Space.m)
                 }
                 if p.truncated {
                     Text("仅显示前 64 KB（共 \(FileSize.short(p.size))）。").font(.footnote).foregroundStyle(.secondary)
-                        .padding(.horizontal, Theme.Space.m).padding(.bottom, Theme.Space.m)
+                        .padding(.top, Theme.Space.m)
                 }
             }
+            .padding(Theme.Space.m)
         }
     }
 

@@ -10,6 +10,7 @@ import SwiftUI
 /// - `files-home`: the column first opened, at home;
 /// - `files-tree`: a project with a folder open (the pixel look's tree, the classic look's folders);
 /// - `files-preview`: a file selected, its preview and its two buttons (another node's text, as the service gives it);
+/// - `files-preview-long`: a minified file, its one long line wrapped to the column, cut at 64 KB;
 /// - `files-quicklook`: a file of this Mac's in Quick Look's own picture (a real file in a temporary folder);
 /// - `files-several`: two selected, and the status bar's count;
 /// - `files-hidden`: hidden files shown, the locked places with their lock;
@@ -33,6 +34,10 @@ enum FilesDesignPreview {
         try await shot(model, node: "7f3a19c2e804", to: picture("files-preview")) { files, _ in
             files.stage(root: lumen, levels: levels, expanded: ["\(lumen)/src"], selection: ["\(lumen)/src/app.ts"], details: [appDetails])
             files.stageRemote(text: FileTextPreview(text: appText, truncated: false, lines: 14, size: 2140), image: nil)
+        }
+        try await shot(model, node: "7f3a19c2e804", to: picture("files-preview-long")) { files, _ in
+            files.stage(root: lumen, levels: levels, expanded: ["\(lumen)/src"], selection: ["\(lumen)/src/app.ts"], details: [appDetails])
+            files.stageRemote(text: FileTextPreview(text: minified, truncated: true, lines: 1, size: 1_480_000), image: nil)
         }
         try await quickLook(model, to: picture("files-quicklook"))
         try await shot(model, to: picture("files-several")) { files, _ in
@@ -173,6 +178,7 @@ enum FilesDesignPreview {
         FileEntry(name: name, kind: .file, size: locked ? 0 : size, mtime: locked ? 0 : now - ago, locked: locked)
     }
 
+    private static let minified = String(repeating: "(()=>{\"use strict\";var e={812:(e,t,n)=>{n.d(t,{A:()=>r});const r=function(e){return e.split(\"/\").filter(Boolean)}}};", count: 40)
     private static let appText = """
     import { createStore } from "./store";
     import { List } from "./components/List";

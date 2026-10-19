@@ -17,7 +17,7 @@ struct AgentSwitchApp: App {
         // terminalslash|terminalclose|terminalmenu|terminaldelete|terminalsearch|terminalsmany|terminalquestion|terminallink|newterminal|newterminalbypass|
         // browser|browserpage|browsertook|browserfile|browserlocal|browserdenied|browsernew|browserclose|browserzoom|
         // browserzoomwatch|linkedpage|proxies|clash|clashservice|clashrules|clashcheck|clashnodes|clashtext|clashsource|
-        // proxybrowser|proxyprofile|files|fileshome|filesopen|filespreview|filesimage|filesselect|fileschoose|filessensitive|
+        // proxybrowser|proxyprofile|files|fileshome|filesopen|filespreview|filespreviewlong|filesimage|filesselect|fileschoose|filessensitive|
         // filesscoped|filessheet|filesreply|filesnew|filesnameerror|filestrash|filestrashbusy|filesselectbar|filesshare|filesupload|
         // filesclash|filesgone|transcriptfiles|terminalpath`.
         if let hosts = UserDefaults.standard.string(forKey: "tlsProbe"), let pin = UserDefaults.standard.string(forKey: "tlsProbePin") {
@@ -47,7 +47,7 @@ struct AgentSwitchApp: App {
                 model.tab = .terminals; model.openTerminalRequest = "a1b2c3d4"
             case "newterminal", "newterminalbypass", "newterminalprofile": model.tab = .terminals; model.openTerminalRequest = "new"
             // The Files tab (docs/files-v0.md §5) on the made-up disk (DemoFiles): its pages in FilesTab.demo.
-            case "files", "filesopen", "filespreview", "filesimage", "filesselect", "fileschoose", "filessensitive",
+            case "files", "filesopen", "filespreview", "filespreviewlong", "filesimage", "filesselect", "fileschoose", "filessensitive",
                  "filesnew", "filesnameerror", "filestrash", "filestrashbusy", "filesselectbar", "filesshare", "filesupload", "filesclash":
                 model.tab = .files; model.files.openRequest = DemoFiles.project
             case "fileshome", "filesscoped": model.tab = .files; model.files.openRequest = DemoFiles.home

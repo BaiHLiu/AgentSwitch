@@ -78,19 +78,20 @@ struct FilesPreview: View {
     }
 }
 
-/// The start of another node's text file, as the service gives it; numbered in the pixel look.
+/// The start of a text file, as the service gives it; numbered in the pixel look.
+/// Long lines wrap to the column's width, a number beside a line's first row only (a minified file is one line).
 private struct FilesTextView: View {
     let preview: FileTextPreview
     let numbered: Bool
 
     var body: some View {
-        ScrollView([.vertical, .horizontal]) {
+        ScrollView(.vertical) {
             let lines = preview.text.split(separator: "\n", omittingEmptySubsequences: false).prefix(400)
-            VStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
-                    HStack(spacing: 8) {
+                    HStack(alignment: .top, spacing: 8) {
                         if numbered { Text("\(i + 1)").foregroundStyle(Look.faint).frame(minWidth: 22, alignment: .trailing) }
-                        Text(String(line)).foregroundStyle(Look.ink)
+                        Text(String(line)).foregroundStyle(Look.ink).frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 if preview.truncated {
