@@ -442,6 +442,7 @@ Codex 0.163.0-alpha.5（服务管的那一份）；每项都在一次性的 `COD
   - **把会话文件复制进去**：能，按会话号续接，历史完整。但之后两边各一份。
   - **链接进去**（`sessions/年/月/日/` 下放一个指向原文件的链接）：能，历史完整，新的一轮写回原文件；原来的家目录再续接，看得到这一轮。所以 Codex 也能像 Claude Code 那样“会话共用、账号分开”，做法是链接单个会话文件，而不是整个 `sessions/`（整个目录链接没有试）。
   - 同一段会话不要在两个家目录里同时开着：写入锁（`thread-writer-locks/`）各家目录各一把，挡不住对方。
+- **不经 app-server**（用户 2026-10-19：就是别用那个codex app server就行）：配置下的 Codex 终端和今天的一样，照它的命令行原样运行（2026-10-08 起的默认，`daemon.ts` 的 `codexServer`），会话记为 `cli`。经 app-server 开的会话记为 `vscode`（app-server 自己定的，没有选项），ChatGPT App 不再把它列在项目下。登录也用命令行（`codex login --device-auth`）。服务对 hook 的信任照旧经一次 app-server 写进那个家目录的 `config.toml`，只调 `hooks/list` 与 `config/batchWrite`，不开会话。
 - 还没试：别的家目录里的会话出不出现在列表里（`codex resume` 的选择页、app-server 的 `thread/list`）；ChatGPT App 的列表（它读 `~/.codex`；别的配置的会话看不到是预期的，用户只要 `Default` 同步，§7）；服务的 hook 信任与 Daybreak 默认值写进新家目录（照 `~/.codex` 的做法，没有新东西要测）。
 
 ## 7. 官方 App 与调度
