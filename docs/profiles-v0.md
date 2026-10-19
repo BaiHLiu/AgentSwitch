@@ -420,12 +420,29 @@ Codex
 | agent | 订阅登录 | API 供应商 | 同一个 agent 的配置之间会话能共用吗 | 浏览器工具 |
 |---|---|---|---|---|
 | Claude Code | 另一个家目录，`/login` | 另一个家目录；地址与模型名在启动那层设置里，密钥经它自己的 `apiKeyHelper` 取 | 能（链接） | 有 |
-| Codex | 另一个 `CODEX_HOME`，`codex login` | 另一个 `CODEX_HOME`；供应商用启动时的 `-c` 给 | 要实测（它除了文件还有自己的库） | 有 |
+| Codex | 另一个 `CODEX_HOME`，`codex login --device-auth` | 另一个 `CODEX_HOME`；供应商用启动时的 `-c` 给 | 能：把会话文件链接进去（§6.1 实测） | 有 |
 | OpenCode | 另一套数据目录 | 不必另开目录：AgentSwitch 本来就给每个终端一份它的配置文件，供应商写在那里 | 供应商类能；订阅类不能（会话和登录在同一个目录里） | 有 |
 | pi | 另一个目录 | 同左 | 要实测 | 没有，只跟出口 |
 
 - Codex 另有三处：服务对自己 hook 的信任记在 `CODEX_HOME` 的 `config.toml` 里，每个配置的家目录要各做一次；Daybreak 的默认值每个家目录各一份；它的后台服务也是每个家目录各一个。
 - 用量那几行（各家的额度）之后按配置分开显示。
+
+### 6.1 Codex 的订阅配置：实测（2026-10-19）
+
+用户：（问 ChatGPT 的配置切换做了没有，答还没做、先要实测几件事后）测试一下。
+
+Codex 0.163.0-alpha.5（服务管的那一份）；每项都在一次性的 `CODEX_HOME` 里、干净的环境下跑；模型是本机一个替身（只回一句话的 Responses 接口），没碰任何模型和账号，测完目录都删了。
+
+- **凭据**：存文件。全新的家目录里 `codex login status` 是 `Not logged in`，所以不和这台 Mac 的登录共用钥匙串；这台 Mac 原有的登录在 `~/.codex/auth.json`（只看了它在不在）。它支持 `cli_auth_credentials_store = file | keyring | auto | ephemeral`，配置的家目录应写明 `file`，免得落进钥匙串、和别的账号混在一起。`installation_id` 各家目录各一个随机值。
+- **登录开什么浏览器**：`codex login` 在 `127.0.0.1:1455` 起一个回调，不认 `BROWSER`，也不走 `PATH` 里的 `open`，直接让系统开默认浏览器（测时多开了一页，告诉了用户）。回调端口固定，两个配置不能同时这样登录；走代理的浏览器还得放过本机地址。
+- **不开浏览器的登录**：`codex login --device-auth` 只打出一个固定网址 `https://auth.openai.com/codex/device` 和一次性码，不开任何东西、不要本机回调。**提议配置一律用这一种**：服务读出码，在这个配置自己的浏览器（走它的出口）里打开那一页，人在那里登录、填码。ChatGPT 那边要不要先在安全设置里开“设备码登录”，没有试（需要真账号）。
+- **续接别处的会话**：
+  - 按会话号在另一个家目录里续接：不行（`no rollout found for thread id`）。
+  - `codex exec resume <文件路径>`：不认，悄悄开了一段新会话、没带历史。app-server 的 `thread/resume` 带 `path`：要声明 `experimentalApi`，声明了仍是同一个错误。
+  - **把会话文件复制进去**：能，按会话号续接，历史完整。但之后两边各一份。
+  - **链接进去**（`sessions/年/月/日/` 下放一个指向原文件的链接）：能，历史完整，新的一轮写回原文件；原来的家目录再续接，看得到这一轮。所以 Codex 也能像 Claude Code 那样“会话共用、账号分开”，做法是链接单个会话文件，而不是整个 `sessions/`（整个目录链接没有试）。
+  - 同一段会话不要在两个家目录里同时开着：写入锁（`thread-writer-locks/`）各家目录各一把，挡不住对方。
+- 还没试：别的家目录里的会话出不出现在列表里（`codex resume` 的选择页、app-server 的 `thread/list`）；ChatGPT App 的列表（它读 `~/.codex`，要看得到就得往那里放链接，那是改动这台 Mac 原有的那一份，§0 定过不动）；服务的 hook 信任与 Daybreak 默认值写进新家目录（照 `~/.codex` 的做法，没有新东西要测）。
 
 ## 7. 官方 App 与调度
 
@@ -497,8 +514,8 @@ Codex
 1. Claude Code 在一个全新的家目录下向外发了哪些认设备的东西（尤其是硬件 UUID 有没有随默认遥测发出去）。
 2. Claude Code：家目录里链接过去的目录和文件（`projects/`、`skills/`、`settings.json`）它是顺着链接写，还是把链接换成普通文件；启动那层设置能不能把你 `settings.json` 里的地址与代理盖干净。
 3. Claude Code：换一个账号、换一家供应商续接同一段会话，带签名的思考内容认不认；`file-history/` 跟不跟得上。
-4. Claude Code、Codex：登录页认不认 `BROWSER`；有没有不开浏览器的登录办法。
-5. Codex：另一个 `CODEX_HOME` 下能不能续接别处的会话；凭据存在文件还是钥匙串、按什么区分。
+4. Claude Code、Codex：登录页认不认 `BROWSER`；有没有不开浏览器的登录办法。（Codex：不认；有，`--device-auth`，§6.1。）
+5. Codex：另一个 `CODEX_HOME` 下能不能续接别处的会话；凭据存在文件还是钥匙串、按什么区分。（已测，§6.1：链接会话文件能续接；凭据在文件里，按家目录分开。）
 6. OpenCode：登录文件能不能单独指到别处（能的话订阅类也能共用会话）；pi 的会话目录。
 7. Camoufox：同一份引擎同时跑几个配置目录；每个占多少内存；工具栏上写名字的办法。
 8. 各家 agent 有没有不认环境变量代理的连接（更新检查、远程 MCP、WebSocket）。
