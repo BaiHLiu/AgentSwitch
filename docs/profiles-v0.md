@@ -187,7 +187,7 @@ Codex
 - **没查实、没做的**：
   - 真的 key 对着真的接口跑一轮（没有用任何账号）；在装好的应用里点一遍新建。
   - 你的 `settings.json` 里若已经写着别家的 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY`（cc switch 的写法），它和这里的 `apiKeyHelper` 谁先谁后没有测（§2 说的“要逐个盖掉”仍未做）。
-  - Codex 需要认供应商的 `auth` 命令的版本（0.163 认）；更早的版本没有试，ChatGPT.app 自带的那一份也没有试。
+  - Codex 需要认供应商的 `auth` 命令的版本（0.163 认）。ChatGPT.app 自带的那一份（0.162.0-alpha.17.2，用户的服务开 Codex 终端用的就是它）2026-10-20 补测：也认——在一次性的家目录里用 `exec` 对本机替身发一轮，替身收到的是 `auth` 命令给出的 key（`Authorization: Bearer`），0.163 同样。更早的版本没有试。
   - 续接一段在别的供应商下开始的 Codex 会话认不认，没有试。
   - 中转的地址须支持各家自己的接口（Anthropic Messages；OpenAI Responses），界面只说明、不探测。
   - 按配置分开的用量；调度任务用配置（第 6 步）。
