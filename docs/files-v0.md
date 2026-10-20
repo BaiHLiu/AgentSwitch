@@ -187,7 +187,7 @@
 ### 7.3 安全边界
 
 - **只读**：第一版没有写的接口。
-- **AgentSwitch 自己的禁区**：与调度执行器的读禁区同一张表（`protected.ts` 的 `defaultProtected().readDenied`：凭据网关的目录与 socket、浏览器会话档案与共用浏览器的状态目录、远程监听的 TLS 目录、本地令牌、节点目录）。在里面或就是它：列出时只有名字和 `locked`，没有大小、时间、内容；`stat`、`preview`、`content`、`{path}` 附件一律 403。终端里的禁区表更宽松（`terminalProtected`，只关网关和节点），这里不用它：文件栏会把内容送到手机上。任何授权范围里它们都锁着。
+- **AgentSwitch 自己的禁区**：与调度执行器的读禁区同一张表（`protected.ts` 的 `defaultProtected().readDenied`：凭据网关的目录与 socket、浏览器会话档案与共用浏览器的状态目录、远程监听的 TLS 目录、本地令牌、节点目录；2026-10-20 起还有配置目录 `profiles/`，Codex 账号配置的登录存在那里，profiles-v0 §6.2）。在里面或就是它：列出时只有名字和 `locked`，没有大小、时间、内容；`stat`、`preview`、`content`、`{path}` 附件一律 403。终端里的禁区表更宽松（`terminalProtected`，只关网关和节点），这里不用它：文件栏会把内容送到手机上。任何授权范围里它们都锁着。
 - **可能含凭据的文件**（用户定：看就行，给 agent 时提醒；第一稿 §10.4 问过要不要把它们也锁上）：照常列出、预览（手机也能），`/files/stat` 带 `sensitive: {reason}`；给 agent 时界面问一次（§4）。只按路径和名字判断，不读内容找密码。
   - 文件夹：`~/.ssh/`（`*.pub`、`config`、`known_hosts` 除外）、`~/.gnupg/`、`~/Library/Keychains/`。
   - 文件：`~/.aws/credentials`、`~/.netrc`、`~/.git-credentials`、`~/.npmrc`、`~/.pypirc`、`~/.docker/config.json`、`~/.kube/config`、`~/.config/gh/hosts.yml`；各 agent 自己存登录的文件（`~/.codex/auth.json`、`~/.claude/.credentials.json`、OpenCode 与 pi 的登录文件，位置照 agents-v0）；各配置自己的登录目录（profiles-v0）。

@@ -56,7 +56,7 @@ export type Terminals = {
   /** Where a terminal's attached files go (`<dir>/<id>/`); default the system's temporary folder (no spaces). */
   readonly attachDir?: string;
   /** Before an agent starts (Codex: its hooks trusted, codexHooks.ts); whatever happens, the start goes on. */
-  readonly prepare?: (harness: TerminalHarness) => Promise<unknown>;
+  readonly prepare?: (harness: TerminalHarness, home?: string) => Promise<unknown>;
   /** The tree's git status (default: `git status` itself, gitStatus.ts). */
   readonly git?: GitStatus;
   /** Whether `harness` is signed in, in the folder a profile gives it (signIn.ts); null or absent: not known. */
@@ -367,8 +367,17 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
     // started anywhere else it asks, in the terminal, whether to fork it there. In another folder the service asks for
     // the fork itself: a new session there with the whole history, the first one left where it is (§5, 2026-10-11).
     const forks = fork || (body.data.harness === "pi" && movedFrom !== undefined);
-    // The agent made ready (Codex: its hooks trusted, a few seconds at most); the start goes on whatever happens.
-    await t.prepare?.(body.data.harness).catch(() => undefined);
+    // The profile it starts under (docs/profiles-v0.md §3.3): the one named. Not named — a conversation goes on under
+    // the one it last ran under (the Mac's own when none is known, or that one is gone); a new terminal starts under
+    // the one last chosen for a new terminal. `Default` is the Mac's own: nothing is set for it.
+    const recorded = resumed ? deps.profiles?.sessionProfile(resumed.harness, resumed.agentSessionId) ?? DEFAULT_PROFILE : null;
+    const wanted = body.data.profile ?? recorded ?? deps.profiles?.current(body.data.harness) ?? DEFAULT_PROFILE;
+    const profileHome = wanted === DEFAULT_PROFILE ? null : deps.profiles?.homeOf(body.data.harness, wanted) ?? null;
+    // What of the Mac's own set-up came since the profile was made is linked into its folder (Codex's, §6.2).
+    if (profileHome) deps.profiles?.keepLinked(body.data.harness, wanted);
+    // The agent made ready (Codex: its hooks trusted in the folder it runs in, a few seconds at most); the start goes
+    // on whatever happens.
+    await t.prepare?.(body.data.harness, profileHome ?? undefined).catch(() => undefined);
     // Open in another program → say where, and the client may fork instead.
     if (agentSessionId && !forks) {
       const open = openHere();
@@ -380,12 +389,6 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
       const raced = openHere();
       if (raced) return c.json({ terminal: raced, existing: true });
     }
-    // The profile it starts under (docs/profiles-v0.md §3.3): the one named. Not named — a conversation goes on under
-    // the one it last ran under (the Mac's own when none is known, or that one is gone); a new terminal starts under
-    // the one last chosen for a new terminal. `Default` is the Mac's own: nothing is set for it.
-    const recorded = resumed ? deps.profiles?.sessionProfile(resumed.harness, resumed.agentSessionId) ?? DEFAULT_PROFILE : null;
-    const wanted = body.data.profile ?? recorded ?? deps.profiles?.current(body.data.harness) ?? DEFAULT_PROFILE;
-    const profileHome = wanted === DEFAULT_PROFILE ? null : deps.profiles?.homeOf(body.data.harness, wanted) ?? null;
     // One that pays by a key (§3.6): the agent is told where to send it and asks for the key itself. Codex's has no
     // folder of its own.
     const paid = wanted === DEFAULT_PROFILE ? null : deps.profiles?.apiOf(body.data.harness, wanted) ?? null;
@@ -409,9 +412,9 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
     // answer. Asked of the agent itself; when it does not say, nothing is assumed.
     // Only one that signs in with an account: one that pays by a key has nobody to sign in.
     const account = profile && deps.profiles!.kindOf(body.data.harness, wanted) === "subscription";
-    const firstInput = profile?.home && account && (await t.signedIn?.(body.data.harness, profile.home).catch(() => null)) === false ? "/login" : null;
+    const signIn = Boolean(profile?.home && account && (await t.signedIn?.(body.data.harness, profile.home).catch(() => null)) === false);
     try {
-      const info = await host.spawn({ harness: body.data.harness, cwd, ...(profile ? { profile } : {}), ...(firstInput ? { firstInput } : {}), ...(body.data.model ? { model: body.data.model } : {}), ...(body.data.effort ? { effort: body.data.effort } : {}), ...(agentSessionId ? { resume: agentSessionId, ...(forks ? { fork: forks } : {}) } : {}),
+      const info = await host.spawn({ harness: body.data.harness, cwd, ...(profile ? { profile } : {}), ...(signIn ? { signIn: true as const } : {}), ...(body.data.model ? { model: body.data.model } : {}), ...(body.data.effort ? { effort: body.data.effort } : {}), ...(agentSessionId ? { resume: agentSessionId, ...(forks ? { fork: forks } : {}) } : {}),
         ...(resumed?.title ? { name: resumed.title } : {}), ...(body.data.mode ? { mode: body.data.mode } : {}),
         allowBypass: true,
         ...(body.data.cols ? { cols: body.data.cols } : {}), ...(body.data.rows ? { rows: body.data.rows } : {}) });

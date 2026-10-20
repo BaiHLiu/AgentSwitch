@@ -108,7 +108,7 @@ import type { BrowserDriver } from "./browser/driver.js";
 import { gateFill } from "./browser/fill.js";
 import { exitLookup } from "./browser/exit.js";
 import { ExitPool } from "./browser/exits.js";
-import { claudeSignedIn } from "./terminals/signIn.js";
+import { claudeSignedIn, codexSignedIn } from "./terminals/signIn.js";
 import { ProfileBrowsers } from "./browser/fleet.js";
 import { profileOfKey } from "./api/profiles.js";
 import type { BrowserHost } from "./browser/host.js";
@@ -362,11 +362,19 @@ export function buildDaemon(cfg: DaemonConfig, overrides: BuildOverrides = {}): 
   let localPort = cfg.port;
   const agentBinaries = cfg.terminals && !overrides.terminalLauncher ? terminalBinaries(targets, cfg.opencodeBinary) : {};
   // Codex terminals get AgentSwitch's hooks once the user's Codex trusts them (docs/terminal-v0.md §3): checked now and
-  // again before a Codex terminal starts.
-  const codexTrust = agentBinaries.codex
-    ? new CodexHookTrust({ binary: agentBinaries.codex, args: codexHookArgs(hookCommandOf({}), QUICK_HOOK_TIMEOUT_S, PERMISSION_HOOK_TIMEOUT_S) })
-    : undefined;
-  void codexTrust?.ensure();
+  // again before a Codex terminal starts. In each folder Codex runs in: the Mac's own, and an account profile's
+  // (docs/profiles-v0.md §6.2), where the trust is the Mac's own while its config.toml is linked in.
+  const codexTrusts = new Map<string, CodexHookTrust>();
+  const codexTrust = (home?: string): CodexHookTrust | undefined => {
+    if (!agentBinaries.codex) return undefined;
+    let trust = codexTrusts.get(home ?? "");
+    if (!trust) {
+      trust = new CodexHookTrust({ binary: agentBinaries.codex, args: codexHookArgs(hookCommandOf({}), QUICK_HOOK_TIMEOUT_S, PERMISSION_HOOK_TIMEOUT_S), ...(home ? { env: { ...process.env, CODEX_HOME: home } } : {}) });
+      codexTrusts.set(home ?? "", trust);
+    }
+    return trust;
+  };
+  void codexTrust()?.ensure();
   // docs/browser-v0.md: the shared browser; AgentSwitch's own ports are never opened in it nor listed as local servers.
   // People fill ciphertexts in through the gate; agents get it through the agent bridge (terminals below).
   const gateProxyPort = proxyEndpoint(gate?.proxy ?? process.env.SECRET_GATE_PROXY ?? "http://127.0.0.1:8080")?.port;
@@ -417,7 +425,7 @@ export function buildDaemon(cfg: DaemonConfig, overrides: BuildOverrides = {}): 
       deviceOf: (harness, profile) => { const agent = PROFILE_AGENTS.find((a) => a === harness); return agent ? profiles.deviceOf(agent, profile ?? DEFAULT_PROFILE) : null; },
       onSession: (harness, sessionId, profile) => { const agent = PROFILE_AGENTS.find((a) => a === harness); if (agent) profiles.noteSession(agent, sessionId, profile); },
       launcher: overrides.terminalLauncher ?? agentLauncher({ binaries: agentBinaries, hookUrl: () => `http://127.0.0.1:${localPort}`, stateDir: join(cfg.home, "terminals"), protected: termProt,
-        codexHooks: () => codexTrust?.trusted ?? false, opencodeServer: true,
+        codexHooks: (home) => codexTrust(home)?.trusted ?? false, opencodeServer: true,
         // Codex on its own, as its command line starts it (2026-10-08, user: 你直接改回命令行吧). Through an app-server of
         // the terminal's own a screen could set its model and effort (codexTerminal.ts), but a session made that way is
         // marked as an app's, not the command line's (`codex app-server` says so itself, with no option), and Codex's
@@ -436,11 +444,12 @@ export function buildDaemon(cfg: DaemonConfig, overrides: BuildOverrides = {}): 
     host: terminalHost,
     audit: new TerminalAudit(join(cfg.home, "terminals", "audit.jsonl")),
     agents: overrides.terminalLauncher ? [...TERMINAL_HARNESSES] : TERMINAL_HARNESSES.filter((h) => agentBinaries[h]),
-    // Claude Code says itself whether it is signed in, in a profile's folder (terminals/signIn.ts).
-    ...(agentBinaries["claude-code"] ? { signedIn: (harness: TerminalHarness, home: string) => (harness === "claude-code" ? claudeSignedIn(agentBinaries["claude-code"]!, home) : Promise.resolve(null)) } : {}),
+    // Claude Code and Codex say themselves whether they are signed in, in a profile's folder (terminals/signIn.ts).
+    signedIn: (harness: TerminalHarness, home: string) => (harness === "claude-code" && agentBinaries["claude-code"] ? claudeSignedIn(agentBinaries["claude-code"], home)
+      : harness === "codex" && agentBinaries.codex ? codexSignedIn(agentBinaries.codex, home) : Promise.resolve(null)),
     style: () => (style ??= readTerminalStyle()),
     elsewhere: overrides.terminalElsewhere ?? (overrides.terminalLauncher ? async () => null : elsewhereCheck()),
-    ...(codexTrust ? { prepare: async (harness: string) => { if (harness === "codex") await withTimeout(codexTrust.ensure({ fresh: true }), 8000); } } : {}),
+    ...(agentBinaries.codex ? { prepare: async (harness: string, home?: string) => { if (harness === "codex") await withTimeout(codexTrust(home)!.ensure({ fresh: true }), 8000); } } : {}),
     ...(overrides.modelOffers ? { offers: () => overrides.modelOffers!.current(), variants: () => overrides.modelOffers!.variants(), daybreakTurned: (on: boolean) => overrides.modelOffers!.noteCodexDaybreak(on) } : {}),
   } : undefined;
   // Deleting an OpenCode session goes through the user's own opencode (docs/terminal-v0.md §5, threads-v0 删除): the
