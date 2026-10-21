@@ -13,6 +13,8 @@
  *
  *  Each Playwright MCP tab of an agent's page is guarded as it is made, before any call uses it (heldTraffic.ts): what
  *  a person did in the tab while holding it stays out of its network and console logs, for a reconnecting bridge too.
+ *  It is limited in what it keeps of its page between two of the agent's calls (tabLimits.ts): a page left open that
+ *  logs as it runs otherwise grows the service without end.
  *
  *  Each connection talks MCP over an in-memory transport; its workspace root and output folder are the private folder
  *  agents.ts gives it. Playwright MCP's per-connection listener for unhandled rejections (it would hand the daemon's own
@@ -25,6 +27,7 @@ import type { Page } from "playwright-core";
 import type { AgentEngine, EngineConnection, JsonRpcMessage } from "./agents.js";
 import { HeldTraffic } from "./heldTraffic.js";
 import type { BrowserHost } from "./host.js";
+import { limitTab, releaseConsoleArgs } from "./tabLimits.js";
 import type { Box, TabOwner } from "./types.js";
 
 /** How long the box of the element a call acts on may take. */
@@ -212,6 +215,7 @@ export class AgentContext extends EventEmitter {
         void page.addInitScript?.({ content: STAND_IN_BODY })?.catch(() => undefined);
         void page.evaluate?.(STAND_IN_BODY)?.catch(() => undefined);
       } catch { /* not a page that runs scripts */ }
+      releaseConsoleArgs(page);
     }
     // A tab opened now (new, a popup, another connection of the same agent): Playwright MCP's listener makes a tab of
     // it at once, which tells this connection's context object.
@@ -226,13 +230,15 @@ export class AgentContext extends EventEmitter {
     this.mcp = this.tabOf(page)?.context ?? null;
   }
 
-  /** This connection's Playwright MCP tab of `page`, guarded against what a hold left behind. */
+  /** This connection's Playwright MCP tab of `page`, limited in what it keeps (tabLimits.ts) and guarded against what a
+   *  hold left behind. */
   private guard(page: unknown): void {
-    if (!this.traffic || !page || typeof page !== "object") return;
+    if (!page || typeof page !== "object") return;
     const tab = this.tabOf(page);
     // Only this connection's own tab (the newest tagger); another connection guards its own.
     if (!tab || (this.mcp && tab.context !== this.mcp)) return;
-    if (!this.traffic.guardTab(tab, page)) this.unguarded.add(page);
+    limitTab(tab);
+    if (this.traffic && !this.traffic.guardTab(tab, page)) this.unguarded.add(page);
   }
 
   private idOf(page: unknown): string | null {
