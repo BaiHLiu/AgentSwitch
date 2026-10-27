@@ -248,7 +248,7 @@ private struct FilesScopeRows: View {
             HStack(spacing: 8) {
                 Text("Files").font(.callout).foregroundStyle(.secondary)
                 Spacer(minLength: 12)
-                Picker("Files", selection: Binding(get: { scope.mode }, set: choose)) {
+                Picker("Files", selection: Binding(get: { scope.mode }, set: { choose($0) })) {
                     ForEach(FileScope.Mode.allCases, id: \.self) { Text(FileScope.word($0)).tag($0) }
                 }
                 .labelsHidden()

@@ -21,7 +21,9 @@ describe("a folder as the disk spells it", () => {
     expect(diskSpelling(join(root, "Worktop", "nope", "x"))).toBe(join(root, "Worktop", "nope", "x"));
     expect(diskSpelling(join(root, "Worktop", "Pi", "..", "Pi"))).toBe(join(root, "Worktop", "Pi"));
     expect(keptDiskSpelling("")).toBe("");
-    expect(realpathSync(diskSpelling(join(root, "worktop")))).toBe(realpathSync(join(root, "Worktop")));
+    // On a Linux disk there is no `worktop` to resolve: it stays as typed, as anything not there does.
+    if (ignoresCase) expect(realpathSync(diskSpelling(join(root, "worktop")))).toBe(realpathSync(join(root, "Worktop")));
+    else expect(diskSpelling(join(root, "worktop"))).toBe(join(root, "worktop"));
   });
 
   it("does not take another folder that differs only in case on a disk that tells them apart", () => {
