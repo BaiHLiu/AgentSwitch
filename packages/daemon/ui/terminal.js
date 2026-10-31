@@ -2026,6 +2026,13 @@ if (HOST) {
   $("sheetChoose").addEventListener("click", () => choose($("sheetInput").value));
   // The tray's Appearance: kept by the page too, so a browser on the same service opens in it.
   HOST.onLook?.((next) => { remember("appearance", next); setLook(next); });
+  // The mark at the band's right opens the window's menu (the tray's: Appearance, Restart Service …), as GNOME shows
+  // the tray only with an extension.
+  if (HOST.menu) {
+    $("mark").title = "AgentSwitch";
+    $("mark").classList.add("menu-mark");
+    $("mark").addEventListener("click", (e) => { const r = $("mark").getBoundingClientRect(); HOST.menu(Math.round(r.left), Math.round(r.bottom)); e.stopPropagation(); });
+  }
   for (const el of document.querySelectorAll("kbd")) el.textContent = keyName(el.textContent);
   for (const el of document.querySelectorAll("[title]")) el.title = keyName(el.title);
 }
@@ -2182,7 +2189,9 @@ else if (terminalOrder.some(here)) select(terminalOrder.find(here));
 else showCreate();
 // Out of sight the list is not asked for; it is read again as the page comes back.
 setInterval(() => { if (!document.hidden) void refresh(); }, 3000);
-setInterval(() => { if (!document.hidden) void refreshSessions(); }, 20000);
+// Every 3 s, as the Mac asks (an unchanged list is a 304): a session counts as active for 90 s after it was last
+// written, and every 20 s left the Active filter and Busy behind the Mac's (2026-10-31, catop).
+setInterval(() => { if (!document.hidden) void refreshSessions(); }, 3000);
 setInterval(() => { if (!document.hidden) void refreshGit(); }, 5000);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;

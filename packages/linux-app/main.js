@@ -158,6 +158,10 @@ ipcMain.on("agentswitch:signIn", (event) => {
   const at = new URL(event.senderFrame.url);
   void signIn(`${at.pathname}${at.search}`.replace(/^\/ui\/login.*/, TERMINALS));
 });
+ipcMain.on("agentswitch:menu", (event, x, y) => {
+  if (!fromService(event) || !win) return;
+  trayMenu().popup({ window: win, x: Math.round(x), y: Math.round(y) });
+});
 ipcMain.on("agentswitch:openURL", (event, url) => { if (fromService(event)) openOutside(url); });
 ipcMain.handle("agentswitch:chooseFolder", async (event, path) => {
   if (!fromService(event) || !win) return null;

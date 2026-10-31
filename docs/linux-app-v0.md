@@ -36,7 +36,8 @@ packages/linux-app/            Electron 主进程与预加载脚本，纯 JavaSc
 
 ## 3. 托盘与系统通知
 
-- **托盘**（StatusNotifierItem）：像素外观的 AgentSwitch 标记；有事等你时换成带亮点的那一张。菜单照 Mac 菜单栏面板：`Open Terminals`、`Open Dispatch`（第 2 步）、`Pair Device…`（第 3 步，先在终端里跑 `agentswitch pair`）、`Restart Service`（`systemctl --user restart agentswitch`）、`Quit AgentSwitch`。GNOME 默认没有托盘区，要 AppIndicator 扩展；没有扩展时托盘不出现，其余照常（`doctor` 可以说一句）。
+- **窗口里的菜单**（2026-10-31，catop：似乎并没有托盘菜单？）：GNOME 的托盘要扩展、图标也不显眼，所以点终端页右上角的标记弹出同一个菜单（托盘的那一份）。
+- **托盘**（StatusNotifierItem）：像素外观的 AgentSwitch 标记；有事等你时换成带亮点的那一张。菜单照 Mac 菜单栏面板：`Open Terminals`、`Appearance ▸ Pixel / Classic`（Mac 设置 › General 的那一项）、`Open Dispatch`（第 2 步）、`Pair Device…`（第 3 步，先在终端里跑 `agentswitch pair`）、`Restart Service`（`systemctl --user restart agentswitch`）、`Quit AgentSwitch`。GNOME 默认没有托盘区，要 AppIndicator 扩展；没有扩展时托盘不出现，其余照常（`doctor` 可以说一句）。
 - **系统通知**：每秒一次 `GET /live`（和 Mac 的实时活动同一个数据源），终端等你确认、问你问题、任务结束时发一条桌面通知。提醒规则照 Mac 的 `LivePresenter`（同一件事只提醒一次，窗口在前面且正看着那个终端时不提醒），移植成 `lib/` 里有测试的一段。
   - 点通知打开窗口并切到那个终端（`terminal.html?id=`）。
   - 通知上直接 `Allow` / `Deny`：Electron 在 Linux 上的通知不带按钮，第 2 步改为经 D-Bus 直接调 `org.freedesktop.Notifications`（带 actions），按了就发 `/terminals/:id/permissions/:pid`。第 1 步只有“点了打开”。

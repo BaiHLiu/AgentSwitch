@@ -7,5 +7,7 @@ contextBridge.exposeInMainWorld("agentswitchHost", {
   openURL: (url) => ipcRenderer.send("agentswitch:openURL", String(url)),
   chooseFolder: (path) => ipcRenderer.invoke("agentswitch:chooseFolder", String(path ?? "")),
   // The look chosen in the tray's Appearance (pixel or classic), told to each page as it loads and when it changes.
+  // The window's menu (the tray's), under the page's mark at x, y.
+  menu: (x, y) => ipcRenderer.send("agentswitch:menu", Number(x) || 0, Number(y) || 0),
   onLook: (fn) => ipcRenderer.on("agentswitch:look", (_event, look) => fn(String(look))),
 });
