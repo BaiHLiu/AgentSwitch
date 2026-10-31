@@ -11,6 +11,7 @@ import { WebLinksAddon } from "/ui/vendor/addon-web-links.mjs";
 import { flicker as pixelFlicker, glitch as pixelGlitch, reducedMotion, revealWordmark, SPIN, sprite } from "/ui/pixel.js";
 import { key, SHADED, shaded, shadedMark, TONE_COLORS } from "/ui/lib/shaded.js";
 import { accentOf, age, AGENT_ICON, bracket, dot, help as helpIn, icon, label as labelIn, lookOf, mark as classicMark, spinner, word as wordIn } from "/ui/lib/look.js";
+import { choosing, filterAgents, filterIsOn, filterOf, keepsSession, keepsTerminal } from "/ui/lib/listFilter.js";
 import { everyFolder, everySession, everyTerminal, folderOf, folderTree as buildTree, foldersAbove, slashed, tilde } from "/ui/lib/tree.js";
 import { GAP, MAX_PANES, MIN_H, MIN_W, close as closeIn, drop as dropIn, neighbor, paneOf, paneShowing, panesOf, place, ratioAt, resize as resizeIn, restore as restoreLayout,
   settle, show as showIn, single, split as splitIn, zoneOf } from "/ui/lib/panes.js";
@@ -1297,7 +1298,21 @@ function sendDecision(id, requestId, decision) {
 // ---------- the sidebar: a directory tree ----------
 /** The folders with their terminals and sessions (lib/tree.js has the rules: a fixed order, each folder in the nearest
  *  folder above it that the list shows). */
-const folderTree = () => buildTree(terminals.filter((t) => !t.parent), sessions);
+const folderTree = () => buildTree(terminals.filter((t) => !t.parent && keepsTerminal(listFilter, t)), sessions.filter((x) => keepsSession(listFilter, x)));
+/** The filter line under the search (lib/listFilter.js): one agent alone, what is active alone; kept between visits. */
+let listFilter = filterOf((() => { try { return JSON.parse(recall("terminals.filter") ?? "null"); } catch { return null; } })());
+function setFilter(next) {
+  listFilter = next;
+  remember("terminals.filter", JSON.stringify(listFilter));
+  renderSidebar();
+}
+function renderFilter() {
+  const agents = filterAgents(terminals.filter((t) => !t.parent), sessions, listFilter.agent);
+  $("filt").replaceChildren(
+    ...agents.map((a) => h("button", { class: a === listFilter.agent ? "on" : "", type: "button", title: `${AGENT[a] ?? a} Only`, onclick: () => setFilter(choosing(listFilter, a)) }, agentMark(a))),
+    h("button", { class: `act ${listFilter.active ? "on" : ""}`, type: "button", title: "Running Terminals and Sessions Being Written Now",
+      onclick: () => setFilter({ ...listFilter, active: !listFilter.active }) }, "Active"));
+}
 /** A folder folded by its path; `parent:<path>` is how a folder that only gathered others was kept before 2026-10-03. */
 const folded = (cwd) => collapsed.has(cwd) || collapsed.has(`parent:${cwd}`);
 
@@ -1530,6 +1545,7 @@ function renderSidebar() {
   if (renaming) return;
   // A tool terminal (yazi beside an agent's, docs/yazi-v0.md) has no number: it is reached under its agent terminal.
   terminalOrder = terminals.filter((t) => !t.parent).sort((a, b) => a.createdAt - b.createdAt).map((t) => t.id);
+  renderFilter();
   const q = query.trim().toLowerCase();
   if (q) { $("groups").replaceChildren(...renderSearch(q)); return; }
   const toggle = (cwd) => {
@@ -1575,7 +1591,7 @@ function renderSidebar() {
     for (const c of g.children) renderFolder(c, depth + 1);
   };
   for (const g of folderTree()) renderFolder(g, 0);
-  $("groups").replaceChildren(...(out.length ? out : [h("div", { class: "empty-note" }, "暂无会话。")]));
+  $("groups").replaceChildren(...(out.length ? out : [h("div", { class: "empty-note" }, filterIsOn(listFilter) ? "没有符合筛选条件的会话。" : "暂无会话。")]));
 }
 
 // ---------- the mark: how all the terminals are doing ----------
@@ -2008,6 +2024,8 @@ if (HOST) {
   $("chooseFolder").addEventListener("click", () => choose($("cwd").value));
   $("sheetChoose").hidden = false;
   $("sheetChoose").addEventListener("click", () => choose($("sheetInput").value));
+  // The tray's Appearance: kept by the page too, so a browser on the same service opens in it.
+  HOST.onLook?.((next) => { remember("appearance", next); setLook(next); });
   for (const el of document.querySelectorAll("kbd")) el.textContent = keyName(el.textContent);
   for (const el of document.querySelectorAll("[title]")) el.title = keyName(el.title);
 }

@@ -37,6 +37,23 @@ let lastSignIn = 0;
 let trayState = "";
 
 const statePath = () => join(app.getPath("userData"), "window.json");
+const settingsPath = () => join(app.getPath("userData"), "settings.json");
+/** The window's own choices (`look`: "pixel" or "classic", the Mac's Settings › General › Appearance). */
+function settings() {
+  try { return JSON.parse(readFileSync(settingsPath(), "utf8")) ?? {}; } catch { return {}; }
+}
+function setSetting(key, value) {
+  try {
+    mkdirSync(dirname(settingsPath()), { recursive: true });
+    writeFileSync(settingsPath(), JSON.stringify({ ...settings(), [key]: value }, null, 2));
+  } catch { /* kept for this run only */ }
+}
+const lookNow = () => (settings().look === "classic" ? "classic" : "pixel");
+function setLook(look) {
+  setSetting("look", look);
+  if (win && ownPage(BASE, win.webContents.getURL())) win.webContents.send("agentswitch:look", look);
+  if (tray) tray.setContextMenu(trayMenu());
+}
 function savedBounds() {
   try { return JSON.parse(readFileSync(statePath(), "utf8")); } catch { return {}; }
 }
@@ -106,6 +123,10 @@ function createWindow(path = TERMINALS) {
     event.preventDefault();
     openOutside(url);
   });
+  // Each page of the service is told the look as it loads (it may have been changed while another page was open).
+  win.webContents.on("did-finish-load", () => {
+    if (ownPage(BASE, win.webContents.getURL())) win.webContents.send("agentswitch:look", lookNow());
+  });
   win.on("resize", saveBounds);
   win.on("move", saveBounds);
   // Closed, it hides: the tray brings it back; Quit in the tray (or the second start's) really ends it.
@@ -149,14 +170,23 @@ ipcMain.handle("agentswitch:chooseFolder", async (event, path) => {
 function makeTray() {
   try { tray = new Tray(icon("off", 2)); } catch { tray = null; return; }
   tray.setToolTip("AgentSwitch");
-  tray.setContextMenu(Menu.buildFromTemplate([
+  tray.setContextMenu(trayMenu());
+  tray.on("click", () => show());
+}
+
+function trayMenu() {
+  const look = lookNow();
+  return Menu.buildFromTemplate([
     { label: "Open Terminals", click: () => show(TERMINALS) },
     { type: "separator" },
+    { label: "Appearance", submenu: [
+      { label: "Pixel", type: "radio", checked: look === "pixel", click: () => setLook("pixel") },
+      { label: "Classic", type: "radio", checked: look === "classic", click: () => setLook("classic") },
+    ] },
     { label: "Restart Service", click: restartService },
     { type: "separator" },
     { label: "Quit AgentSwitch", click: () => { quitting = true; app.quit(); } },
-  ]));
-  tray.on("click", () => show());
+  ]);
 }
 
 function restartService() {
