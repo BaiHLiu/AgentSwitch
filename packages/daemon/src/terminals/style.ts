@@ -29,7 +29,11 @@ export type TerminalStyle = {
 const ANSI = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
   "brightBlack", "brightRed", "brightGreen", "brightYellow", "brightBlue", "brightMagenta", "brightCyan", "brightWhite"] as const;
 
-const FALLBACK_FONTS = ['"SF Mono"', "Menlo", "Monaco", '"PingFang SC"', "monospace"];
+/** The Mac's first; then a Linux desktop's monospace fonts, so a screen there does not fall to whatever its fontconfig
+ *  calls `monospace` (2026-10-31, dellarch: a proportional CJK font, and the terminal's letters off their cells). A
+ *  Mac has none of the second group and a Linux desktop none of the first. */
+const FALLBACK_FONTS = ['"SF Mono"', "Menlo", "Monaco", '"PingFang SC"',
+  '"Adwaita Mono"', '"JetBrains Mono"', '"DejaVu Sans Mono"', '"Noto Sans Mono"', '"Liberation Mono"', '"Ubuntu Mono"', "monospace"];
 
 export const DEFAULT_STYLE: TerminalStyle = {
   source: "default",

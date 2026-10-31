@@ -2,7 +2,14 @@
 // of Electron reaches the page; the main process checks that each request comes from the service's own pages.
 const { contextBridge, ipcRenderer } = require("electron");
 
+/** The desktop's monospace font, as the main process read it (`--agentswitch-font=<json>`). */
+const font = (() => {
+  try { return JSON.parse(process.argv.find((a) => a.startsWith("--agentswitch-font="))?.slice("--agentswitch-font=".length) ?? "null"); } catch { return null; }
+})();
+
 contextBridge.exposeInMainWorld("agentswitchHost", {
+  // The terminal's font: the desktop's monospace one (GNOME's), its size in CSS pixels; null to keep the service's.
+  terminalFont: font,
   signIn: () => ipcRenderer.send("agentswitch:signIn"),
   openURL: (url) => ipcRenderer.send("agentswitch:openURL", String(url)),
   chooseFolder: (path) => ipcRenderer.invoke("agentswitch:chooseFolder", String(path ?? "")),

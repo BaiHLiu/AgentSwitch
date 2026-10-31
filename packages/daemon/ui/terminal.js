@@ -307,7 +307,9 @@ $("sideGrip").addEventListener("pointerdown", (e) => {
 $("sideGrip").addEventListener("dblclick", () => { if (!side.closed) setSide({ width: SIDE.width }); });
 
 // ---------- the screen ----------
-const style = await api("GET", "/terminals/style").catch(() => null);
+// The Linux window's own: the desktop's monospace font at its size, before the service's list (docs/linux-app-v0.md).
+const style = ((s) => (s && HOST?.terminalFont ? { ...s, fontFamily: `"${HOST.terminalFont.family}", ${s.fontFamily}`, fontSize: HOST.terminalFont.size } : s))(
+  await api("GET", "/terminals/style").catch(() => null));
 applyChrome(style);
 const firstFont = /^"([^"]+)"/.exec(style?.fontFamily ?? "")?.[1];
 if (firstFont) await document.fonts.load(`${style.fontSize}px "${firstFont}"`).catch(() => undefined);

@@ -7,6 +7,7 @@ import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { desktopMonoFont } from "./lib/font.js";
 import { LiveNotes, pageOf, wordsOf } from "./lib/live.js";
 import { markBitmap, stateOf } from "./lib/mark.js";
 import { agentswitchHome, consoleLink, live, ownPage, readToken, serviceBase } from "./lib/service.js";
@@ -113,7 +114,8 @@ function createWindow(path = TERMINALS) {
   win = new BrowserWindow({
     show: !PROBE, width: bounds.width ?? 1280, height: bounds.height ?? 820, x: bounds.x, y: bounds.y, minWidth: 640, minHeight: 420,
     title: "AgentSwitch", backgroundColor: "#0b0b0c", autoHideMenuBar: true, icon: icon("idle", 8),
-    webPreferences: { preload: join(HERE, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false },
+    webPreferences: { preload: join(HERE, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false,
+      additionalArguments: [`--agentswitch-font=${JSON.stringify(desktopMonoFont())}`] },
   });
   win.setMenuBarVisibility(false);
   win.webContents.setUserAgent(`${win.webContents.getUserAgent()} AgentSwitchLinux/${app.getVersion()}`);
