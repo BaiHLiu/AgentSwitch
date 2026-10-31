@@ -23,7 +23,7 @@ export class LiveNotes {
     const notes = [];
     for (const [key, row] of asks) {
       if (first || quiet || this.#asks.has(key)) continue;
-      notes.push({ key, cue: "needsYou", kind: row.kind, id: row.id, node: row.node ?? null, title: row.title, body: row.step });
+      notes.push({ key, cue: "needsYou", kind: row.kind, id: row.id, node: row.node ?? null, title: row.title, body: row.step, ask: row.ask ?? null });
     }
     this.#asks = new Set(asks.keys());
     for (const end of snapshot?.ended ?? []) {
@@ -44,6 +44,14 @@ export class LiveNotes {
 export function pageOf(note) {
   if (note.node) return note.kind === "terminal" ? "/ui/terminal.html" : "/ui";
   return note.kind === "terminal" ? `/ui/terminal.html?id=${encodeURIComponent(note.id)}` : `/ui?task=${encodeURIComponent(note.id)}`;
+}
+
+/** A terminal's permission request a note can answer itself (Allow / Deny on it): its route on the service; null for
+ *  anything else (a question, a task's approval: answered on its page). */
+export function decidePath(note) {
+  if (note.cue !== "needsYou" || note.kind !== "terminal" || note.ask?.kind !== "permission" || !note.ask.id) return null;
+  const route = `/terminals/${encodeURIComponent(note.id)}/permissions/${encodeURIComponent(note.ask.id)}`;
+  return note.node ? `/nodes/${encodeURIComponent(note.node.id)}${route}` : route;
 }
 
 /** What a note says: its title, with the node it is on; what it waits for, or what it came to (the service's words). */

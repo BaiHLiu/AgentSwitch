@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { desktopMonoFont } from "./lib/font.js";
-import { LiveNotes, pageOf, wordsOf } from "./lib/live.js";
+import { decidePath, LiveNotes, pageOf, wordsOf } from "./lib/live.js";
 import { markBitmap, stateOf } from "./lib/mark.js";
 import { agentswitchHome, consoleLink, live, ownPage, readToken, serviceBase } from "./lib/service.js";
 
@@ -165,6 +165,17 @@ ipcMain.on("agentswitch:menu", (event, x, y) => {
   trayMenu().popup({ window: win, x: Math.round(x), y: Math.round(y) });
 });
 ipcMain.on("agentswitch:openURL", (event, url) => { if (fromService(event)) openOutside(url); });
+ipcMain.handle("agentswitch:chooseFiles", async (event) => {
+  if (!fromService(event) || !win) return null;
+  const r = await dialog.showOpenDialog(win, { title: "Attach", buttonLabel: "Attach", properties: ["openFile", "multiSelections"] });
+  return r.canceled ? [] : r.filePaths;
+});
+// A terminal's folder in the code editor (the Mac's Open in VS Code, docs/terminal-v0.md §1 Mac): its own command where
+// there is one, else its link.
+ipcMain.on("agentswitch:openEditor", (event, path) => {
+  if (!fromService(event) || typeof path !== "string" || !path.startsWith("/")) return;
+  execFile("code", [path], (err) => { if (err) void shell.openExternal(`vscode://file${encodeURI(path)}`); });
+});
 ipcMain.handle("agentswitch:chooseFolder", async (event, path) => {
   if (!fromService(event) || !win) return null;
   const start = path.replace(/^~(?=\/|$)/, app.getPath("home"));
@@ -218,9 +229,38 @@ async function watchLive() {
   setTimeout(watchLive, LIVE_MS);
 }
 
+/** A permission request on the desktop with Allow and Deny on it (notify-send's actions: Electron's notifications have
+ *  none on Linux), answered there; a click on its body opens the terminal. False where notify-send is missing. */
+function notifyWithActions(note, summary, body) {
+  const path = decidePath(note);
+  if (!path) return false;
+  const icon = join(process.env.XDG_DATA_HOME || join(app.getPath("home"), ".local", "share"), "agentswitch", "icon.png");   // install.sh --with-window
+  const child = execFile("notify-send", ["-a", "AgentSwitch", "-u", "critical", "-i", icon, "-A", "default=Open", "-A", "allow=Allow", "-A", "deny=Deny", summary, body],
+    { timeout: 30 * 60_000 }, (err, stdout) => {
+      if (err?.code === "ENOENT") return notifyPlain(note, summary, body);
+      const chosen = String(stdout ?? "").trim();
+      if (chosen === "default") show(pageOf(note));
+      else if (chosen === "allow" || chosen === "deny") void decide(path, chosen);
+    });
+  child.on("error", () => undefined);
+  return true;
+}
+
+async function decide(path, decision) {
+  try {
+    const res = await fetch(`${BASE}${path}`, { method: "POST", headers: { authorization: `Bearer ${readToken(HOME)}`, "content-type": "application/json" }, body: JSON.stringify({ decision }) });
+    if (!res.ok) new Notification({ title: "AgentSwitch", body: `未能${decision === "allow" ? "允许" : "拒绝"}：${(await res.json().catch(() => ({}))).error ?? res.status}` }).show();
+  } catch (err) { new Notification({ title: "AgentSwitch", body: String(err?.message ?? err) }).show(); }
+}
+
 function notify(note) {
-  if (!Notification.isSupported()) return;
   const { summary, body } = wordsOf(note);
+  if (notifyWithActions(note, summary, body)) return;
+  notifyPlain(note, summary, body);
+}
+
+function notifyPlain(note, summary, body) {
+  if (!Notification.isSupported()) return;
   const n = new Notification({ title: summary, body, urgency: note.cue === "needsYou" ? "critical" : "normal", silent: note.cue === "done" });
   n.on("click", () => { show(pageOf(note)); shown.delete(note.key); });
   n.on("close", () => shown.delete(note.key));

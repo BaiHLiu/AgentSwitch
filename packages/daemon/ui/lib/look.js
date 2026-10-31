@@ -91,6 +91,24 @@ export const ICONS = {
   codex: '<path d="M3.75 5.5 7.5 9l-3.75 3.5M9.75 12.75h4.5"/>',
   opencode: '<path d="M6.75 3.75h-3v10.5h3M11.25 3.75h3v10.5h-3"/>',
   pi: '<path d="M3.75 5.25h10.5M6.5 5.25v8M11.5 5.25v6.25a1.75 1.75 0 0 0 1.75 1.75"/>',
+  // The simple view's (docs/simple-view-v0.md, the web page since 2026-10-31): a step's kind, what it does now, its foot.
+  doc: '<path d="M4.75 2.25h5.5l3.5 3.5v10H4.75z"/><path d="M10.25 2.25v3.5h3.5M7 9.25h4.5M7 12h4.5"/>',
+  docplus: '<path d="M4.75 2.25h5.5l3.5 3.5v10H4.75z"/><path d="M10.25 2.25v3.5h3.5M9 8.5v5M6.5 11h5"/>',
+  pencil: '<path d="M11.75 3.25l3 3-8.5 8.5H3.25v-3z"/><path d="M10 5l3 3"/>',
+  globe: '<circle cx="9" cy="9" r="6.75"/><path d="M2.25 9h13.5M9 2.25c-2.25 2.5-2.25 11 0 13.5M9 2.25c2.25 2.5 2.25 11 0 13.5"/>',
+  branch: '<circle cx="5" cy="4.25" r="1.75"/><circle cx="5" cy="13.75" r="1.75"/><circle cx="13" cy="7" r="1.75"/><path d="M5 6v6M13 8.75c0 2.5-3 2.5-8 3.5"/>',
+  checklist: '<path d="M3 4.75l1.25 1.25 2-2.25M3 10.75l1.25 1.25 2-2.25M8.75 5h6M8.75 11h6"/>',
+  sparkle: '<path d="M9 2.5c.5 3.5 1.75 5.25 5.5 6.5-3.75 1.25-5 3-5.5 6.5-.5-3.5-1.75-5.25-5.5-6.5 3.75-1.25 5-3 5.5-6.5z"/>',
+  wrench: '<path d="M11.5 2.75a3.75 3.75 0 0 0-3.4 5.3L2.75 13.4l1.85 1.85 5.35-5.35a3.75 3.75 0 0 0 5.3-3.4l-2.15 2.15-2.05-.55-.55-2.05z"/>',
+  compact: '<path d="M3 3l4.5 4.5M7.5 3.75V7.5H3.75M15 15l-4.5-4.5M10.5 14.25V10.5h3.75"/>',
+  arrowup: '<path d="M9 14.75V3.5M4.25 8.25 9 3.5l4.75 4.75"/>',
+  stop: '<rect x="5" y="5" width="8" height="8" rx="1.5" fill="currentColor"/>',
+  record: '<path d="M3 4.5h12M3 8h12M3 11.5h8"/>',
+  split3: BOX + '<path d="M6.75 3.25v11.5M11.25 3.25v11.5"/>',
+  code: '<path d="M6.25 5 2.5 9l3.75 4M11.75 5 15.5 9l-3.75 4M10.25 3.5 7.75 14.5"/>',
+  splitright: BOX + '<path d="M9 3.25v11.5"/><rect x="9" y="3.25" width="7.25" height="11.5" rx="0" fill="currentColor" opacity=".35" stroke="none"/>',
+  splitdown: BOX + '<path d="M1.75 9h14.5"/><rect x="1.75" y="9" width="14.5" height="5.75" fill="currentColor" opacity=".35" stroke="none"/>',
+  copy: '<rect x="6" y="6" width="9" height="9.5" rx="2"/><path d="M12 6V4.25A1.75 1.75 0 0 0 10.25 2.5h-5.5A1.75 1.75 0 0 0 3 4.25v6.5a1.75 1.75 0 0 0 1.75 1.75H6"/>',
 };
 /** Each agent's mark as a line drawing (its own logo's shape, one colour). */
 export const AGENT_ICON = { "claude-code": "claude", codex: "codex", opencode: "opencode", pi: "pi" };

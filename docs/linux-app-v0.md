@@ -92,3 +92,21 @@ packages/linux-app/            Electron 主进程与预加载脚本，纯 JavaSc
 - **安装**：`build-runtime.sh` 把 `linux-app/` 拷进运行时；`install.sh --with-window` 生成图标、写菜单项与登录项（`--hidden`，在托盘里起）。
 - **验证**：从这份代码另起一个服务（临时数据目录、端口 5799、没有远程与浏览器），用 `--probe` 在屏幕外开窗口：登录成功、打开终端页，网页认出壳（`agentswitchHost`、`linux-app` 类）、键名换成 `Ctrl+Shift+T`、`Ctrl+Shift+F`，`Choose…` 出现；截图对过。daemon 的界面测试 100 个通过。**还没在桌面上实际点过**：托盘菜单每项、通知与点开、服务重启后自己重新登录、Wayland 下的输入法、复制粘贴，要 catop 在 dellarch 的桌面上试。
 - 注意：从代码另起服务时，它会照常为 Codex 终端的 hook 在 `~/.codex/config.toml` 里写信任（同样的键、它自己命令的哈希），把已装服务的那几项覆盖掉；已装的服务下次开 Codex 终端前会自己写回来（`ensure({ fresh: true })`）。
+
+### 第 2 步：终端页照 Mac 1:1（2026-10-31，catop）
+
+catop：需要加上简略视图和另一种theme，让其基本与mac app 1：1复刻，像列表里筛选active之类的功能很实用，但目前缺失。dispatch和代理切换还有设置菜单之类的暂时不需要，只需要主功能即可。看过两批的划分后：两批一次性做完并测试。
+
+只改浏览器和 Linux 窗口里的终端页；Mac 应用里这一页的屏幕与简略视图是原生的，它走的路径（`NATIVE`）一行没动。
+
+- **分屏**（`ui/lib/webScreens.js`）：网页原来只有在 Mac 里才分屏——页面管布局，原生屏幕负责画。现在浏览器和 Linux 窗口里由“网页版屏幕”照同一个约定做：每块一个 xterm，各自跟着自己终端的流（带本页的屏幕 id）、各自持有尺寸；被别处占用时那一块显示 `On iPhone` 等，点一下接管。页面原有的分屏逻辑（布局、拖行进某一块、拖分隔线、放大、标题栏、最多 4 块）照旧用。窄屏（手机浏览器）仍是一块。Ctrl+Shift+D / B 分屏，Ctrl+Shift+Z 放大，Ctrl+Alt+方向键切块。
+- **简略视图**（`ui/recordView.js`，规则在 `ui/lib/record.js`，照 Mac 的 SessionRecord / RecordDisplay / ReplyHints 等逐条移植，测试 18 个）：Ctrl+Shift+E、顶栏和每块标题栏的按钮、右键菜单切换，按终端记住。
+  - 记录：你的话（右侧，图片缩略图可点开看大图、复制）、别的会话转来的话、回答（Markdown，代码块带 Copy，长的 `Show More`，思考过程淡一些）、`Worked 1m 12s · Read 2 · Ran 1` 折叠行（展开是每一步；命令再展开是整条命令，按 shell 着色，带输出；带图的步骤显示图）、`+N −M` 点开 Changes 面板、屏幕上对命令的回应、`Earlier`、`↓ Latest`。
+  - 正在写的字（带光标）、正在做什么的那一行（工具、目标、token 数、计时，子代理各一行，流光效果）、Exited。
+  - 卡片：它自己屏幕上的列表（点一行等于在终端里选中回车）、Codex 结尾的问题（点一个作为回复）、程序自己画的等待界面（切到终端视图）。确认卡与提问卡仍是页面原有的浮层卡（在获得焦点的那一块右上），不是 Mac 那样排在记录末尾。
+  - 回复框：浮在记录上；`/` 命令、`@` 文件（↑↓ tab ↩ esc）、`!` `$` 的说明；附件以 `[Image #n]` / `[File #n]` 占位，删占位即删文件，最多 10 个；拖进来、粘贴、`+ › Files…`（Linux 窗口用系统对话框、按路径给；浏览器上传）、`+ › Paste Image`；权限方式（Claude Code，Bypass 红色）、模型（含 Older）、思考强度滑块、Codex 的 Daybreak；不能改时是淡字，悬停说原因；`Context 62%`；↩ 发送、⇧↩ 换行、工作中空框 esc 或 ■ 停止；建议的下一句 tab 填入。回复框右键：`Transcript: Verbose`、`Changes of the Last Turn`、`Show Side Pane`。
+  - 右侧栏（窗格 ≥ 980 宽、打开时）：Context 进度条、Tasks、Changes 文件列表（点开看这个文件最近一次的 diff）。
+  - 深浅色：简略视图跟随系统；获得焦点的那一块是简略视图且系统是浅色时，列表、顶栏也变浅色（经典外观即白色）；终端画面始终深色——同 Mac。
+- **列表与顶栏**：顶栏补上 Mac 主栏有的 `Open yazi Beside`、`Open in VS Code`（Linux 窗口：本机的 `code`，没有就 `vscode://`）、简略视图 / 终端视图、两个分屏按钮；会话行右键：`Resume`、`Resume As <配置>`、`Delete`；新建终端面板补上 Profile 与 Effort。
+- **Linux 窗口**：权限请求的通知上直接 `Allow` / `Deny`（经 `notify-send` 的 actions；点通知本身打开那个终端；没有 notify-send 时退回普通通知）；终端里粘贴图片（只有图片时上传并把路径贴进终端，同 Mac 的 ⌘V）；拖文件到终端或回复框按路径给。
+- **验证**：用这份代码另起一个服务（临时数据目录、端口 5799），把一个假的 `claude`（只回显，不调模型）恢复到一段真实会话上，用 `packages/linux-app/scripts/shoot.js` 在屏幕外驱动页面并截图：终端视图、简略视图、展开工作行与命令、模型菜单、思考强度、`/` 命令提示、分屏、Active 筛选、像素与经典外观各自的深浅色；从简略视图发出的回复到达终端并立即出现在记录末尾。daemon 测试 1949 个、linux-app 测试 15 个通过。**没在桌面上实际点过**：拖放、粘贴图片、通知上的 Allow / Deny、输入法。

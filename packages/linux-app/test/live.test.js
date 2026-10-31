@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { LiveNotes, pageOf, wordsOf } from "../lib/live.js";
+import { decidePath, LiveNotes, pageOf, wordsOf } from "../lib/live.js";
 
 const ask = (id, askId, extra = {}) => ({ id, kind: "terminal", title: `t ${id}`, step: "Allow? npm test", needsYou: true, startedAt: 1, ask: { kind: "permission", id: askId }, ...extra });
 const end = (id, at, ok = true, extra = {}) => ({ id, kind: "terminal", title: `t ${id}`, line: ok ? "Done" : "Failed", ok, at, ...extra });
@@ -36,6 +36,16 @@ test("another node's rows are its own: the same id on two nodes is two things", 
   assert.equal(said[0].key, "n2/t5#p1");
   assert.equal(wordsOf(said[0]).summary, "t t5 · dellarch");
   assert.equal(pageOf(said[0]), "/ui/terminal.html");
+});
+
+test("a terminal's permission request is answered from its note; a question or a task's approval is not", () => {
+  const n = new LiveNotes();
+  n.next(snap());
+  const [note] = n.next(snap([ask("ab12", "p9")]));
+  assert.equal(decidePath(note), "/terminals/ab12/permissions/p9");
+  assert.equal(decidePath({ ...note, node: { id: "n2", name: "x" } }), "/nodes/n2/terminals/ab12/permissions/p9");
+  assert.equal(decidePath({ ...note, ask: { kind: "question", id: "q1" } }), null);
+  assert.equal(decidePath({ ...note, kind: "task" }), null);
 });
 
 test("a note opens its terminal, or its task on Dispatch", () => {

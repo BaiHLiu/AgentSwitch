@@ -1,0 +1,306 @@
+/* A pane's simple view in a browser and in the Linux window (ui/recordView.js; docs/simple-view-v0.md §5.2, the Mac's
+   TerminalRecordPane; demo docs/design/concepts/simple-view.html). It takes the system's light or dark (`.rv.light`,
+   `.rv.dark`); the terminal view is always dark. The pixel look: short words in the grid's type, square frames, the
+   signal colour. The classic look (html.classic): the system's type, round shapes, the accent, soft shadows; white in
+   the light. */
+
+.rv {
+  --bg: #000; --panel: #0b0b0b; --raise: #151515; --code: #121212;
+  --ink: #e9e6df; --ink2: #8d8a84; --ink3: #5e5b57; --ink4: #262524; --faint: #6c6a66;
+  --signal: #ff2e88; --cyan: #2ee6ff; --green: #9be22d; --amber: #ffb000; --red: #ff4a3d;
+  --short: var(--mono); --r: 0px; --r-card: 0px; --r-dock: 0px; --r-bub: 0px;
+  --prose: 13.5px; --small: 11.5px; --tiny: 10.5px;
+  position: absolute; inset: 0; display: flex; min-width: 0; min-height: 0; overflow: hidden;
+  background: var(--bg); color: var(--ink); font: var(--prose)/1.6 var(--ui);
+  user-select: text; -webkit-user-select: text; color-scheme: dark;
+}
+.rv.light {
+  --bg: #f3f1ea; --panel: #ece8df; --raise: #e6e2d8; --code: #e9e5dc;
+  --ink: #151413; --ink2: #5f5b54; --ink3: #a29d93; --ink4: #d3cec3; --faint: #8f8a80;
+  --signal: #e0106e; --cyan: #0086a8; --green: #3f8f00; --amber: #c27400; --red: #d7261b;
+  color-scheme: light;
+}
+.classic .rv {
+  --short: var(--ui); --r: 6px; --r-card: 10px; --r-dock: 20px; --r-bub: 18px;
+  --signal: var(--accent, #0a84ff); --cyan: var(--signal); --amber: #ff9f0a; --green: #30d158; --red: #ff453a;
+  --ink: #ededf0; --ink2: #a2a2a8; --ink3: #6c6c72; --ink4: #2c2c2e; --faint: #7c7c82; --raise: #1c1c1e; --panel: #111113; --code: #161618;
+  --prose: 14px; --small: 12px; --tiny: 12px;
+}
+.classic .rv.light {
+  --bg: #ffffff; --panel: #f5f5f7; --raise: #efeff3; --code: #f2f2f5;
+  --ink: #1c1c1e; --ink2: #6e6e73; --ink3: #aeaeb2; --ink4: #e3e3e8; --faint: #8e8e93;
+  --signal: var(--accent, #007aff); --amber: #d98200; --green: #1f9d3f; --red: #e0352b;
+}
+.rv button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.rv code, .rv pre { font-family: var(--mono); }
+.rv-grow { flex: 1; }
+.rv-faint { color: var(--faint); }
+.rv-faint.small, .rv .small { font-size: var(--small); }
+.rv .pad { padding: 4px 10px; }
+.rv-spin { color: var(--ink2); font-family: var(--mono); }
+.rv.dropping::after { content: ""; position: absolute; inset: 0; border: 1px solid var(--signal); pointer-events: none; }
+
+/* ---------- the record ---------- */
+.rv-main { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.rv-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; }
+.rv-col { max-width: 780px; margin: 0 auto; padding: 18px 24px 14px; display: flex; flex-direction: column; gap: 14px; }
+.rv-items, .rv-live, .rv-cards { display: flex; flex-direction: column; gap: 14px; }
+.rv-live:empty, .rv-cards:empty, .rv-status:empty { display: none; }
+.rv-head { display: flex; flex-direction: column; gap: 3px; padding-bottom: 2px; }
+.rv-name { font: 600 17px/1.3 var(--ui); color: var(--ink); overflow-wrap: anywhere; }
+.rv-meta, .rv-path { font: var(--small) var(--short); color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rv-path { font-family: var(--mono); }
+.rv-earlier { align-self: center; font: 500 12px var(--short); color: var(--signal); padding: 2px 8px; }
+.rv-wait { display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 24px; color: var(--ink2); font: var(--small) var(--short); }
+.rv-empty p { margin: 0 0 8px; color: var(--ink2); font-size: 12.5px; }
+.rv-link { font: 500 12px var(--short); color: var(--signal); }
+.rv-link kbd { opacity: .6; margin-left: .5ch; font: inherit; }
+
+/* what you said: on the right, in a box of its own (classic: a wash of the ink under ink text) */
+.rv-user { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; padding-left: 56px; padding-top: 4px; }
+.rv-when { font: var(--tiny) var(--short); color: var(--faint); }
+.rv-bub { background: var(--raise); border: 1px solid var(--ink4); border-radius: var(--r-bub); padding: 9px 13px; max-width: 100%; overflow-wrap: anywhere;
+  white-space: pre-wrap; font: 14px/1.6 var(--ui); }
+.classic .rv-bub { background: color-mix(in srgb, var(--ink) 8%, transparent); border-color: transparent; }
+.rv-user.queued .rv-bub { opacity: .55; }
+.rv-user.queued .rv-when { color: var(--amber); }
+.rv-bub pre, .rv-said pre { white-space: pre-wrap; background: var(--code); padding: 6px 9px; margin: 4px 0; border-radius: var(--r); font-size: 12px; }
+.rv-bub code, .rv-said code { font-size: 12px; }
+.rv-from { display: flex; flex-direction: column; gap: 3px; padding-top: 4px; }
+.rv-from .rv-said { display: block; padding: 9px 13px 9px 11px; background: var(--panel); border: 1px solid var(--ink4); border-left: 2px solid var(--signal); white-space: pre-wrap; border-radius: var(--r-card); }
+.classic .rv-from .rv-said { border: 0; border-left: 3px solid var(--signal); }
+.rv-pics { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; }
+.rv-pics.step { justify-content: flex-start; padding: 2px 0 0; }
+.rv-pic { width: 84px; height: 84px; object-fit: cover; border: 1px solid var(--ink4); border-radius: var(--r); cursor: zoom-in; background: var(--raise); }
+.rv-pic.tall { width: auto; height: 150px; max-width: 100%; object-fit: contain; }
+.rv-more-pics { font: var(--tiny) var(--short); color: var(--ink2); }
+
+/* an answer: Markdown; what it thought on the way quieter */
+.rv-answer { display: flex; flex-direction: column; gap: 6px; }
+.rv-md { display: flex; flex-direction: column; gap: 8px; overflow-wrap: anywhere; font-size: var(--prose); line-height: 1.65; }
+.rv-md.quiet { color: var(--ink2); }
+.rv-md p, .rv-md ul, .rv-md ol, .rv-md blockquote { margin: 0; }
+.rv-md ul, .rv-md ol { padding-left: 1.4em; display: flex; flex-direction: column; gap: 3px; }
+.rv-md blockquote { padding-left: 10px; border-left: 2px solid var(--ink4); color: var(--ink2); }
+.rv-md h3, .rv-md h4, .rv-md h5, .rv-md h6 { margin: 4px 0 0; font: 600 calc(var(--prose) + 1px)/1.4 var(--ui); }
+.rv-md hr { border: 0; border-top: 1px solid var(--ink4); width: 100%; margin: 2px 0; }
+.rv-md a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--ink3); text-underline-offset: 3px; }
+.classic .rv-md a { color: var(--signal); text-decoration-color: currentColor; }
+.rv-md :not(pre) > code { font-size: 12px; background: var(--code); padding: 1px 4px; border-radius: 3px; }
+.rv-md .mdt { overflow-x: auto; }
+.rv-md table { border-collapse: collapse; font-size: 12.5px; }
+.rv-md th, .rv-md td { border: 1px solid var(--ink4); padding: 4px 8px; text-align: left; vertical-align: top; }
+.rv-code { background: var(--code); border: 1px solid var(--ink4); border-radius: var(--r); display: flex; flex-direction: column; min-width: 0; }
+.rv-code pre { margin: 0; padding: 2px 10px 9px; overflow-x: auto; }
+.rv-code pre code { font-size: 12px; white-space: pre; background: none; padding: 0; }
+.rv-copy { align-self: flex-end; font: var(--tiny) var(--short) !important; color: var(--ink2) !important; padding: 4px 8px 0 !important; }
+.rv-copy:hover { color: var(--ink) !important; }
+.rv-writing { opacity: .96; }
+.rv-note { text-align: center; font: var(--tiny) var(--short); color: var(--faint); }
+.rv-exited { text-align: center; font: var(--small) var(--short); color: var(--faint); }
+
+/* a run of work: one line, what it changed beside it; its steps under it when opened */
+.rv-work { display: flex; flex-direction: column; gap: 5px; }
+.rv-wrow { display: flex; align-items: center; gap: 8px; }
+.rv-wfold { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; text-align: left; font: var(--small) var(--short); color: var(--ink2); }
+.rv-wfold:disabled { cursor: default; }
+.rv-wfold > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-fold { flex: none; width: 11px; color: var(--faint); font-family: var(--mono); display: inline-flex; justify-content: center; }
+.rv-stat { flex: none; display: inline-flex; gap: 5px; font: 500 11px var(--mono); padding: 1px 6px; background: var(--code); border-radius: var(--r); }
+.rv-stat.plain { background: none; padding: 0; }
+.rv-stat em { font-style: normal; color: var(--green); }
+.rv-stat s { text-decoration: none; color: var(--red); }
+.rv-step { display: flex; flex-direction: column; gap: 4px; padding-left: 17px; min-width: 0; }
+.rv-step-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; text-align: left; width: 100%; }
+.rv-step-head b { flex: none; font: 500 var(--small) var(--short); color: color-mix(in srgb, var(--ink) 75%, transparent); }
+.rv-step-head b.failed, .rv-ki.failed { color: var(--red); }
+.rv-step-head .rv-said { font-size: 12.5px; color: color-mix(in srgb, var(--ink) 85%, transparent); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.rv-x { font-size: var(--small); color: var(--ink2); min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.rv-x.file { display: block; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; unicode-bidi: plaintext; }
+.rv-ki { flex: none; width: 16px; display: inline-flex; justify-content: center; color: var(--ink2); align-self: center; }
+.rv-cmdline { font-size: 11px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rv-out { margin: 0; font: 11px/1.55 var(--mono); color: var(--ink2); background: var(--code); border-radius: var(--r); padding: 6px 9px; white-space: pre-wrap; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--lines, 400); overflow: hidden; }
+.rv-out.failed { color: var(--red); }
+.rv-cmd { display: flex; align-items: baseline; gap: 7px; background: var(--code); border: 1px solid var(--ink4); border-radius: var(--r); padding: 7px 9px; }
+.rv-ps { color: var(--faint); font: var(--small) var(--mono); }
+.rv-cmdtext { flex: 1; min-width: 0; margin: 0; font: var(--small)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); }
+.rv-cmd .rv-copy { padding: 0 !important; }
+.sh-command { color: var(--signal); } .sh-string { color: var(--green); } .sh-comment { color: var(--faint); }
+
+/* what it is doing now: quiet words with a band of light running across them */
+.rv-now { display: flex; align-items: center; gap: 7px; min-width: 0; font: var(--small) var(--short); color: var(--ink2); }
+.rv-now.sub { padding-left: 17px; }
+.rv-nowwords { display: flex; align-items: baseline; gap: 7px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.rv-nowwords b { font-weight: 600; }
+.rv-nowwords code, .rv-nowwords .rv-said { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.rv-nowwords .rv-said { font: 12.5px var(--ui); }
+.rv-tm { flex: none; font: var(--tiny) var(--short); color: var(--faint); font-variant-numeric: tabular-nums; }
+.rv-shim { color: transparent !important; background: linear-gradient(90deg, var(--ink2) 0 38%, var(--ink) 50%, var(--ink2) 62% 100%) 0 0 / 280% 100%;
+  -webkit-background-clip: text; background-clip: text; animation: rv-shim 1.9s linear infinite; }
+.rv-shim * { color: transparent !important; }
+@keyframes rv-shim { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .rv-shim { animation: none; color: var(--ink2) !important; background: none; } .rv-shim * { color: inherit !important; } }
+
+/* what needs you at the record's end */
+.rv-card { max-width: 520px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--panel); border: 1px solid var(--ink2); border-radius: var(--r-card); }
+.classic .rv-card { border-color: var(--ink4); box-shadow: 0 6px 22px rgba(0, 0, 0, .14); }
+.rv-card p { margin: 0; font-size: 12.5px; color: var(--ink2); }
+.rv-card-hd { font: 600 12px var(--short); }
+.rv-card-hd.waiting { color: var(--amber); }
+.rv-card-title { font: 600 12.5px var(--ui); color: var(--ink); }
+.rv-choices { display: flex; flex-direction: column; gap: 2px; }
+.rv-choice { display: flex; align-items: baseline; gap: 8px; text-align: left; padding: 5px 8px; border-radius: var(--r); }
+.rv-choice:hover, .rv-choice.on { background: var(--code); }
+.rv-choice i { font: 500 11px var(--mono); font-style: normal; color: var(--faint); width: 18px; text-align: right; flex: none; }
+.rv-choice.on i { color: var(--signal); }
+.rv-choice > span { display: flex; flex-direction: column; font-size: 12.5px; }
+.rv-choice small { font-size: 11px; color: var(--ink2); }
+.rv-card-ft { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--faint); }
+.rv-card-ft span { flex: 1; }
+
+.rv-latest { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--dock-h, 120px) + 8px); z-index: 3; font: 500 var(--small) var(--short); color: var(--ink);
+  padding: 5px 10px; background: var(--panel); border: 1px solid var(--ink4); border-radius: calc(var(--r-card) + 3px); }
+
+/* ---------- the reply box: floating over the record's foot ---------- */
+.rv-dock { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; padding: 14px 24px 14px; display: flex; flex-direction: column; gap: 6px;
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--bg) 0%, transparent), var(--bg) 22px); }
+.rv-dock > * { width: 100%; max-width: 780px; margin: 0 auto; }
+.rv-err { color: var(--red); font-size: 12px; padding: 0 4px; }
+.rv-clash { color: var(--amber); font-size: 12px; padding: 0 4px; }
+.rv-box { background: var(--panel); border: 1px solid var(--ink4); border-radius: var(--r-dock); display: flex; flex-direction: column; }
+.classic .rv-box { box-shadow: 0 4px 24px rgba(0, 0, 0, .12); }
+.rv-plan { padding: 8px 12px; border-bottom: 1px solid var(--ink4); }
+.rv-plan-line { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; min-width: 0; }
+.rv-plan-line b { font: 600 var(--small) var(--short); color: var(--ink); flex: none; }
+.rv-plan-line span:last-child { font-size: 12px; color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-tlist { padding: 5px 0 2px 17px; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--ink2); }
+.rv-tlist > div { display: flex; gap: 8px; align-items: baseline; }
+.rv-tlist i { font: 11px var(--mono); font-style: normal; flex: none; color: var(--faint); }
+.rv-tlist .done span { color: var(--faint); text-decoration: line-through; }
+.rv-tlist .doing span { color: var(--ink); }
+.rv-tlist .done i { color: var(--green); }
+.rv-hints { display: flex; flex-direction: column; padding: 4px; border-bottom: 1px solid var(--ink4); max-height: 260px; overflow-y: auto; }
+.rv-hint { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: baseline; text-align: left; padding: 4px 8px; border-radius: var(--r); font-size: 12.5px; }
+.rv-hint b { font: 500 12px var(--mono); color: var(--ink); white-space: nowrap; }
+.rv-hint span { color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-hint i { font: 11px var(--short); font-style: normal; color: var(--faint); }
+.rv-hint.on { background: var(--code); }
+.rv-hint.mark { display: flex; flex-direction: column; gap: 2px; }
+.rv-hint.mark span { white-space: normal; }
+.rv-strip { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px 10px 0; }
+.rv-chipfile { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; padding: 3px 6px; background: var(--code); border-radius: var(--r); font-size: 12px; }
+.rv-chipfile img { width: 26px; height: 26px; object-fit: cover; border-radius: 3px; }
+.rv-chipfile b { font: 500 11px var(--mono); color: var(--ink2); }
+.rv-chipfile span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-chipfile button { color: var(--ink2); padding: 0 2px; }
+.rv-text { display: block; margin: 12px 14px 7px; resize: none; border: 0; outline: 0; background: none; color: var(--ink); font: 14px/1.55 var(--ui); min-height: 22px; max-height: 200px; }
+.rv-text::placeholder { color: var(--faint); }
+.rv-foot { display: flex; align-items: center; gap: 8px; padding: 0 9px 9px; min-width: 0; }
+.rv-plus { width: 26px; height: 26px; display: grid; place-items: center; color: var(--ink2); font: 16px var(--mono); flex: none; }
+.rv-plus:disabled { opacity: .4; }
+.rv-chips { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; font: var(--tiny) var(--short); }
+.rv-chip { display: inline-flex; align-items: center; gap: 3px; padding: 5px 0; color: var(--ink2); white-space: nowrap; }
+.rv-chip.off { color: var(--faint); cursor: default; }
+.rv-chip.bad { color: var(--red); }
+.rv-chip.warn { color: var(--amber); }
+.rv-chip span, .rv-chip svg { opacity: .8; }
+.rv-dot { color: var(--faint); }
+.rv-ctx { font: var(--tiny) var(--short); color: var(--faint); white-space: nowrap; }
+.rv-send { flex: none; width: 30px; height: 26px; display: grid; place-items: center; font: 700 15px var(--mono); color: var(--faint); border: 1px solid var(--ink4); }
+.rv-send.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.rv-send:disabled { cursor: default; }
+.classic .rv-send { width: 26px; border: 0; border-radius: 50%; background: var(--raise); color: var(--faint); }
+.classic .rv-send.on { background: var(--signal); color: #fff; }
+
+/* menus and the effort slider over the box */
+.rv-pop { position: absolute; z-index: 20; background: var(--panel); border: 1px solid var(--ink2); box-shadow: 4px 4px 0 color-mix(in srgb, var(--ink) 18%, transparent); padding: 4px; }
+.classic .rv-pop { border-color: var(--ink4); border-radius: 10px; box-shadow: 0 8px 28px rgba(0, 0, 0, .22); }
+.rv-pop.rv-menu { display: flex; flex-direction: column; min-width: 180px; max-width: 360px; font: 12px var(--short); }
+.rv-mi { display: flex; align-items: center; gap: 6px; text-align: left; padding: 4px 8px; border-radius: max(0px, calc(var(--r) - 2px)); white-space: nowrap; }
+.rv-mi.in { padding-left: 22px; }
+.rv-mi:hover:not(:disabled) { background: var(--code); }
+.rv-mi:disabled { color: var(--faint); cursor: default; white-space: normal; }
+.rv-check { width: 12px; flex: none; color: var(--signal); }
+.rv-sep { height: 1px; background: var(--ink4); margin: 4px 2px; }
+.rv-pop.effort { width: 190px; padding: 10px 12px; display: flex; flex-direction: column; gap: 7px; --top: #7a3cf0; }
+.classic .rv-pop.effort { --top: #8e5cf7; }
+.rv-pop.effort p { margin: 0; font-size: 11px; color: var(--faint); }
+.rv-eh { display: flex; justify-content: space-between; font: 600 12px var(--short); }
+.rv-eh span { color: var(--signal); font-weight: 500; }
+.rv-eh.top span { color: var(--top); }
+.rv-ee { display: flex; justify-content: space-between; font: 11px var(--short); color: var(--faint); }
+.rv-eslider { position: relative; height: 18px; background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--ink) 13%, transparent) 0 6px, transparent 6px 8px); }
+.rv-eslider .fill { position: absolute; left: 0; top: 0; height: 18px; width: calc(12px + var(--at) * (100% - 24px)); background: repeating-linear-gradient(90deg, var(--signal) 0 6px, transparent 6px 8px); }
+.rv-eslider.top .fill { background: repeating-linear-gradient(90deg, var(--top) 0 6px, transparent 6px 8px); }
+.rv-eslider .knob { position: absolute; left: calc(10px + var(--at) * (100% - 24px)); top: -3px; width: 4px; height: 24px; background: var(--ink); pointer-events: none; }
+.rv-eslider button { position: absolute; top: 0; height: 18px; width: 24px; margin-left: -6px; left: calc(var(--k) * (100% - 12px)); z-index: 1; }
+.classic .rv-eslider { height: 14px; margin: 4px 0; border-radius: 4.5px; background: color-mix(in srgb, var(--ink) 10%, transparent); }
+.classic .rv-eslider .fill { height: 14px; border-radius: 4.5px; width: calc(6px + var(--at) * (100% - 12px)); background: linear-gradient(90deg, color-mix(in srgb, var(--signal) 70%, transparent), var(--signal)); }
+.classic .rv-eslider.top .fill { background: linear-gradient(90deg, #2f3dc8, var(--top)); }
+.classic .rv-eslider .knob { left: calc(1.5px + var(--at) * (100% - 12px)); top: -3px; width: 9px; height: 20px; border-radius: 3px; background: #fff; box-shadow: 0 .8px 2px rgba(0, 0, 0, .28), 0 0 0 .5px rgba(0, 0, 0, .12); }
+.classic .rv-eslider button { height: 14px; }
+
+/* ---------- the side: context, tasks, the files changed ---------- */
+.rv-side { flex: none; border-left: 1px solid var(--ink4); overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 18px; background: var(--bg); }
+.rv-sec { display: flex; flex-direction: column; gap: 6px; }
+.rv-sec-hd { display: flex; align-items: baseline; gap: 6px; font: 600 var(--small) var(--short); color: var(--ink); }
+.rv-sec-hd > span:last-child { font-weight: 400; color: var(--faint); }
+.rv-meter { height: 6px; background: var(--code); border-radius: 3px; overflow: hidden; }
+.rv-meter i { display: block; height: 100%; background: var(--signal); }
+.rv-file { display: flex; align-items: baseline; gap: 6px; width: 100%; text-align: left; padding: 3px 0; min-width: 0; }
+.rv-file-name { display: flex; flex-direction: column; min-width: 0; font: 12px var(--mono); }
+.rv-file-name small { font-size: 10.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-diff { border: 1px solid var(--ink4); border-radius: var(--r-card); background: var(--panel); overflow: hidden; }
+.rv-diff-hd { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--ink4); font-size: 12px; }
+.rv-diff-hd code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.rv-diff pre { margin: 0; padding: 4px 0; font: 11.5px/1.55 var(--mono); overflow-x: auto; }
+.rv-diff pre span { display: block; padding: 0 10px; white-space: pre; min-width: max-content; color: color-mix(in srgb, var(--ink) 78%, transparent); }
+.rv-diff pre .a { color: var(--green); background: color-mix(in srgb, var(--green) 10%, transparent); }
+.rv-diff pre .d { color: var(--red); background: color-mix(in srgb, var(--red) 10%, transparent); }
+.rv-diff pre .h { color: var(--ink2); background: var(--code); }
+
+/* ---------- sheets over the pane: what a turn changed, the pictures ---------- */
+.rv-veil { position: absolute; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(0, 0, 0, .45); padding: 24px; }
+.rv-sheet { width: min(720px, 100%); height: min(520px, 100%); display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--ink2); }
+.classic .rv-sheet { border-radius: 12px; border-color: var(--ink4); box-shadow: 0 16px 48px rgba(0, 0, 0, .35); overflow: hidden; }
+.rv-sheet-hd { display: flex; align-items: center; gap: 8px; padding: 11px 16px; border-bottom: 1px solid var(--ink4); }
+.rv-sheet-hd b { font: 600 14px var(--ui); }
+.rv-sheet-bd { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.rv-viewer { max-width: 100%; max-height: 100%; display: flex; flex-direction: column; gap: 10px; background: var(--bg); padding: 12px; border: 1px solid var(--ink2); }
+.classic .rv-viewer { border-radius: 12px; border-color: var(--ink4); }
+.rv-view-img { max-width: min(1000px, 86vw); max-height: 70vh; object-fit: contain; }
+.rv-viewer-ft { display: flex; align-items: center; gap: 14px; }
+
+/* the pane around it, in the page (terminal.css's panes) */
+.web-panes .pane-screen { pointer-events: auto; }
+.web-panes .pane-screen.simple { inset: 0; }
+.wscreen { position: absolute; inset: 0; }
+.wscreen .xterm { height: 100%; }
+/* Beyond the rows of a terminal sized elsewhere: the screen's own ground, not the viewport's black. */
+.wscreen .xterm .xterm-viewport { background-color: transparent !important; }
+.wscreen.dropping::after { content: ""; position: absolute; inset: -2px; border: 1px solid var(--signal); pointer-events: none; }
+
+/* The list and the bar go light with a light simple view in the pane in focus, as the Mac's do; terminals stay dark. */
+@media (prefers-color-scheme: light) {
+  html.simple-focus .top, html.simple-focus .side, html.simple-focus .sealbar, html.web-panes .pane.simple .pane-head {
+    --term: #f3f1ea; --ink: #151413; --ink2: #5f5b54; --ink3: #a29d93; --ink4: #d3cec3; --hover: rgba(0, 0, 0, .04); --sel: rgba(0, 0, 0, .06);
+    --signal: #e0106e; --cyan: #0086a8; --amber: #c27400; --green: #3f8f00; --red: #d7261b; --px-shadow: #cfc9bc; --dither: #bdb7ab;
+    --tw: #000000; --th: #16140f; --tm: #55524b; --td: #8a867d; --tk: #bdb8ac; --ts: #dcd7cb; color-scheme: light; color: var(--ink);
+  }
+  html.classic.simple-focus .top, html.classic.simple-focus .side, html.classic.simple-focus .sealbar, html.classic.web-panes .pane.simple .pane-head {
+    --term: #f2f2f4; --ink: #1c1c1e; --ink2: #6e6e73; --ink3: #aeaeb2; --ink4: rgba(0, 0, 0, .1); --hover: rgba(0, 0, 0, .05); --sel: rgba(0, 0, 0, .08);
+    --signal: var(--accent, #007aff); --amber: #d98200; --amber-ink: #b26a00; --green: #1f9d3f; --red: #e0352b;
+    --side: #f2f2f4; --panel: #ffffff; --raise: #e8e8ed; --field: rgba(0, 0, 0, .05); --shadow: 0 0 0 .5px rgba(0, 0, 0, .12), 0 12px 34px rgba(0, 0, 0, .18);
+  }
+}
+
+/* the bar's actions (the Mac window's bar has them; the page's own in a browser and the Linux window) */
+.band-acts { display: flex; align-items: center; gap: 2px; }
+.band-btn { flex: none; display: grid; place-items: center; width: 28px; height: 22px; color: var(--ink2); }
+.band-btn:hover { color: var(--ink); background: var(--hover); }
+.band-btn:disabled { opacity: .35; }
+.classic .band-btn { width: 30px; height: 26px; border-radius: 7px; }
+.pane-head .pbtn { flex: none; display: grid; place-items: center; width: 22px; height: 20px; color: var(--ink3); }
+.pane-head .pbtn:hover { color: var(--ink); background: var(--hover); }
+.classic .pane-head .pbtn { border-radius: 5px; }

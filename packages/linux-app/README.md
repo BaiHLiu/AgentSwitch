@@ -14,5 +14,5 @@ in with the local token, a tray item and desktop notifications from `GET /live`.
 
 Keys on the Terminals page are a Linux terminal's (docs/linux-app-v0.md §7.1): Ctrl+Shift+T new terminal, Ctrl+Shift+W
 close, Ctrl+Shift+L list, Ctrl+Shift+F search, Ctrl+Shift+D / Ctrl+Shift+B split right / down, Ctrl+Shift+Z the pane
-alone, Ctrl+Alt+arrows the next pane, Alt+1–9 a terminal, Ctrl+Shift+S the sealed reply, Ctrl+Shift+↩ / Ctrl+Shift+⌫
+alone, Ctrl+Shift+E the simple view, Ctrl+Alt+arrows the next pane, Alt+1–9 a terminal, Ctrl+Shift+S the sealed reply, Ctrl+Shift+↩ / Ctrl+Shift+⌫
 allow / deny, Ctrl+Shift+C / Ctrl+Shift+V copy / paste, Ctrl+click a link.

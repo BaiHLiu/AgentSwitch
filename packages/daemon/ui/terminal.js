@@ -11,6 +11,9 @@ import { WebLinksAddon } from "/ui/vendor/addon-web-links.mjs";
 import { flicker as pixelFlicker, glitch as pixelGlitch, reducedMotion, revealWordmark, SPIN, sprite } from "/ui/pixel.js";
 import { key, SHADED, shaded, shadedMark, TONE_COLORS } from "/ui/lib/shaded.js";
 import { accentOf, age, AGENT_ICON, bracket, dot, help as helpIn, icon, label as labelIn, lookOf, mark as classicMark, spinner, word as wordIn } from "/ui/lib/look.js";
+import { WebScreens } from "/ui/lib/webScreens.js";
+import { RecordView } from "/ui/recordView.js";
+import { uploadPending } from "/ui/lib/files.js";
 import { choosing, filterAgents, filterIsOn, filterOf, keepsSession, keepsTerminal } from "/ui/lib/listFilter.js";
 import { everyFolder, everySession, everyTerminal, folderOf, folderTree as buildTree, foldersAbove, slashed, tilde } from "/ui/lib/tree.js";
 import { GAP, MAX_PANES, MIN_H, MIN_W, close as closeIn, drop as dropIn, neighbor, paneOf, paneShowing, panesOf, place, ratioAt, resize as resizeIn, restore as restoreLayout,
@@ -24,7 +27,7 @@ const native = IN_MAC_APP ? window.webkit?.messageHandlers?.agentswitch : null;
 const HOST = native ? null : window.agentswitchHost ?? null;
 if (HOST) document.documentElement.classList.add("linux-app");
 /** A key as the page says it (`⌘⇧D`), as this window has it: the same on a Mac and in a browser, Linux's in its window. */
-const LINUX_KEYS = [["⌘⇧↩", "Ctrl+Shift+Z"], ["⌘⇧V", "Ctrl+Shift+S"], ["⌘⇧D", "Ctrl+Shift+B"], ["⌘B", "Ctrl+Shift+L"], ["⌘↩", "Ctrl+Shift+↩"],
+const LINUX_KEYS = [["⌘⇧↩", "Ctrl+Shift+Z"], ["⌘⇧V", "Ctrl+Shift+S"], ["⌘⇧E", "Ctrl+Shift+E"], ["⌘⇧D", "Ctrl+Shift+B"], ["⌘B", "Ctrl+Shift+L"], ["⌘↩", "Ctrl+Shift+↩"],
   ["⌘⌫", "Ctrl+Shift+⌫"], ["⌘ Click", "Ctrl Click"], ["⌘1–9", "Alt+1–9"]];
 function keyName(text) {
   if (!HOST || !text) return text;
@@ -40,7 +43,7 @@ function hostKey(e) {
   if (!e.ctrlKey || !e.shiftKey || e.altKey) return null;
   const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   // catop, 2026-10-31: Ctrl+Shift+D beside, Ctrl+Shift+B below; the list then has L.
-  return { t: as("t"), w: as("w"), l: as("b"), f: as("f"), d: as("d"), b: as("d", true), s: as("v", true), z: as("Enter", true),
+  return { t: as("t"), w: as("w"), l: as("b"), f: as("f"), d: as("d"), b: as("d", true), s: as("v", true), z: as("Enter", true), e: as("e", true),
     Enter: as("Enter"), Backspace: as("Backspace"), c: "copy" }[key] ?? null;
 }
 /** The Mac window's toolbar (native) shows what the page tells it: each kind of report sent only when it changes. */
@@ -68,8 +71,16 @@ if (STATUS_BAR) document.documentElement.classList.add("status-bar");
 // 多个终端窗口，所以想加一个分屏协作功能，可以用鼠标调整分屏的大小，然后指定选择目录树里的某个session到指定分屏里): the page
 // keeps the layout (lib/panes.js) and tells the window where each pane's screen goes (`screens`); the window draws one
 // native screen a pane. The web console shows one terminal at a time, as before.
-const PANES = NATIVE && window.agentswitchPanes === true;
+const narrow = matchMedia("(max-width: 760px), (pointer: coarse)");
+// In a browser and the Linux window the page draws the panes' screens itself (lib/webScreens.js, docs/linux-app-v0.md,
+// 2026-10-31, catop: 让其基本与mac app 1：1复刻): one xterm or simple view per pane, as the Mac window's native screens. A
+// narrow screen (a phone's browser) keeps one terminal, as before.
+const WEB_PANES = !NATIVE && !narrow.matches;
+const PANES = (NATIVE && window.agentswitchPanes === true) || WEB_PANES;
 if (PANES) document.documentElement.classList.add("panes-on");
+if (WEB_PANES) document.documentElement.classList.add("web-panes");
+/** The page draws no terminal of its own: the Mac window's native screens do, or the web screens. */
+const DELEGATE = NATIVE || WEB_PANES;
 // The Mac app shows a terminal in a window of its own when asked (docs/dispatch-v0.md §1 单独的窗口, 2026-10-05, user:
 // 如果我想单独让某个session的终端单独开窗口打开 应该怎么弄): a terminal out there is not shown here too. The app says which
 // are out (`window.agentswitchDetached` at the start, `agentswitch.detached` after); the page leaves their panes, marks
@@ -81,7 +92,6 @@ let detached = new Set(WINDOWS && Array.isArray(window.agentswitchDetached) ? wi
 const here = (id) => !detached.has(id);
 /** The grid the native screen fits (it tells us), for a terminal started or continued here. */
 let nativeGrid = { cols: 100, rows: 30 };
-const narrow = matchMedia("(max-width: 760px), (pointer: coarse)");
 
 const AGENTS = [
   { id: "claude-code", name: "Claude Code" },
@@ -211,6 +221,10 @@ let agents = AGENTS.map((a) => a.id);
  *  chosen = the agent's own default, which `defaults` names when the agent says what it is. */
 let models = {};
 let modelDefaults = {};
+/** Per agent, the thinking levels when no model is chosen (GET /terminals). */
+let efforts = {};
+/** Terminals shown in their simple view (docs/simple-view-v0.md §1): each pane switches its own (⌘⇧E), kept by terminal. */
+const simpleTerms = new Set((() => { try { return JSON.parse(recall("terminals.simple") || "[]"); } catch { return []; } })());
 let sessions = [];
 let current = null;
 let source = null;
@@ -350,23 +364,50 @@ term.loadAddon(fit);
 term.loadAddon(new Unicode11Addon());
 term.loadAddon(new WebLinksAddon(openLink, { hover: (_e, uri) => showLinkTarget(uri), leave: hideLinkTarget }));   // plain URLs in the text
 term.unicode.activeVersion = "11";
+/** The panes' screens in a browser and the Linux window (lib/webScreens.js): each pane's xterm, or its simple view. */
+const screens = WEB_PANES ? new WebScreens({
+  xterm: { Terminal, FitAddon, Unicode11Addon, WebLinksAddon },
+  termOptions: {
+    fontFamily: style?.fontFamily ?? 'ui-monospace, "SF Mono", Menlo, "PingFang SC", monospace', fontSize: style?.fontSize ?? 13,
+    lineHeight: style?.lineHeight ?? 1.2, letterSpacing: style?.letterSpacing ?? 0, theme: style?.theme, cursorBlink: true, scrollback: 10000,
+    allowProposedApi: true, macOptionIsMeta: true, drawBoldTextInBrightColors: true,
+  },
+  linkHandler: { activate: openLink, hover: (_e, uri) => showLinkTarget(uri), leave: hideLinkTarget, allowNonHttpProtocols: true },
+  screenId: `web-${Math.random().toString(36).slice(2, 10)}`,
+  api, upload: (list) => uploadPending(list), pathOf: HOST?.pathOf,
+  shortcut: (e) => shortcut(e), inUse: () => inUse(), notify: (text) => notify(text),
+  painted: (pane) => { if (pane === focusPane) hideLoading(); },
+  onFocus: (pane) => { if (pane !== focusPane || creating) focusOn(pane); },
+  onGrid: (pane, grid) => { paneGrids.set(pane, grid); if (pane === focusPane) nativeGrid = grid; if (sizing) renderPanes(); },
+  onAway: (pane, place) => showAway(place, pane),
+  record: (pane) => new RecordView({
+    api, upload: (list) => uploadPending(list), pathOf: HOST?.pathOf, chooseFiles: HOST?.chooseFiles,
+    classic: () => classic(), notify: (text) => notify(text),
+    onFocus: (p) => { if (p !== focusPane || creating) focusOn(p); },
+    openTerminal: (p) => setSimple(p, false), shortcut: (e) => { const run = shortcut(e); if (run) { e.preventDefault(); run(); } return !!run; },
+    lists: () => ({ models, efforts }), ago: (ms) => age(ago(ms), look), gitWords: (t) => gitWords(gits[t.workdir || t.cwd]), tilde,
+    bracketed: (word, key) => buttonWords(word, key),
+  }, pane),
+}) : null;
 // The DOM renderer on purpose: macOS draws the glyphs with its own text rendering, as in iTerm (WebGL drew them at
 // twice the size on a Retina screen in testing).
-if (!NATIVE) term.open($("screen"));
+if (!DELEGATE) term.open($("screen"));
 /** This screen's grid, for a terminal started or continued here. */
 function gridHere() {
-  if (NATIVE) return (PANES && paneGrids.get(focusPane)) || nativeGrid;
+  if (DELEGATE) return (PANES && paneGrids.get(focusPane)) || nativeGrid;
   fit.fit();
   return { cols: term.cols, rows: term.rows };
 }
 /** The keyboard to the terminal on screen. */
 function focusScreen() {
   if (NATIVE) tellWindow("focus", { at: Date.now() });
+  else if (WEB_PANES) screens.focus(focusPane);
   else term.focus();
 }
 /** A line of our own under the program's output (not the program's: a note such as "1 secret sealed"). */
 function screenNote(text) {
   if (NATIVE) native.postMessage({ type: "note", text });
+  else if (WEB_PANES) screens.note(focusPane, text);
   else term.write(`\r\n\x1b[2m[${text}]\x1b[0m\r\n`);
 }
 
@@ -462,7 +503,7 @@ term.attachCustomKeyEventHandler((e) => {
 /** This window's size for terminal `id`: fit the screen and tell the service when it differs. True when it did (the
  *  size change makes the agent draw again). */
 function fitTo(id) {
-  if (NATIVE || current?.id !== id || creating || !mine()) return false;
+  if (DELEGATE || current?.id !== id || creating || !mine()) return false;
   const before = [term.cols, term.rows];
   fit.fit();
   if (term.cols !== before[0] || term.rows !== before[1] || term.cols !== current.cols || term.rows !== current.rows) {
@@ -475,7 +516,7 @@ function fitTo(id) {
 }
 
 function fitAndTell() {
-  if (NATIVE || !current || creating || !mine()) return;
+  if (DELEGATE || !current || creating || !mine()) return;
   fit.fit();
   if (term.cols !== current.cols || term.rows !== current.rows) {
     api("POST", `/terminals/${current.id}/resize`, { cols: term.cols, rows: term.rows, screen: SCREEN }).catch(() => undefined);
@@ -500,10 +541,11 @@ const mine = () => sizeOwner === SCREEN;
 let nativeActive = null;   // the Mac window says when it is the key window (window.agentswitch.active)
 function inUse() { return (nativeActive ?? document.hasFocus()) && !document.hidden; }
 /** `active`: the user acts here (a key, a click) and takes it; else only a size nobody has. */
-const reclaim = (active) => () => { if (NATIVE || !inUse()) return; if (mine()) fitAndTell(); else if (active || (!sizeOwner && !takenTo)) claim(); };
+const reclaim = (active) => () => { if (WEB_PANES) return screens.reclaimAll(active); if (NATIVE || !inUse()) return; if (mine()) fitAndTell(); else if (active || (!sizeOwner && !takenTo)) claim(); };
 function claim() {
   if (!current || creating || current.status === "exited") return;
   if (NATIVE) { native.postMessage({ type: "claim", pane: focusPane }); return; }
+  if (WEB_PANES) { screens.claim(focusPane); return; }
   fit.fit();
   takenTo = null;
   sizeOwner = SCREEN;
@@ -649,8 +691,8 @@ function select(id, { loading = null } = {}) {
     $("away").hidden = true;
     delete $("away").dataset.place;
   }
-  if (NATIVE) {
-    // The native screen follows this terminal and sizes it; the page only takes its events.
+  if (DELEGATE) {
+    // The native screen (the web screen) follows this terminal and sizes it; the page only takes its events.
     follow(id);
   } else {
     term.reset();
@@ -677,10 +719,10 @@ function follow(id) {
   if (current?.id !== id || creating) return;   // switched again before the resize came back
   closeStream();
   // A native screen reads the stream itself, with its own id; this page then only takes the events.
-  source = new EventSource(NATIVE ? `/terminals/${id}/stream` : `/terminals/${id}/stream?screen=${SCREEN}`);
+  source = new EventSource(DELEGATE ? `/terminals/${id}/stream` : `/terminals/${id}/stream?screen=${SCREEN}`);
   const on = (type, fn) => source.addEventListener(type, (e) => { if (current?.id === id) fn(JSON.parse(e.data)); });
   on("snapshot", (ev) => {
-    if (NATIVE) { if (paints(ev.data)) hideLoading(); return; }
+    if (DELEGATE) { if (paints(ev.data)) hideLoading(); return; }
     term.reset();
     if (ev.cols !== term.cols || ev.rows !== term.rows) term.resize(ev.cols, ev.rows);
     term.write(ev.data);
@@ -692,14 +734,14 @@ function follow(id) {
     setTimeout(() => { if (!fitTo(id) && current?.id === id && current.status !== "exited") api("POST", `/terminals/${id}/redraw`).catch(() => undefined); }, 0);
   });
   on("output", (ev) => {
-    if (NATIVE) { if (!$("loading").hidden && paints(ev.data)) setTimeout(hideLoading, 120); return; }
+    if (DELEGATE) { if (!$("loading").hidden && paints(ev.data)) setTimeout(hideLoading, 120); return; }
     if (ev.seq <= lastSeq) return;
     term.write(ev.data);
     lastSeq = ev.seq;
     if (!$("loading").hidden && paints(ev.data)) setTimeout(hideLoading, 120);
   });
   on("resize", (ev) => {
-    if (NATIVE) return;   // the native screen follows, and says where the terminal is in use
+    if (DELEGATE) return;   // the native (web) screen follows, and says where the terminal is in use
     if (claimOnConnect) {
       claimOnConnect = false;
       if (!ev.by || ev.by === SCREEN) { sizeOwner = ev.by ?? null; return claim(); }
@@ -715,7 +757,7 @@ function follow(id) {
   });
   on("status", (ev) => patch(id, { status: ev.status }));
   on("name", (ev) => patch(id, { name: ev.name }));
-  on("exit", (ev) => { hideLoading(); patch(id, { status: "exited", exitCode: ev.code }); if (!NATIVE) term.write(`\r\n\x1b[2m[Exited · code ${ev.code ?? "?"}]\x1b[0m\r\n`); });
+  on("exit", (ev) => { hideLoading(); patch(id, { status: "exited", exitCode: ev.code }); if (!DELEGATE) term.write(`\r\n\x1b[2m[Exited · code ${ev.code ?? "?"}]\x1b[0m\r\n`); });
   on("permission", (ev) => addToast(id, ev.request, true));
   on("permission_resolved", (ev) => { document.getElementById(`perm-${ev.id}`)?.remove(); });
   // On each (re)connect, every request waiting: one answered elsewhere while this page was away goes.
@@ -793,6 +835,18 @@ function setDetached(ids) {
 // `current` is the terminal of the pane in focus: the bar's title, the status bar, the permission requests and the
 // sealed reply are its. One pane alone looks as the page always did: no header.
 const X_ICON = ["#...#", ".#.#.", "..#..", ".#.#.", "#...#"];
+/** The Mac window bar's pictures (mac-app PixelArt): the simple view, the terminal view, yazi, the editor, the splits. */
+const BAR_PX = {
+  record: ["##########.....", "...............", "###############", "...............", "############...", "...............", "###############", "...............", "########......."],
+  terminal: ["################", "#..............#", "################", "#..............#", "#.#............#", "#..#...........#", "#...#..........#", "#..#...........#", "#.#...######...#", "#..............#", "#..............#", "################"],
+  yazi: [".###############.", "#....#.....#....#", "#....#.....#....#", "#....#.....#....#", "#....#.....#....#", "#....#.....#....#", "#....#.....#....#", "#....#.....#....#", "#....#.....#....#", "#....#.....#....#", "#....#.....#....#", ".###############."],
+  code: ["...........#.......", "...........#.......", "....#.....#...#....", "...#......#....#...", "..#.......#.....#..", ".#.......#.......#.", "#........#........#", ".#.......#.......#.", "..#.....#.......#..", "...#....#......#...", "....#...#.....#....", ".......#...........", ".......#..........."],
+  splitright: [".################.", "#........#.......#", "#........#.......#", "#........#.......#", "#........#.......#", "#........#.......#", "#........#.......#", "#........#.......#", "#........#.......#", "#........#.......#", "#........#.......#", "#........#.......#", "#........#.......#", ".################."],
+  splitdown: [".################.", "#................#", "#................#", "#................#", "#................#", "#................#", "##################", "#................#", "#................#", "#................#", "#................#", "#................#", "#................#", ".################."],
+};
+const CLASSIC_BAR = { record: "record", terminal: "terminal", yazi: "split3", code: "code", splitright: "splitright", splitdown: "splitdown" };
+/** A button's picture in the bar (size: the classic icon's) or a pane's header (smaller). */
+const barPicture = (name, size = 16) => (classic() ? icon(CLASSIC_BAR[name], size) : sprite(BAR_PX[name], { px: 1 }));
 const ZONE_WORDS = { center: "Open Here", left: "Split Left", right: "Split Right", top: "Split Up", bottom: "Split Down" };
 const paneEls = new Map();   // pane → its element
 const lineEls = new Map();   // split → the line between its two sides
@@ -863,6 +917,12 @@ function renderPanes() {
         // A request waiting in a pane out of focus: its card shows once the pane has the focus.
         t && id !== focusPane && t.permissions?.length ? h("span", { class: "w" }, W("[!] Approval")) : null,
         t && !making ? programMark(t) : null,
+        // The page's own panes (a browser, the Linux window): the Mac pane header's buttons.
+        ...(WEB_PANES && t && !making ? [
+          !t.parent && t.status !== "exited" ? h("button", { class: "pbtn", title: "Open yazi Beside", onclick: () => { focusOn(id); openYazi(t); } }, raw(barPicture("yazi", 13))) : null,
+          HOST?.openEditor ? h("button", { class: "pbtn", title: "Open in VS Code", onclick: () => HOST.openEditor(t.workdir || t.cwd) }, raw(barPicture("code", 13))) : null,
+          !t.parent ? h("button", { class: "pbtn", title: tip(isSimple(t) ? "Terminal View ⌘⇧E" : "Simple View ⌘⇧E"), onclick: () => toggleView(id) }, raw(barPicture(isSimple(t) ? "terminal" : "record", 13))) : null,
+        ] : []),
         zoomed ? null : h("button", { class: "x", title: "Close Pane", onclick: () => closePane(id) }, raw(glyph(X_ICON, 1, "x", 12))),
       ].filter(Boolean));
     }
@@ -914,7 +974,7 @@ function renderPaneBody(body, p, t) {
     away = h("div", { class: "away" }, h("div", { class: "away-box box" }, h("div", { class: "hd" }), h("div", { class: "bd" }),
       h("div", { class: "ft" }, h("span", { class: "hint" }), h("button", { class: "btn pri", type: "button" }, ...buttonWords("Take Over")))));
     // The placeholder clicked: the size is this window's again, and the pane has the focus.
-    away.addEventListener("mousedown", (e) => { e.preventDefault(); native.postMessage({ type: "claim", pane: p.id }); focusOn(p.id); focusScreen(); });
+    away.addEventListener("mousedown", (e) => { e.preventDefault(); if (WEB_PANES) screens.claim(p.id); else native.postMessage({ type: "claim", pane: p.id }); focusOn(p.id); focusScreen(); });
     body.append(away);
     glitch(away.firstChild);
   }
@@ -964,6 +1024,39 @@ function tellScreens() {
     list.push({ pane: id, id: (creating && id === focusPane) || !t ? null : t.id, rect: [r.x, r.y, r.width, r.height].map(Math.round), cwd: t ? t.workdir || t.cwd : "", focused: id === focusPane });
   }
   tellWindow("screens", { panes: list });
+  if (WEB_PANES) {
+    let focusedSimple = false;
+    screens.place(list.map((x) => {
+      const el = paneEls.get(x.pane);
+      const t = x.id ? terminals.find((y) => y.id === x.id) : null;
+      const simple = !!t && isSimple(t);
+      if (x.focused && simple) focusedSimple = true;
+      el.classList.toggle("simple", simple);
+      el.querySelector(".pane-screen").classList.toggle("simple", simple);
+      return { pane: x.pane, id: x.id, el: el.querySelector(".pane-screen"), simple, focused: x.focused, terminal: t };
+    }));
+    document.documentElement.classList.toggle("simple-focus", focusedSimple);
+  }
+}
+
+// ---------- the simple view (docs/simple-view-v0.md; the web page's own since 2026-10-31) ----------
+/** A terminal shows its record in place of its screen: chosen for it, and not a tool terminal (yazi has none). */
+const isSimple = (t) => WEB_PANES && !t.parent && simpleTerms.has(t.id);
+/** ⌘⇧E (Ctrl+Shift+E), the bar's and the pane's button: the pane's terminal in its other view. */
+function toggleView(pane = focusPane) {
+  if (!WEB_PANES) return;
+  const t = paneTerminal(paneOf(layout, pane));
+  if (!t || t.parent) return;
+  setSimple(pane, !simpleTerms.has(t.id));
+}
+function setSimple(pane, on) {
+  const t = paneTerminal(paneOf(layout, pane));
+  if (!t || t.parent) return;
+  if (on) simpleTerms.add(t.id); else simpleTerms.delete(t.id);
+  remember("terminals.simple", JSON.stringify([...simpleTerms].filter((id) => terminals.some((x) => x.id === id))));
+  if (pane !== focusPane) focusOn(pane);
+  render();
+  focusScreen();
 }
 
 /** The focus to pane `id`: the terminal it shows is followed, or — an empty pane — nothing is. */
@@ -1381,7 +1474,8 @@ function sessionRow(s, tr, depth, name = s.title || "(Untitled)") {
   const canResume = RESUMABLE.has(s.harness);
   const meta = opening === s.id ? W("Opening") : s.active ? W("Busy") : age(ago(s.updatedAt), look);
   return h("div", { class: `row session ${opening === s.id ? "opening" : ""}`, title: `${AGENT[s.harness] ?? s.harness} · ${tilde(s.cwd)}`,
-    onclick: canResume ? (e) => rowClick(e, { session: s }) : null, onpointerdown: canResume ? (e) => startRowDrag(e, { session: s }) : null },
+    onclick: canResume ? (e) => rowClick(e, { session: s }) : null, onpointerdown: canResume ? (e) => startRowDrag(e, { session: s }) : null,
+    oncontextmenu: (e) => { e.preventDefault(); void sessionMenu(e, s); } },
     h("span", { class: "ix" }),
     twig(tr, depth),
     // An earlier session: nothing in the status column; a clock in the classic look (it can be gone on with).
@@ -1392,6 +1486,27 @@ function sessionRow(s, tr, depth, name = s.title || "(Untitled)") {
       canResume ? h("button", { class: "go", onclick: (e) => { e.stopPropagation(); resume(s); } }, "Resume") : null,
       // The service says whether a program still holds it (a session just written is not held by that alone).
       DELETABLE.has(s.harness) ? h("button", { class: "del", onclick: (e) => { e.stopPropagation(); deleteSession(s); } }, "Delete") : null));
+}
+
+/** Each agent's profiles (GET /profiles): the new-terminal panel's Profile, a session's Resume As. */
+let profiles = {};
+async function loadProfiles() {
+  const r = await api("GET", "/profiles").catch(() => null);
+  if (r?.agents) profiles = Object.fromEntries(Object.entries(r.agents).map(([agent, a]) => [agent, a.profiles ?? []]));
+}
+/** Right-click on an earlier session: go on with it, or go on with it under another profile (the Mac's Resume As). */
+async function sessionMenu(e, s) {
+  await loadProfiles();
+  const item = (label, run, opts = {}) => h("button", { class: opts.danger ? "danger" : "", disabled: opts.disabled, onclick: () => { $("menu").hidden = true; run(); } }, h("span", {}, label));
+  const own = (profiles[s.harness] ?? []).filter((p) => p.id !== (s.profile?.id ?? s.profile ?? "default"));
+  $("menu").replaceChildren(...[
+    RESUMABLE.has(s.harness) ? item("Resume", () => resume(s)) : null,
+    ...(RESUMABLE.has(s.harness) ? own.map((p) => item(`Resume As ${p.name}`, () => resume(s, p.id))) : []),
+    DELETABLE.has(s.harness) ? item("Delete", () => deleteSession(s), { danger: true }) : null].filter(Boolean));
+  $("menu").hidden = false;
+  const r = $("menu").getBoundingClientRect();
+  $("menu").style.left = `${Math.min(e.clientX, innerWidth - r.width - 8)}px`;
+  $("menu").style.top = `${Math.min(e.clientY, innerHeight - r.height - 8)}px`;
 }
 
 /** Right-click on a terminal, with the shortcuts that do the same. */
@@ -1408,6 +1523,8 @@ function showMenu(e, t) {
     move,
     item("Encrypt & Send…", "⌘⇧V", () => { select(t.id); openComposer(); }, { disabled: t.status === "exited" || out }),
     !t.parent && t.status !== "exited" ? item("Open yazi Beside", null, () => openYazi(t)) : null,
+    HOST?.openEditor ? item("Open in VS Code", null, () => HOST.openEditor(t.workdir || t.cwd)) : null,
+    WEB_PANES && !t.parent ? item(isSimple(t) ? "Terminal View" : "Simple View", "⌘⇧E", () => { select(t.id); toggleView(); }) : null,
     item("Close", "⌘W", () => closeTerminal(t), { danger: true })].filter(Boolean));
   $("menu").hidden = false;
   const r = $("menu").getBoundingClientRect();
@@ -1623,6 +1740,31 @@ function renderSeal() {
   if ($("sealBar").hidden && !narrow.matches) { $("composer").hidden = true; $("composerText").value = ""; }
 }
 
+/** The bar's actions for the terminal in focus (a browser, the Linux window; the Mac window's bar has its own). */
+function renderBandActs(t) {
+  if (!WEB_PANES) return;
+  $("bandActs").hidden = false;
+  const set = (id, shown, name, title) => {
+    const b = $(id);
+    b.hidden = !shown;
+    if (!shown) return;
+    if (b.dataset.pic !== `${name}/${look}`) { b.innerHTML = barPicture(name, 17); b.dataset.pic = `${name}/${look}`; }
+    b.title = tip(title);
+  };
+  set("yaziBtn", !!t && !t.parent && t.status !== "exited", "yazi", "Open yazi Beside");
+  set("editorBtn", !!t && !!HOST?.openEditor, "code", "Open in VS Code");
+  set("viewBtn", !!t && !t.parent, t && isSimple(t) ? "terminal" : "record", t && isSimple(t) ? "Terminal View ⌘⇧E" : "Simple View ⌘⇧E");
+  set("splitRBtn", true, "splitright", "Split Right ⌘D");
+  set("splitDBtn", true, "splitdown", "Split Down ⌘⇧D");
+}
+if (WEB_PANES) {
+  $("yaziBtn").addEventListener("click", () => { if (current) openYazi(current); });
+  $("editorBtn").addEventListener("click", () => { if (current) HOST?.openEditor?.(current.workdir || current.cwd); });
+  $("viewBtn").addEventListener("click", () => toggleView());
+  $("splitRBtn").addEventListener("click", () => splitFocused("right"));
+  $("splitDBtn").addEventListener("click", () => splitFocused("bottom"));
+}
+
 function renderHead() {
   const t = current;
   const create = !t || creating;
@@ -1640,6 +1782,7 @@ function renderHead() {
   // The Mac window's toolbar: the same title (none while one is being made), and where the screen is, so the window
   // can hand the wheel over it to the page.
   tellWindow("head", { name: where, git, path: create ? "" : tilde(t.workdir || t.cwd), terminal: create ? "" : t.name, status: create ? null : t.status });
+  renderBandActs(create ? null : t);
   tellScreen();
   tellContext();
 }
@@ -1715,6 +1858,7 @@ function showCreate(folder = null) {
     ...list.filter((m) => !m.older).map(option), ...(older.length ? [h("optgroup", { label: "Older" }, ...older.map(option))] : []));
   $("model").value = chosen;
   $("model").disabled = list.length === 0;
+  renderProfileAndEffort();
   // one of three: angle-bracket marks (< > / <x>), not checkboxes ([ ] / [x] are for picking several)
   $("modes").replaceChildren(...MODES.map((m) => h("button", { class: pickedMode === m.id ? "on" : "", onclick: () => { pickedMode = m.id; remember("terminal.mode", m.id); showCreate($("cwd").value); } },
     classic() ? m.name : `${pickedMode === m.id ? "<x>" : "< >"} ${m.name}`)));
@@ -1727,6 +1871,25 @@ function showCreate(folder = null) {
   $("createStart").focus();
 }
 
+/** The panel's Profile (the agent's own sign-ins, docs/profiles-v0.md) and Effort (the levels of the model chosen). */
+const pickedProfiles = (() => { try { return JSON.parse(recall("terminal.profiles") || "{}"); } catch { return {}; } })();
+const pickedEfforts = (() => { try { return JSON.parse(recall("terminal.efforts") || "{}"); } catch { return {}; } })();
+function renderProfileAndEffort() {
+  const own = profiles[pickedAgent] ?? [];
+  $("profileField").hidden = own.length < 2;
+  $("profile").replaceChildren(...own.map((p) => h("option", { value: p.id }, p.name)));
+  $("profile").value = own.some((p) => p.id === pickedProfiles[pickedAgent]) ? pickedProfiles[pickedAgent] : (own[0]?.id ?? "");
+  const model = $("model").value;
+  const levels = model ? ((models[pickedAgent] ?? []).find((m) => m.id === model)?.efforts ?? []) : (efforts[pickedAgent] ?? []);
+  $("effortField").hidden = !levels.length;
+  $("effortLabel").textContent = label(`// ${({ codex: "Reasoning", opencode: "Variant", pi: "Thinking" })[pickedAgent] ?? "Effort"}`);
+  $("effort").replaceChildren(h("option", { value: "" }, "Default"), ...levels.map((l) => h("option", { value: l }, l === "xhigh" ? "XHigh" : l[0].toUpperCase() + l.slice(1))));
+  $("effort").value = levels.includes(pickedEfforts[pickedAgent]) ? pickedEfforts[pickedAgent] : "";
+}
+$("profile").addEventListener("change", () => { pickedProfiles[pickedAgent] = $("profile").value; remember("terminal.profiles", JSON.stringify(pickedProfiles)); });
+$("effort").addEventListener("change", () => { pickedEfforts[pickedAgent] = $("effort").value; remember("terminal.efforts", JSON.stringify(pickedEfforts)); });
+$("model").addEventListener("change", () => renderProfileAndEffort());
+
 async function start() {
   if ($("createStart").disabled) return;
   const cwd = $("cwd").value.trim();
@@ -1735,7 +1898,10 @@ async function start() {
   try {
     const grid = gridHere();
     const model = $("model").value;
-    const { terminal } = await api("POST", "/terminals", { harness: pickedAgent, cwd, mode: pickedMode, ...(model ? { model } : {}), ...grid });
+    const profile = $("profileField").hidden ? "" : $("profile").value;
+    const effort = $("effortField").hidden ? "" : $("effort").value;
+    const { terminal } = await api("POST", "/terminals", { harness: pickedAgent, cwd, mode: pickedMode, ...(model ? { model } : {}), ...(profile && profile !== "default" ? { profile } : {}),
+      ...(effort ? { effort } : {}), ...grid });
     remember("terminal.agent", pickedAgent);
     remember("terminal.cwd", cwd);
     unfold(terminal.cwd);
@@ -1749,11 +1915,11 @@ async function start() {
   }
 }
 
-async function resume(s) {
+async function resume(s, profile = null) {
   if (!RESUMABLE.has(s.harness) || opening) return;
-  // Already continued here: go to that terminal rather than making a second copy.
+  // Already continued here: go to that terminal rather than making a second copy (not when asked under another profile).
   const open = terminals.find((t) => t.status !== "exited" && (t.resumedFrom === s.id || t.agentSessionId === s.id));
-  if (open) { select(open.id); return; }
+  if (open && !profile) { select(open.id); return; }
   const name = s.title || "会话";
   if (!CHECKED.has(s.harness) && s.active) {
     const r = await ask({ title: `继续「${name}」？`, body: s.harness === "opencode" ? "此会话可能正在其他终端中运行。OpenCode 不支持分叉，继续将写入同一会话。" : "此会话可能正在其他终端中运行，继续将写入同一会话。", confirm: "Resume" });
@@ -1769,7 +1935,7 @@ async function resume(s) {
   showLoading(`Opening 「${name}」`);
   const cancelled = () => Object.assign(new Error(""), { cancelled: true });
   try {
-    let body = { harness: s.harness, cwd: s.cwd, agentSessionId: s.id, ...(s.title ? { title: s.title } : {}), mode: s.mode ?? pickedMode, ...gridHere() };
+    let body = { harness: s.harness, cwd: s.cwd, agentSessionId: s.id, ...(s.title ? { title: s.title } : {}), mode: s.mode ?? pickedMode, ...(profile ? { profile } : {}), ...gridHere() };
     let r = null;
     let gone0 = null;   // the first answer that its folder is gone: the folder it ran in, and what the Mac offered
     while (!r) {
@@ -1897,7 +2063,12 @@ async function sendComposer() {
 function shortcut(e) {
   if (HOST) {
     const mapped = hostKey(e);
-    if (mapped === "copy") return term.hasSelection() ? () => navigator.clipboard.writeText(term.getSelection()).catch(() => undefined) : null;
+    if (mapped === "copy") {
+      const selected = WEB_PANES ? screens.selection(focusPane) : term.hasSelection() ? term.getSelection() : "";
+      // Not over a terminal: the page's own selection (the simple view's text).
+      const text = selected || String(getSelection() ?? "");
+      return text ? () => navigator.clipboard.writeText(text).catch(() => undefined) : null;
+    }
     if (!mapped) return null;
     e = mapped;
   }
@@ -1912,6 +2083,7 @@ function shortcut(e) {
   if (key === "f" && !e.shiftKey) return focusSearch;
   if (key === "w" && !e.shiftKey && current && !creating) return () => closeTerminal(current);
   if (key === "v" && e.shiftKey) return () => openComposer();
+  if (WEB_PANES && key === "e" && e.shiftKey) return () => toggleView();
   // The panes, as iTerm2 and Warp have them: ⌘D beside, ⌘⇧D below, ⌘⌥ arrows to the next pane, ⌘⇧↩ the pane alone.
   if (PANES && key === "d" && !e.altKey) return () => splitFocused(e.shiftKey ? "bottom" : "right");
   if (PANES && e.key === "Enter" && e.shiftKey) return toggleZoom;
@@ -1978,6 +2150,7 @@ function setLook(next, accent) {
   if (lookOf(next) === look && accent === undefined) return;
   look = lookOf(next);
   drawLook();
+  screens?.relook();
   $("toasts").replaceChildren();
   for (const el of paneEls.values()) { el.querySelector(".pane-empty")?.remove(); el.querySelector(".away")?.remove(); }
   if (creating) showCreate($("cwd").value); else render();
@@ -2125,7 +2298,9 @@ async function refresh() {
   agents = r.agents ?? agents;
   models = r.models ?? models;
   modelDefaults = r.defaults ?? modelDefaults;
+  efforts = r.efforts ?? efforts;
   if (current) current = terminals.find((t) => t.id === current.id) ?? null;
+  screens?.update(terminals);
   if (PANES) {
     // A terminal closed while the page is open takes its pane with it; one gone before the page came (the service
     // restarted) leaves its pane, with the session to go on with. The panes note their sessions as they learn them.
@@ -2179,6 +2354,7 @@ if (PANES) {
   leaveDetached();
   new ResizeObserver(() => { renderPanes(); tellScreens(); }).observe($("stage"));
 }
+await loadProfiles();
 await refresh();
 settledOnce = true;
 await refreshSessions();

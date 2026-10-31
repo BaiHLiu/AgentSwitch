@@ -7,6 +7,7 @@
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="/ui/vendor/xterm.css">
 <link rel="stylesheet" href="/ui/terminal.css">
+<link rel="stylesheet" href="/ui/record.css">
 </head>
 <body>
 <header class="top" id="band">
@@ -15,6 +16,14 @@
   <span class="band-status" id="bandStatus"></span>
   <span class="grow"></span>
   <a class="console-link" href="/ui" id="consoleLink">Dispatch</a>
+  <!-- The browser's and the Linux window's: the Mac window's bar has these (docs/linux-app-v0.md). -->
+  <span class="band-acts" id="bandActs" hidden>
+    <button class="band-btn" id="yaziBtn" type="button" aria-label="Open yazi Beside" title="Open yazi Beside"></button>
+    <button class="band-btn" id="editorBtn" type="button" aria-label="Open in VS Code" title="Open in VS Code"></button>
+    <button class="band-btn" id="viewBtn" type="button" aria-label="Simple View" title="Simple View ⌘⇧E"></button>
+    <button class="band-btn" id="splitRBtn" type="button" aria-label="Split Right" title="Split Right ⌘D"></button>
+    <button class="band-btn" id="splitDBtn" type="button" aria-label="Split Down" title="Split Down ⌘⇧D"></button>
+  </span>
   <button class="band-new" id="newBtn" aria-label="New Terminal" title="New Terminal ⌘T"></button>
   <span class="band-tag" id="markTag"></span>
   <span class="band-mark" id="mark"></span>
@@ -49,9 +58,17 @@
         <div class="wordmark" id="wordmark"></div>
         <div class="label" data-label="New Terminal">// New Terminal</div>
         <div class="agents" id="agents"></div>
+        <label class="field" id="profileField" hidden>
+          <span class="label" data-label="Profile">// Profile</span>
+          <span class="select"><select id="profile"></select></span>
+        </label>
         <label class="field">
           <span class="label" data-label="Model">// Model</span>
           <span class="select"><select id="model"></select></span>
+        </label>
+        <label class="field" id="effortField" hidden>
+          <span class="label" id="effortLabel" data-label="Effort">// Effort</span>
+          <span class="select"><select id="effort"></select></span>
         </label>
         <label class="field">
           <span class="label" data-label="Folder">// Folder</span>
