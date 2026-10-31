@@ -259,7 +259,7 @@ enum DemoData {
             "  ~/Desktop/WorkSpace/Projects/AgentSwitch/docs/desi",
             "  gn/concepts/split.html",
         ]
-        let withLinks = UserDefaults.standard.string(forKey: "uiDemoScreen") == "terminallink"
+        let withLinks = ["terminallink", "terminalpath"].contains(UserDefaults.standard.string(forKey: "uiDemoScreen"))
         return (withLinks ? Array(lines.dropLast(3)) + links : lines).joined(separator: "\r\n")
     }()
 
@@ -459,7 +459,7 @@ enum DemoData {
         case "mac", "offlinemac": return [.mac]
         case "tasks", "search": return [.tasks]
         case "sessions": return [.sessions]
-        case "transcript": return sessions.first.map { [.sessions, .session($0)] } ?? [.sessions]
+        case "transcript", "transcriptfiles": return sessions.first.map { [.sessions, .session($0)] } ?? [.sessions]
         default: return []
         }
     }

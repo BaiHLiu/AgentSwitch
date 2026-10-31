@@ -13,6 +13,7 @@ import { ensureLocalToken, LocalAuth } from "../src/api/localAuth.js";
 import { buildDaemon, listenLocal, type DaemonConfig } from "../src/daemon.js";
 import { remoteAllowed } from "../src/remote/routes.js";
 import { markRemote } from "../src/core/caller.js";
+import { registerDevice } from "../src/remote/devices.js";
 import { folderFiles, matchFiles } from "../src/terminals/files.js";
 import { answerText, askQuestions, checkPicks, cleanTitle, meaningfulTitle, permissionSummary, piTool, safeCut, TerminalHost, terminalName, type Launcher, type TerminalEvent, compactingOnScreen, workingOnScreen, choicesOnScreen, printedSince, commandRows, inputEmpty, screenRows, modeOnScreen, suggestionOnScreen, type ScreenRow } from "../src/terminals/host.js";
 import { DEFAULT_STYLE, parseItermFont, styleFromItermProfile } from "../src/terminals/style.js";
@@ -1024,6 +1025,44 @@ describe("terminals over HTTP", () => {
     expect((await call("GET", `/terminals/${id}`)).json.terminal.sizedBy ?? null).toBeNull();
   });
 
+  it("a record's screen is told the session the terminal goes to at once, and its record as soon as its file is there (2026-10-16)", async () => {
+    // User: cc和codex就修一下有的时候消息同步不及时的问题. A screen learnt a new session (a `/clear`, the first message of
+    // a terminal) only from the terminals' list, read every 3–4 s, and the service looked for its file every 2 s.
+    const home = mkdtempSync(join(tmpdir(), "agentswitch-terminals-"));
+    const cwd = mkdtempSync(join(tmpdir(), "agentswitch-terminal-cwd-"));
+    const records = mkdtempSync(join(tmpdir(), "agentswitch-records-"));
+    const project = join(records, "claude", "-w");
+    mkdirSync(project, { recursive: true });
+    let base = "";
+    const cfg: DaemonConfig = { home, targetsPath: TARGETS_PATH, port: 0, router: "echo", executors: "echo", browser: false, quotaTtlMs: 1000, maxTasks: 4, opencodePort: 0, opencodeBinary: "", watchSessions: true };
+    const daemon = buildDaemon(cfg, { terminalLauncher: fakeLauncher(() => base, true), sessionSources: { claudeProjects: join(records, "claude"), codexSessions: join(records, "codex"), opencodeDb: join(records, "none.db"), excluded: [] } });
+    const token = ensureLocalToken(home);
+    const port = await new Promise<number>((done) => {
+      const server = listenLocal(daemon, 0, (info: AddressInfo) => done(info.port), new LocalAuth(token));
+      closers.push(() => { server.close(); daemon.close(); });
+    });
+    daemon.setLocalPort(port);
+    base = `http://127.0.0.1:${port}`;
+    const created = await fetch(`${base}/terminals`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ harness: "claude-code", cwd }) });
+    const id = ((await created.json()) as { terminal: { id: string } }).terminal.id;
+    const record = follow(base, token, id, "?view=record");
+    const host = daemon.terminals!;
+    const hookToken = (host as unknown as { sessions: Map<string, { hookToken: string }> }).sessions.get(id)!.hookToken;
+    await until(() => record.some((e) => e.event === "activity"));
+    const file = join(project, "b2.jsonl");
+    const said = Date.now();
+    await host.hook(id, hookToken, { event: "SessionStart", payload: { session_id: "b2", transcript_path: file } });
+    await until(() => record.some((e) => e.event === "record" && e.data.session === "b2"), 1500);
+    expect(Date.now() - said).toBeLessThan(1000);
+    expect(record.find((e) => e.event === "record" && e.data.session === "b2")!.data.rev).toBe("");
+    // Its first message: the record follows within a look or two, not at the search's next turn.
+    await new Promise((r) => setTimeout(r, 100));
+    const wrote = Date.now();
+    writeFileSync(file, JSON.stringify({ type: "user", uuid: "u1", sessionId: "b2", cwd, timestamp: new Date().toISOString(), message: { role: "user", content: "第一句" } }) + "\n");
+    await until(() => record.some((e) => e.event === "record" && e.data.session === "b2" && e.data.rev !== ""), 1500);
+    expect(Date.now() - wrote).toBeLessThan(900);
+  });
+
   it("Claude Code's prompt suggestion is read off its screen while it rests: dim words in its empty input", async () => {
     // 2026-10-07, user: 有的时候cli会进行回复预测，这个也做出来，按tap补全. The shape is the real screen's (2.1.292).
     const dim = (text: string, from = 2): ScreenRow => ({ text, dim: [...text].map((_, x) => x >= from) });
@@ -1555,14 +1594,79 @@ describe("terminals over HTTP", () => {
     // Until 2026-10-08 this went through the sealer (the default); an older phone still says `seal`, which is not read.
     expect(await (await req(`/terminals/${id}/input`, { text: "pw hunter2" })).json()).toEqual({ ok: true, sealed: 0, attached: 0 });
     expect(await (await req(`/terminals/${id}/input`, { text: "again hunter2", seal: true })).json()).toEqual({ ok: true, sealed: 0, attached: 0 });
-    // A phone sends its files; it does not point at the Mac's.
+    // A phone points at the Mac's files only inside its scope (docs/files-v0.md §7.5): its home folder by default,
+    // and this temporary folder is not in it.
     writeFileSync(join(cwd, "notes.txt"), "x");
-    expect((await req(`/terminals/${id}/input`, { text: "看 [File #1]", seal: false, attachments: [{ token: "[File #1]", path: join(cwd, "notes.txt") }] })).status).toBe(403);
+    const outside = await req(`/terminals/${id}/input`, { text: "看 [File #1]", seal: false, attachments: [{ token: "[File #1]", path: join(cwd, "notes.txt") }] });
+    expect(outside.status).toBe(403);
+    expect(await outside.json()).toMatchObject({ code: "scope" });
     await until(() => text(events).includes("got: pw hunter2") && text(events).includes("got: again hunter2"));
     expect(await (await req(`/terminals/${id}/input`, { text: "ls -la", seal: false })).json()).toEqual({ ok: true, sealed: 0, attached: 0 });
     await until(() => text(events).includes("got: ls -la"));
     expect(sealerAsked).toBe(0);
     expect(text(events)).not.toContain(TOKEN);
+  });
+
+  it("opens a terminal in its folder as the disk spells it, and lists it so (2026-10-17: one folder showed as two)", async () => {
+    const home = mkdtempSync(join(tmpdir(), "agentswitch-terminals-"));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "agentswitch-terminal-cwd-")));
+    mkdirSync(join(root, "Pi"));
+    const cfg: DaemonConfig = { home, targetsPath: TARGETS_PATH, port: 0, router: "echo", executors: "echo", browser: false, quotaTtlMs: 1000, maxTasks: 4, opencodePort: 0, opencodeBinary: "" };
+    const daemon = buildDaemon(cfg, { terminalLauncher: fakeLauncher(() => "http://127.0.0.1:9", false) });
+    closers.push(() => daemon.close());
+    // A Mac's disk ignores case: `pi` is `Pi`. A disk that tells them apart has no `pi` here, and the terminal is refused.
+    const asked = await daemon.api.request("/terminals", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ harness: "codex", cwd: join(root, "pi") }) });
+    if (!existsSync(join(root, "pi"))) { expect(asked.status).toBe(400); return; }
+    const made = (await asked.json()) as { terminal: { id: string; cwd: string } };
+    expect(made.terminal.cwd).toBe(join(root, "Pi"));
+    const listed = (await (await daemon.api.request("/terminals")).json()) as { terminals: { id: string; cwd: string; workdir: string }[] };
+    expect(listed.terminals.find((t) => t.id === made.terminal.id)).toMatchObject({ cwd: join(root, "Pi"), workdir: join(root, "Pi") });
+  });
+
+  it("a paired device gives a path of this node's in a reply only inside its scope, and only while this node lets paired devices read files (docs/files-v0.md §7.5)", async () => {
+    const home = mkdtempSync(join(tmpdir(), "agentswitch-terminals-"));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "agentswitch-terminal-cwd-")));
+    const cfg: DaemonConfig = { home, targetsPath: TARGETS_PATH, port: 0, router: "echo", executors: "echo", browser: false, quotaTtlMs: 1000, maxTasks: 4, opencodePort: 0, opencodeBinary: "" };
+    const daemon = buildDaemon(cfg, { terminalLauncher: fakeLauncher(() => "http://127.0.0.1:9", false) });
+    closers.push(() => daemon.close());
+    const { device } = registerDevice(daemon.store, { name: "iPhone", platform: "ios" });
+    const phone = markRemote({}, { deviceId: device.id });
+    const json = (method: string, body: unknown) => ({ method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const req = (path: string, body: unknown) => daemon.api.request(path, json("POST", body), phone);
+    const id = ((await (await req("/terminals", { harness: "codex", cwd })).json()) as { terminal: { id: string } }).terminal.id;
+    const events: TerminalEvent[] = [];
+    daemon.terminals!.subscribe(id, null, (e) => events.push(e));
+    await until(() => text(events).includes("fake agent ready"));
+    writeFileSync(join(cwd, "notes.txt"), "x");
+    const give = () => req(`/terminals/${id}/input`, { text: "看 [File #1]", seal: false, attachments: [{ token: "[File #1]", path: join(cwd, "notes.txt") }] });
+    // The device's scope is set on this node (its own listener): this folder only.
+    const set = await daemon.app.request(`/devices/${device.id}/files`, json("PUT", { mode: "folders", folders: [cwd] }));
+    expect(await set.json()).toEqual({ ok: true, files: { mode: "folders", folders: [cwd] } });
+    expect(((await (await daemon.app.request("/devices")).json()) as { id: string; files: unknown }[]).find((d) => d.id === device.id)?.files).toEqual({ mode: "folders", folders: [cwd] });
+    expect(await (await give()).json()).toMatchObject({ ok: true, attached: 1 });
+    await until(() => text(events).includes(`got: 看 ${join(cwd, "notes.txt")}`));
+    // Read through the Files routes as well, by the same scope.
+    expect((await daemon.api.request(`/files?path=${encodeURIComponent(cwd)}`, {}, phone)).status).toBe(200);
+    expect((await daemon.api.request(`/files?path=${encodeURIComponent(tmpdir())}`, {}, phone)).status).toBe(200);
+    expect((await daemon.api.request(`/files/stat?path=${encodeURIComponent(home)}`, {}, phone)).status).toBe(403);
+    // Off on this node: neither.
+    expect(await (await daemon.app.request("/settings/mesh", json("PUT", { files: false }))).json()).toEqual({ keyboard: true, files: false, changes: true });
+    const off = await give();
+    expect(off.status).toBe(403);
+    expect(await off.json()).toMatchObject({ code: "files-off" });
+    expect((await daemon.api.request(`/files?path=${encodeURIComponent(cwd)}`, {}, phone)).status).toBe(403);
+    // This node's own screens still may, and never AgentSwitch's own credential places.
+    expect((await daemon.api.request(`/files?path=${encodeURIComponent(cwd)}`)).status).toBe(200);
+    writeFileSync(join(home, "local-token"), "t");
+    const locked = await daemon.api.request(`/terminals/${id}/input`, json("POST", { text: "看 [File #1]", seal: false, attachments: [{ token: "[File #1]", path: join(home, "local-token") }] }));
+    expect(locked.status).toBe(403);
+    expect(await locked.json()).toMatchObject({ code: "locked" });
+    // A device removed forgets its scope; a bad scope is refused.
+    expect((await daemon.app.request(`/devices/${device.id}/files`, json("PUT", { mode: "folders", folders: [join(cwd, "notes.txt")] }))).status).toBe(400);
+    expect((await daemon.app.request(`/devices/${device.id}`, { method: "DELETE" })).status).toBe(200);
+    expect((await daemon.app.request(`/devices/${device.id}/files`, json("PUT", { mode: "all" }))).status).toBe(404);
+    expect(remoteAllowed("PUT", `/devices/${device.id}/files`)).toBe(false);
+    expect(((await (await daemon.app.request("/node")).json()) as { has: string[] }).has).toContain("files");
   });
 
   it("another node's real terminal screen types with keystrokes as they are, unless this node says paired nodes may not (docs/mesh-v0.md §10)", async () => {
@@ -1581,7 +1685,7 @@ describe("terminals over HTTP", () => {
     await until(() => text(events).includes("got: keys from afar"));
     // Set on the node itself: the local listener's route, which the remote list does not name.
     const set = await daemon.app.request("/settings/mesh", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ keyboard: false }) });
-    expect(await set.json()).toEqual({ keyboard: false });
+    expect(await set.json()).toEqual({ keyboard: false, files: true, changes: true });
     expect(remoteAllowed("PUT", "/settings/mesh")).toBe(false);
     const refused = await req(`/terminals/${id}/write`, { data: "x" });
     expect(refused.status).toBe(403);
@@ -1875,6 +1979,78 @@ describe("terminal pieces", () => {
     expect(host.get(info.id)!.status).toBe("waiting");
     await host.hook(info.id, token, { event: "PiAgentStart", payload: {} });
     expect(host.get(info.id)!.status).toBe("working");
+  });
+
+  it("keeps the file its agent's hooks name for the session, for that session only", async () => {
+    const host = new TerminalHost({ launcher: fakeLauncher(() => "http://127.0.0.1:9", true) });
+    closers.push(() => host.closeAll());
+    const info = await host.spawn({ harness: "claude-code", cwd: tmpdir() });
+    const token = (host as unknown as { sessions: Map<string, { hookToken: string }> }).sessions.get(info.id)!.hookToken;
+    expect(host.recordFileOf(info.id)).toBeNull();
+    await host.hook(info.id, token, { event: "SessionStart", payload: { session_id: "a1", transcript_path: "/u/.claude/projects/-w/a1.jsonl" } });
+    expect(host.recordFileOf(info.id)).toBe("/u/.claude/projects/-w/a1.jsonl");
+    // A file not named for the session, or not a path: not taken.
+    await host.hook(info.id, token, { event: "UserPromptSubmit", payload: { session_id: "a1", transcript_path: "/etc/passwd" } });
+    await host.hook(info.id, token, { event: "UserPromptSubmit", payload: { session_id: "a1", transcript_path: "a1.jsonl" } });
+    expect(host.recordFileOf(info.id)).toBe("/u/.claude/projects/-w/a1.jsonl");
+    // Another session (`/clear`) with no file named: none.
+    await host.hook(info.id, token, { event: "SessionStart", payload: { session_id: "b2" } });
+    expect(host.get(info.id)?.agentSessionId).toBe("b2");
+    expect(host.recordFileOf(info.id)).toBeNull();
+  });
+
+  it("says what a terminal is writing to the screens that show its record, and stops at rest", async () => {
+    const host = new TerminalHost({ launcher: fakeLauncher(() => "http://127.0.0.1:9", true) });
+    closers.push(() => host.closeAll());
+    const info = await host.spawn({ harness: "pi", cwd: tmpdir() });
+    const token = (host as unknown as { sessions: Map<string, { hookToken: string }> }).sessions.get(info.id)!.hookToken;
+    const events: TerminalEvent[] = [];
+    host.subscribe(info.id, null, (e) => events.push(e));
+    const writings = () => events.filter((e): e is Extract<TerminalEvent, { type: "writing" }> => e.type === "writing").map((e) => e.writing);
+    await host.hook(info.id, token, { event: "PiAgentStart", payload: {} });
+    await host.hook(info.id, token, { event: "PiWriting", payload: { text: "先看", thinking: true } });
+    await host.hook(info.id, token, { event: "PiWriting", payload: { text: "终端" } });
+    await host.hook(info.id, token, { event: "PiWriting", payload: { text: "终端" } });   // the same again: nothing new
+    expect(host.writingOf(info.id)).toEqual({ text: "终端" });
+    await host.hook(info.id, token, { event: "PiWriting", payload: { done: true } });
+    await host.hook(info.id, token, { event: "PiWriting", payload: { text: "又一段" } });
+    // At rest it writes nothing.
+    await host.hook(info.id, token, { event: "PiAgentEnd", payload: {} });
+    expect(writings()).toEqual([{ text: "先看", thinking: true }, { text: "终端" }, null, { text: "又一段" }, null]);
+    expect(host.writingOf(info.id)).toBeNull();
+  });
+
+  it("pi's extension says what pi is writing, at most every 150 ms, and that it is done when its message ends", async () => {
+    const { default: extension } = await import("../src/terminals/piExtension.js");
+    const handlers = new Map<string, (event: Record<string, unknown>, ctx?: object) => unknown>();
+    extension({ on: (event, handler) => handlers.set(event, handler) });
+    const calls: { event: string; payload: Record<string, unknown> }[] = [];
+    const server = createServer((req, res) => {
+      let body = "";
+      req.on("data", (d) => { body += d; });
+      req.on("end", () => { calls.push(JSON.parse(body)); res.setHeader("content-type", "application/json"); res.end("{}"); });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    closers.push(() => server.close());
+    const saved = { ...process.env };
+    closers.push(() => { process.env = saved; });
+    Object.assign(process.env, { AGENTSWITCH_TERMINAL_URL: `http://127.0.0.1:${(server.address() as { port: number }).port}`, AGENTSWITCH_TERMINAL_ID: "p1", AGENTSWITCH_TERMINAL_HOOK_TOKEN: "tok" });
+    const update = (type: string, delta: string, contentIndex = 0) => handlers.get("message_update")!({ type: "message_update", assistantMessageEvent: { type, contentIndex, delta } });
+    update("thinking_delta", "先想", 0);
+    update("text_delta", "终端", 1);
+    update("text_delta", "怎样", 1);
+    update("toolcall_delta", "{", 2);   // not text: nothing
+    await until(() => calls.some((c) => c.event === "PiWriting" && c.payload.text === "终端怎样"));
+    const writing = calls.filter((c) => c.event === "PiWriting");
+    // The first piece at once, the rest together once 150 ms are past.
+    expect(writing.map((c) => c.payload)).toEqual([{ text: "先想", thinking: true }, { text: "终端怎样" }]);
+    handlers.get("message_end")!({ type: "message_end" });
+    await until(() => calls.some((c) => c.event === "PiWriting" && c.payload.done === true));
+    // A message that wrote nothing says nothing at its end.
+    const before = calls.length;
+    handlers.get("message_end")!({ type: "message_end" });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(calls.length).toBe(before);
   });
 
   it("pi's extension blocks what the service refuses, and everything when the service does not answer", async () => {

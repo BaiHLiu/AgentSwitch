@@ -23,25 +23,31 @@ struct NodesView: View {
                 Toggle("Allow Pairing", isOn: Binding(get: { model.remoteEnabled }, set: { model.setRemoteAccess($0) }))
                 Toggle("Paired Nodes May Type", isOn: Binding(get: { store.mesh?.keyboard ?? true }, set: { on in Task { await store.setKeyboard(on, model) } }))
                     .disabled(store.mesh == nil)
+                Toggle("Paired Nodes May Read Files", isOn: Binding(get: { store.mesh?.files ?? true }, set: { on in Task { await store.setFiles(on, model) } }))
+                    .disabled(store.mesh == nil)
+                // Changing them is a step past reading them: off while reading is (docs/files-v0.md §12.5).
+                Toggle("Paired Nodes May Change Files", isOn: Binding(get: { (store.mesh?.files ?? true) && (store.mesh?.changes ?? true) }, set: { on in Task { await store.setChanges(on, model) } }))
+                    .disabled(store.mesh == nil || !(store.mesh?.files ?? true))
             } header: {
                 SectionLabel("This Mac")
             } footer: {
-                Footer("Allow Pairing：手机和其他节点能否连接这台 Mac。Paired Nodes May Type：其他节点能否用键盘直接在这台 Mac 的终端里输入；关闭后它们只能使用回复框和指定按键。")
+                Footer("Allow Pairing：手机和其他节点能否连接这台 Mac。Paired Nodes May Type：其他节点能否用键盘直接在这台 Mac 的终端里输入；关闭后它们只能使用回复框和指定按键。Paired Nodes May Read Files：手机和其他节点能否在文件栏中浏览这台 Mac 的文件，各自的范围在下面每一行的 Files 中设置。Paired Nodes May Change Files：它们能否在读得到的范围内新建、改名、移到废纸篓，以及从手机传文件进来；AgentSwitch 自己的文件夹不会被改动。")
             }
             Section {
                 if rows.isEmpty {
                     Text(store.unsupported ? "内置服务版本较旧，不支持节点。" : "No Paired Nodes").foregroundStyle(.secondary)
                 }
                 ForEach(rows) { row in
-                    NodeRowView(row: row, busy: store.busy,
+                    NodeRowView(row: row, busy: store.busy, filesOn: store.mesh?.files ?? true,
                                 setUses: { on in on ? (linking = true) : stopUsing(row) },
                                 setUsedBy: { on in on ? navigation.select(.pairing) : stopBeingUsed(row) },
+                                setScope: { scope in if let device = row.device { Task { await store.setScope(scope, of: device, model) } } },
                                 remove: { removing = row })
                 }
             } header: {
                 SectionLabel("Nodes")
             } footer: {
-                Footer("每一行是一个已配对的节点或手机，两个方向各有一个开关。关闭立即生效；重新打开需要再次配对该方向。")
+                Footer("每一行是一个已配对的节点或手机，两个方向各有一个开关。关闭立即生效；重新打开需要再次配对该方向。Files：它在文件栏中能浏览和附加这台 Mac 的哪些文件。范围只限制其他设备在文件栏中能浏览和附加的文件。配对的设备仍可在终端中让 agent 读取其他位置。")
             }
             Section {
                 HStack(spacing: 8) {
@@ -109,8 +115,11 @@ struct NodesView: View {
 private struct NodeRowView: View {
     let row: NodeRow
     let busy: Bool
+    /// `Paired Nodes May Read Files`: off, the scope stays as it is and cannot be changed.
+    var filesOn = true
     let setUses: (Bool) -> Void
     let setUsedBy: (Bool) -> Void
+    var setScope: (FileScope) -> Void = { _ in }
     let remove: () -> Void
 
     var body: some View {
@@ -128,6 +137,12 @@ private struct NodeRowView: View {
                 direction("This Mac Uses It", on: row.uses, set: setUses)
             }
             direction("It Uses This Mac", on: row.usedBy, set: setUsedBy)
+            // What of this Mac's files it may read (docs/files-v0.md §7.5): a row only while it uses this Mac.
+            if let device = row.device, device.files != nil {
+                FilesScopeRows(scope: device.files ?? .home, busy: busy, set: setScope)
+                    .disabled(!filesOn || busy)
+                    .opacity(filesOn ? 1 : 0.5)
+            }
         }
         .padding(.vertical, 2)
     }
@@ -219,5 +234,67 @@ struct PairWithLinkSheet: View {
         guard head.count == 16 else { return fp }
         let group = { (i: Int) in String(head[i..<(i + 4)]) }
         return "\(group(0)) \(group(4)) · \(group(8)) \(group(12))"
+    }
+}
+
+/// `Files  [Home Folder ▾]`, and under `Selected Folders` each folder with `−`, then `Add Folder…`.
+private struct FilesScopeRows: View {
+    let scope: FileScope
+    let busy: Bool
+    let set: (FileScope) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Text("Files").font(.callout).foregroundStyle(.secondary)
+                Spacer(minLength: 12)
+                Picker("Files", selection: Binding(get: { scope.mode }, set: { choose($0) })) {
+                    ForEach(FileScope.Mode.allCases, id: \.self) { Text(FileScope.word($0)).tag($0) }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+            if scope.mode == .folders {
+                ForEach(scope.folders, id: \.self) { folder in
+                    HStack(spacing: 6) {
+                        Image(systemName: "folder").foregroundStyle(.secondary)
+                        Text(DisplayPath.short(folder, home: NSHomeDirectory())).font(.callout.monospaced()).lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 8)
+                        Button { set(FileScope(mode: .folders, folders: scope.folders.filter { $0 != folder })) } label: { Image(systemName: "minus") }
+                            .buttonStyle(.borderless)
+                            .help("Remove")
+                    }
+                    .padding(.leading, 16)
+                }
+                Button("Add Folder…") {
+                    let more = Self.chooseFolders()
+                    if !more.isEmpty { set(FileScope(mode: .folders, folders: scope.folders + more.filter { !scope.folders.contains($0) })) }
+                }
+                .buttonStyle(.link)
+                .padding(.leading, 16)
+            }
+        }
+        .padding(.leading, 34)
+    }
+
+    /// A mode chosen; `Selected Folders` with none yet asks for them first (cancelled: nothing changes).
+    private func choose(_ mode: FileScope.Mode) {
+        guard mode != scope.mode else { return }
+        if mode == .folders {
+            let chosen = scope.folders.isEmpty ? Self.chooseFolders() : scope.folders
+            guard !chosen.isEmpty else { return }
+            return set(FileScope(mode: .folders, folders: chosen))
+        }
+        set(FileScope(mode: mode))
+    }
+
+    private static func chooseFolders() -> [String] {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        panel.prompt = "Allow"
+        guard panel.runModal() == .OK else { return [] }
+        return panel.urls.map(\.path)
     }
 }

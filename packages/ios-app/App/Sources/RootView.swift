@@ -102,6 +102,10 @@ struct MainTabs: View {
                 .tabItem { Label { Text("Terminals") } icon: { look.isClassic ? Image(systemName: "terminal") : Image(uiImage: TabIcons.shaded(.terminals, on: model.tab == .terminals, dark: scheme == .dark)) } }
                 .badge(model.terminals.waiting)
                 .tag(MainTab.terminals)
+            // The Mac's files (docs/files-v0.md §5): after the terminals, which are what its files are given to.
+            FilesTab()
+                .tabItem { Label { Text("Files") } icon: { look.isClassic ? Image(systemName: "folder") : Image(uiImage: TabIcons.shaded(.folder, on: model.tab == .files, dark: scheme == .dark)) } }
+                .tag(MainTab.files)
             BrowserTab()
                 .tabItem { Label { Text("Browser") } icon: { look.isClassic ? Image(systemName: "globe") : Image(uiImage: TabIcons.shaded(.browser, on: model.tab == .browser, dark: scheme == .dark)) } }
                 .badge(model.browser.waiting)

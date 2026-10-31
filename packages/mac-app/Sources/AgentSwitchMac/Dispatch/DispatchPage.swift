@@ -48,6 +48,13 @@ struct DispatchPage: View {
             model.focusInput()
         }
         .onChange(of: window.requestedTask) { openRequested() }
+        // The Files column's `Add to Reply` on this page: the task's attachments.
+        .onChange(of: window.givenFiles) {
+            let urls = window.takeGivenFiles()
+            guard !urls.isEmpty else { return }
+            model.attach(urls: urls)
+            model.focusInput()
+        }
         // Read marks only for the page in use: shown, in the key window (not under Terminals).
         .onChange(of: window.windowKey && window.windowVisible && window.dispatchShown, initial: true) { _, key in model.windowKey = key }
         .onChange(of: window.editingText, initial: true) { _, editing in model.editingText = editing }

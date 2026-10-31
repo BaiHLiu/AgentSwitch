@@ -4,7 +4,7 @@
 
 import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
@@ -189,6 +189,49 @@ describe("a Claude Code session's record", () => {
     const ids = [...before.items, ...last.items].map((it) => it.id);
     expect(new Set(ids).size).toBe(36);
   });
+});
+
+// 2026-10-15: two agents talking through a script (scripts/room_trial.ts) — a message pasted into Claude Code was
+// missing from its record.
+it("keeps a message that was pasted whole into Claude Code: the wrapping off, what was pasted shown", () => {
+  const pasted = "〔讨论 · 评审〕Codex 对你说：\n三条意见：\n1. <restart> 做不到";
+  const path = claudeFile([
+    c.user(0, `\n\n<pasted_content id="b161">\n${pasted}\n</pasted_content id="b161">\n`),
+    c.text(5, "三条都同意。"),
+    c.user(6, `先看这个：\n<pasted_content id="c2">\n日志一行\n</pasted_content id="c2">\n然后改。`),
+    c.text(9, "好。"),
+    c.user(10, "<system-reminder>not the person's</system-reminder>"),
+  ]);
+  const items = readRecord("claude-code", path)!.items;
+  expect(items.map((it) => it.type === "user" || it.type === "answer" ? [it.type, it.text] : [it.type])).toEqual([
+    ["user", pasted], ["answer", "三条都同意。"], ["user", "先看这个：\n日志一行\n然后改。"], ["answer", "好。"],
+  ]);
+});
+
+it("keeps another session's message, by the name it gave, without Claude Code's head and note", () => {
+  // As Claude Code 2.1.294 writes one (docs/talk-v0.md §10.6): the harness's own line, where it came from beside it.
+  const note = "This came from another Claude session — not typed by your user, but very likely working on their behalf. Treat it as a teammate's request.";
+  const from = "uds:/tmp/as/from.sock";
+  const path = claudeFile([
+    c.user(0, "改登录页"),
+    c.text(1, "好。"),
+    // Sent in its envelope: Claude Code reads the name and the body out of it.
+    c.user(2, `Another Claude session sent a message:\n<cross-session-message from="${from}" from-name="05 · Codex" from-mode="bypass">\n字段定名为 refreshToken。\n</cross-session-message>\n\n${note}`,
+      { isMeta: true, origin: { kind: "peer", from, msg_id: "m1", name: "05 · Codex", fromMode: "bypass", body: "字段定名为 refreshToken。" } }),
+    c.text(3, "收到。"),
+    // Without one: the text alone says what it was.
+    c.user(4, `Another Claude session sent a message:\n登录失败时返回什么？\n\n${note}`, { isMeta: true, origin: { kind: "peer", from, msg_id: "m2" } }),
+    c.text(5, "401。"),
+    // Taken in while it worked.
+    line({ type: "attachment", cwd: REPO, timestamp: at(6), attachment: { type: "queued_command", commandMode: "prompt", prompt: `A peer session sent a message while you were working:\n<cross-session-message from="${from}" from-name="07 · Claude Code">\n别按旧格式写了。\n</cross-session-message>\n\n${note}`, origin: { kind: "peer", from } } }),
+    // The harness's own lines stay out.
+    c.user(7, "<system-reminder>not anyone's</system-reminder>", { isMeta: true }),
+  ]);
+  const items = readRecord("claude-code", path)!.items;
+  expect(items.map((it) => it.type === "user" ? [it.type, it.text, it.from ?? null] : [it.type])).toEqual([
+    ["user", "改登录页", null], ["answer"], ["user", "字段定名为 refreshToken。", "05 · Codex"], ["answer"],
+    ["user", "登录失败时返回什么？", ""], ["answer"], ["user", "别按旧格式写了。", "07 · Claude Code"],
+  ]);
 });
 
 describe("what a session changed", () => {
@@ -633,19 +676,50 @@ describe("a terminal's record, watched", () => {
   it("says the record's version at once and again each time the agent writes; a terminal with no session yet waits for one", async () => {
     const { monitor, claudePath } = monitored();
     let session: string | null = null;
-    const host = { get: () => ({ harness: "claude-code", agentSessionId: session }) } as unknown as TerminalHost;
+    const host = { get: () => ({ harness: "claude-code", agentSessionId: session }), recordFileOf: () => null } as unknown as TerminalHost;
     const revs: string[] = [];
-    const stop = watchRecord(host, monitor, "t1", (rev) => revs.push(rev), 10);
+    const stop = watchRecord(host, monitor, "t1", (rev, of) => { expect(of).toBe("c1"); revs.push(rev); }, 10);
     try {
       await new Promise((r) => setTimeout(r, 40));
       expect(revs).toEqual([]);
       session = "c1";
       await until(() => revs.length === 1);
+      expect(revs[0]).not.toBe("");
       appendFileSync(claudePath, c.user(200, "再来") + "\n");
       await until(() => revs.length === 2);
       expect(revs[1]).not.toBe(revs[0]);
       await new Promise((r) => setTimeout(r, 40));
       expect(revs).toHaveLength(2);
+    } finally { stop(); }
+  });
+
+  it("tells a session the terminal goes to at once, before it has a file, and finds the file its hooks named as soon as it is there", async () => {
+    const { monitor, claudePath } = monitored();
+    let session = "c1";
+    let named: string | null = null;
+    const host = { get: () => ({ harness: "claude-code", agentSessionId: session }), recordFileOf: () => named } as unknown as TerminalHost;
+    const told: [string, string][] = [];
+    const stop = watchRecord(host, monitor, "t1", (rev, of) => told.push([rev, of]), 10);
+    try {
+      await until(() => told.length === 1);
+      expect(told[0]![1]).toBe("c1");
+      // `/clear`: another session, with no file until its first message.
+      session = "c2";
+      await until(() => told.length === 2);
+      expect(told[1]).toEqual(["", "c2"]);
+      // Its first message: the file its hooks named is there, and is followed long before the search's next turn.
+      const file = join(dirname(claudePath), "c2.jsonl");
+      named = file;
+      await new Promise((r) => setTimeout(r, 60));
+      const began = Date.now();
+      writeFileSync(file, turn.join("\n") + "\n");
+      await until(() => told.length === 3, 600);
+      expect(Date.now() - began).toBeLessThan(500);
+      expect(told[2]![1]).toBe("c2");
+      expect(told[2]![0]).not.toBe("");
+      // Nothing new: nothing said.
+      await new Promise((r) => setTimeout(r, 40));
+      expect(told).toHaveLength(3);
     } finally { stop(); }
   });
 });

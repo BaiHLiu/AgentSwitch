@@ -55,14 +55,31 @@ export class ExitPool {
     // Without a proxy of its own (a profile's browser, §5.5): the same forwarder with nothing behind it — what goes
     // through it leaves as this Mac does, and it keeps the forwarder's rules (AgentSwitch's own ports are refused).
     const setting = proxy ? JSON.stringify(checkedProxy(proxy)) : "direct";
-    let exit = this.exits.get(key);
-    if (exit?.setting !== setting) {
-      await exit?.forwarder.stop();
-      const upstream = proxy ? await this.upstream(checkedProxy(proxy)) : null;
-      exit = { setting, upstream, forwarder: new Forwarder({ ownPorts: this.opts.ownPorts, upstream: () => upstream, ...(pin ? { pin } : {}), ...(this.opts.log ? { log: this.opts.log } : {}) }) };
-      this.exits.set(key, exit);
-    }
-    return exit.forwarder.start();
+    const was = this.exits.get(key);
+    if (was?.setting === setting) return was.forwarder.start();
+    const upstream = proxy ? await this.upstream(checkedProxy(proxy)) : null;
+    // A proxy changed or saved again keeps the forwarder — its port and its password — and only what is behind it
+    // changes: what already runs under the profile was given that address, and goes the new way at its next request
+    // (2026-10-18: a new forwarder on another port left a running terminal with nowhere to send anything).
+    const forwarder = was?.forwarder ?? this.forwarder(key, pin);
+    this.exits.set(key, { setting, upstream, forwarder });
+    return forwarder.start();
+  }
+
+  /** `key`'s forwarder: it sends on to the proxy `key` has now, and lets nothing out once `key` has none. `pin`: the
+   *  port and password a held terminal was given before the service restarted (terminal-v0 §10). */
+  private forwarder(key: string, pin?: { readonly port: number; readonly password: string }): Forwarder {
+    const forwarder: Forwarder = new Forwarder({
+      ownPorts: this.opts.ownPorts,
+      upstream: () => {
+        const exit = this.exits.get(key);
+        if (exit?.forwarder !== forwarder) throw new Error("this profile's proxy was taken away");
+        return exit.upstream;
+      },
+      ...(pin ? { pin } : {}),
+      ...(this.opts.log ? { log: this.opts.log } : {}),
+    });
+    return forwarder;
   }
 
   /** Where traffic through `key`'s proxy comes out, asked now. Throws with the reason when it does not come out.

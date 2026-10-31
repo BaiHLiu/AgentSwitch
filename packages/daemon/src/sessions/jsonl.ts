@@ -51,6 +51,13 @@ export const time = (v: unknown): number => {
   return Number.isFinite(t) ? t : 0;
 };
 
+/** What a person said, with Claude Code's wrapping of a long paste taken off: it keeps one as
+ *  `<pasted_content id="…">…</pasted_content id="…">` (seen 2026-10-15), which `isTypedText` took for the harness's
+ *  own and dropped — a message that was all paste was gone from the record, the simple view and the list's title. */
+export function unwrapPastes(text: string): string {
+  return text.replace(/<pasted_content(?:\s+id="[^"]*")?>\n?([\s\S]*?)\n?<\/pasted_content(?:\s+id="[^"]*")?>/g, "$1");
+}
+
 /** Text a user typed, not what a tool or the harness put in the user turn (reminders, command echoes, contexts). */
 export function isTypedText(text: string): boolean {
   const t = text.trim();

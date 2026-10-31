@@ -27,6 +27,8 @@ struct MainBarActions {
     var openWindow: (NodeStatus?) -> Void = { _ in }
     /// Settings › Nodes.
     var openNodes: () -> Void = {}
+    /// The bar's folder icon, ⇧⌘F: the Files column at the folder of the pane in focus, or closed (docs/files-v0.md §0).
+    var toggleFiles: () -> Void = {}
 }
 
 /// The window's content in three parts (docs/dispatch-v0.md §1, 左侧图标栏与整窗状态栏; demo
@@ -45,18 +47,21 @@ struct MainWindowRoot: View {
     let actions: MainBarActions
     /// The Browser page's model: its hold is the status bar's right on Browser.
     var browser: BrowserPageModel?
+    /// The window's Files column (docs/files-v0.md §2): beside the page on the right, or over it.
+    var files: FilesColumn?
     @AppStorage(NodeStrip.hiddenKey) private var stripHidden = false
+    @Environment(\.interfaceLook) private var look
 
     var body: some View {
         GeometryReader { proxy in
             let side = sideEdge(windowWidth: proxy.size.width)
             VStack(spacing: 0) {
                 MainBar(state: state, head: head, actions: actions, nodes: model.nodes.nodes,
-                        ownName: model.nodes.list?.own.name ?? model.remote?.name ?? "This Mac")
+                        ownName: model.nodes.list?.own.name ?? model.remote?.name ?? "This Mac", files: files)
                     .frame(height: state.barHeight)
                     .background(BarGround(side: side))
                 // The bar's edge, while there is an outline to draw (BarRule).
-                BarRule(shown: side > 0)
+                BarRule(shown: side > 0 || filesDocked(proxy.size.width))
                 // Another node's pages: whose they are, said across the window, with the way back.
                 if let node = state.node, NodeStrip.shown(node: model.nodes.node(node.id) ?? node, known: model.nodes.node(node.id) != nil, hidden: stripHidden) {
                     NodeStrip(node: model.nodes.node(node.id) ?? node, known: model.nodes.node(node.id) != nil, back: { actions.useNode(nil) },
@@ -72,6 +77,17 @@ struct MainWindowRoot: View {
                         RailEdge(state: state).zIndex(1)
                     }
                     ContentHost(view: content)
+                    // Beside the page (files-v0 §2.1); floating, it is over the page instead.
+                    if let files, files.open, filesDocked(proxy.size.width) {
+                        FilesColumnView(files: files, floating: false, ground: Color(nsColor: ground))
+                            .frame(width: files.width)
+                    }
+                }
+                .overlay(alignment: .trailing) {
+                    if let files, files.open, !filesDocked(proxy.size.width) {
+                        FilesColumnView(files: files, floating: true, ground: Color(nsColor: ground))
+                            .frame(width: files.width)
+                    }
                 }
                 // The bars a put-away rail leaves on the window's edge, over the page's first points.
                 .overlay(alignment: .leading) {
@@ -81,8 +97,8 @@ struct MainWindowRoot: View {
                 .overlay(alignment: .leading) {
                     RailOut(state: state, switchPage: actions.switchPage, settings: actions.settings)
                 }
-                BarRule(shown: side > 0)
-                MainStatusBar(state: state, head: head, model: model, browser: browser, seal: actions.seal)
+                BarRule(shown: side > 0 || filesDocked(proxy.size.width))
+                MainStatusBar(state: state, head: head, model: model, browser: browser, files: files, seal: actions.seal)
                     .frame(height: MainStatusBar.height)
                     .background(BarGround(side: side))
             }
@@ -91,6 +107,14 @@ struct MainWindowRoot: View {
         .ignoresSafeArea(.container, edges: .top)
         // The bars' spinners and marks stop while the window is not seen (ui-v0 §7.4).
         .followsWindow()
+    }
+
+    /// The column stands beside the page: open, not floating, and the page keeps its least width beside it (else it
+    /// floats over the page until the window is wide again, files-v0 §2.1).
+    private func filesDocked(_ windowWidth: CGFloat) -> Bool {
+        guard let files, files.open, !files.floating else { return false }
+        let rail: CGFloat = state.railHidden ? 0 : MainRail.width + 1
+        return windowWidth - rail - files.width >= FilesColumn.leastPage
     }
 
     /// The window's ground: the page's; on Terminals the terminal's own (its theme's), so that the bar over the
@@ -169,6 +193,7 @@ struct MainBar: View {
     /// The nodes this Mac uses and its own name, for the node menu (docs/mesh-v0.md §5.2).
     var nodes: [NodeStatus] = []
     var ownName = "This Mac"
+    var files: FilesColumn?
     @Environment(\.interfaceLook) private var look
 
     var body: some View {
@@ -194,6 +219,12 @@ struct MainBar: View {
                 Spacer(minLength: 0)
                 // The page's own actions, side by side in the classic look (ToolbarPixelButton).
                 HStack(spacing: look.isClassic ? 0 : 4) {
+                    // The Files column (docs/files-v0.md §0), on every page: at the folder of the pane in focus on
+                    // Terminals; lit while it shows that folder (anywhere else: while it is open).
+                    if let files {
+                        let lit = files.open && (state.page != .terminals || head.folder == nil || files.root == head.folder)
+                        ToolbarPixelButton(rows: PixelArt.toolbarFiles, help: lit ? "Hide Files ⌘⇧F" : "Show in Files ⌘⇧F", lit: lit, action: actions.toggleFiles)
+                    }
                     switch state.page {
                     case .terminals:
                         // The other view of the terminal in focus (docs/simple-view-v0.md §1): its record, or its screen.
@@ -524,6 +555,8 @@ struct ToolbarPixelButton: View {
     let rows: [String]
     let help: String
     var enabled = true
+    /// On (the Files column showing the pane's folder): ink behind it, the classic look's accent.
+    var lit = false
     let action: () -> Void
     @State private var hovering = false
     @Environment(\.interfaceLook) private var look
@@ -533,18 +566,18 @@ struct ToolbarPixelButton: View {
             if look.isClassic, let symbol = PixelArt.symbol(for: rows) {
                 Image(systemName: symbol)
                     .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(!enabled ? Look.line : hovering ? Color.primary : Color.secondary)
+                    .foregroundStyle(!enabled ? Look.line : lit ? Color.signal : hovering ? Color.primary : Color.secondary)
                     .frame(width: 26, height: 22)
                     .background(RoundedRectangle(cornerRadius: Look.controlRadius, style: .continuous)
-                        .fill(Color(white: 0.5).opacity(enabled && hovering ? 0.16 : 0)).padding(.horizontal, 1))
+                        .fill(lit ? Color.signal.opacity(0.2) : Color(white: 0.5).opacity(enabled && hovering ? 0.16 : 0)).padding(.horizontal, 1))
                     .contentShape(Rectangle())
             } else {
                 // The shaded picture on 1 pt cells, the size the classic look's icons are in this bar: on 1.5 pt cells
                 // they stood half as large again as everything beside them (2026-10-07, user: 像素页面这几个图标太大了).
-                PixelSprite(rows: rows, pixel: 1, color: !enabled ? Look.line : hovering ? .primary : .secondary,
-                            strength: !enabled ? 0.28 : hovering ? 1 : 0.85, cell: 1)
+                PixelSprite(rows: rows, pixel: 1, color: !enabled ? Look.line : lit || hovering ? .primary : .secondary,
+                            strength: !enabled ? 0.28 : lit || hovering ? 1 : 0.85, cell: 1)
                     .frame(width: 28, height: 24)
-                    .background(RoundedRectangle(cornerRadius: 7).fill(Color(white: 0.5).opacity(enabled && hovering ? 0.16 : 0)))
+                    .background(RoundedRectangle(cornerRadius: 7).fill(Color(white: 0.5).opacity(lit ? 0.26 : enabled && hovering ? 0.16 : 0)))
                     .contentShape(Rectangle())
             }
         }

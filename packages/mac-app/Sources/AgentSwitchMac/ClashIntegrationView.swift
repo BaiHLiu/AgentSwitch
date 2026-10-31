@@ -377,7 +377,7 @@ private struct ClashSubscriptionSection: View {
         ForEach(source.providers.filter { $0.error != nil }, id: \.name) { set in
             Label("节点集 \(set.name) 没有取到：\(set.error ?? "")。", systemImage: "exclamationmark.circle").foregroundStyle(.orange)
         }
-        if let group = view.defaultGroup {
+        if let group = view.defaultGroup, !view.settings.ownRules {
             Toggle("Rename “\(group)” to Manual", isOn: Binding(get: { view.settings.renameDefault }, set: { on in
                 var next = view.settings
                 next.renameDefault = on
@@ -545,9 +545,19 @@ private struct ClashRulesSection: View {
 
     var body: some View {
         Section {
+            Toggle(isOn: Binding(get: { view.settings.ownRules }, set: { on in
+                var next = view.settings
+                next.ownRules = on
+                actions.save(next)
+            })) {
+                Text("Only My Rules")
+                Text(view.settings.ownRules ? "订阅的分组和规则都不用了，只留它的节点" : "订阅自己的分组和规则排在这些后面").font(.caption)
+            }
             ForEach(ClashTemplate.allCases, id: \.self) { template in
+                // The domestic template is on while only these rules are: without it everything at home goes by Manual.
+                let held = template == .domestic && view.settings.ownRules
                 HStack {
-                    Toggle(isOn: Binding(get: { view.settings.templates[template].on }, set: { on in
+                    Toggle(isOn: Binding(get: { held || view.settings.templates[template].on }, set: { on in
                         var next = view.settings
                         next.templates[template].on = on
                         actions.save(next)
@@ -555,6 +565,7 @@ private struct ClashRulesSection: View {
                         Text(template.title)
                         Text(detail(template)).monospacedDigit()
                     }
+                    .disabled(held)
                     Button("Edit…") { actions.edit(template) }
                 }
             }
@@ -575,7 +586,7 @@ private struct ClashRulesSection: View {
         } header: {
             Text("Rules")
         } footer: {
-            Footer("打开就把这一套规则加进 Clash，关掉就拿走，都立刻生效。Domestic & Local Direct：国内常用域名、微信这类国内应用、局域网，直接连出去。Block Ads & Trackers：拦截广告和统计的域名；它排在订阅自己的规则之后，前面已经有规则管的流量不受它影响。DNS：用这里的 DNS 设置替换订阅自带的那一段（国内域名用国内 DNS 解析，Claude 的域名只认境外 DNS 的结果）；这一项改的是订阅正文，要 Clash Verge 重新取一次才生效。")
+            Footer("Only My Rules：交给 Clash 的那一份只留订阅的节点，它的分组和规则都不要；Claude、OpenAI 照这里选的走，国内直连（这时国内模版一定开着），其余走 Manual（手选，或者自动选最快的）。这一项改的是订阅正文，要 Clash Verge 重新取一次才生效。规则模版打开就把这一套规则加进 Clash，关掉就拿走，都立刻生效。Domestic & Local Direct：国内常用域名、微信这类国内应用、局域网，直接连出去。Block Ads & Trackers：拦截广告和统计的域名；它排在订阅自己的规则之后，前面已经有规则管的流量不受它影响。DNS：用这里的 DNS 设置替换订阅自带的那一段（国内域名用国内 DNS 解析，Claude 的域名只认境外 DNS 的结果）；这一项改的是订阅正文，要 Clash Verge 重新取一次才生效。")
         }
     }
 
@@ -661,7 +672,7 @@ private struct ClashDirectSection: View {
         } header: {
             Text("Go Direct")
         } footer: {
-            Footer("这些地址不经任何节点，直接连出去。用于配置里填的代理服务器：开着 TUN 时免得先绕一遍 Clash。改动立刻生效。")
+            Footer("这些地址不经任何节点，直接连出去。改动立刻生效。")
         }
     }
 

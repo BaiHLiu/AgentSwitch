@@ -52,6 +52,8 @@ final class MainWindowState {
     private(set) var backRequests = 0
     private(set) var focusRequests = 0
     private(set) var requestedTask: String?
+    /// Files for Dispatch's input: the Files column's `Add to Reply` on Dispatch (docs/files-v0.md §4).
+    private(set) var givenFiles: [URL] = []
 
     // MARK: the window says
 
@@ -185,6 +187,13 @@ final class MainWindowState {
 
     /// The Dispatch page opens the requested task: it is no longer asked for.
     @discardableResult
+    func give(files urls: [URL]) { givenFiles += urls }
+
+    func takeGivenFiles() -> [URL] {
+        defer { givenFiles = [] }
+        return givenFiles
+    }
+
     func takeRequestedTask() -> String? {
         defer { requestedTask = nil }
         return requestedTask

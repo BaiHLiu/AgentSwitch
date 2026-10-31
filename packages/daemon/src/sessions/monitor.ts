@@ -3,6 +3,7 @@
  *  directory are left out (probes, tests, AgentSwitch's executors). Read-only, except `remove`: the user deleting a
  *  session's record (docs/terminal-v0.md §5). */
 
+import { keptDiskSpelling } from "../core/paths.js";
 import { RATE_LIMIT_PROBE_PROMPT } from "../core/probes.js";
 import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -231,7 +232,8 @@ export class SessionMonitor {
 
   private summary(harness: SessionHarness, f: { id: string; cwd: string; title: string; lastText: string; updatedAt: number; startedAt?: number; origin?: string; branch?: string; model?: string; mode?: SessionMode; forkedFrom?: string }, now: number): SessionSummary {
     return {
-      harness, id: f.id, cwd: f.cwd, title: oneLine(f.title, TITLE_CHARS), lastText: oneLine(f.lastText, TITLE_CHARS),
+      // The folder as the disk spells it: a session recorded in `~/x/pi` is with the ones in `~/x/Pi`.
+      harness, id: f.id, cwd: keptDiskSpelling(f.cwd, now), title: oneLine(f.title, TITLE_CHARS), lastText: oneLine(f.lastText, TITLE_CHARS),
       // Whole milliseconds: a file's mtime has a fraction, which a client reading an integer may refuse.
       updatedAt: Math.round(f.updatedAt),
       startedAt: Math.round(Math.min(f.startedAt || f.updatedAt, f.updatedAt)),

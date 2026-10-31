@@ -72,6 +72,8 @@ public struct RecordItem: Decodable, Sendable, Hashable, Identifiable {
     public let images: Int
     /// Typed while the agent worked, and not read by it yet.
     public let queued: Bool
+    /// Sent by another session, not typed by you: the name it gave ("" when it gave none); nil for yours.
+    public let from: String?
     /// The service cut a very long text.
     public let clipped: Bool
     /// An answer that is what the agent thought on the way (where it wrote that down), not what it has to say to you.
@@ -85,8 +87,9 @@ public struct RecordItem: Decodable, Sendable, Hashable, Identifiable {
     public var date: Date { Date(timeIntervalSince1970: TimeInterval(at) / 1000) }
 
     public init(id: String, kind: Kind, at: Int64 = 0, text: String = "", images: Int = 0, queued: Bool = false, clipped: Bool = false,
-                thinking: Bool = false, seconds: Int = 0, steps: [RecordStep] = [], questions: [RecordQuestion] = []) {
+                thinking: Bool = false, seconds: Int = 0, steps: [RecordStep] = [], questions: [RecordQuestion] = [], from: String? = nil) {
         self.questions = questions
+        self.from = from
         self.thinking = thinking
         self.id = id
         self.kind = kind
@@ -99,7 +102,7 @@ public struct RecordItem: Decodable, Sendable, Hashable, Identifiable {
         self.steps = steps
     }
 
-    private enum CodingKeys: String, CodingKey { case id, type, ts, text, images, queued, clipped, thinking, secs, steps, questions }
+    private enum CodingKeys: String, CodingKey { case id, type, ts, text, images, queued, clipped, thinking, secs, steps, questions, from }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -112,6 +115,7 @@ public struct RecordItem: Decodable, Sendable, Hashable, Identifiable {
         text = (try? c.decodeIfPresent(String.self, forKey: .text)) ?? ""
         images = (try? c.decodeIfPresent(Int.self, forKey: .images)) ?? 0
         queued = (try? c.decodeIfPresent(Bool.self, forKey: .queued)) ?? false
+        from = try? c.decodeIfPresent(String.self, forKey: .from)
         clipped = (try? c.decodeIfPresent(Bool.self, forKey: .clipped)) ?? false
         thinking = (try? c.decodeIfPresent(Bool.self, forKey: .thinking)) ?? false
         seconds = (try? c.decodeIfPresent(Int.self, forKey: .secs)) ?? 0
@@ -214,6 +218,15 @@ public struct SessionRecord: Decodable, Sendable, Hashable {
     /// the service's word that it is there do not arrive together. Held: a message of yours no older than the reply
     /// (a moment's slack) that begins with the same words; one that went with files reads otherwise in the record, so
     /// for it the time decides.
+    /// Whether the record's last answer is what was being written (it begins with the same words): the part is in the
+    /// record, and what was shown of it as it was written can go.
+    public static func holds(_ items: [RecordItem], written: String) -> Bool {
+        let words = { (text: String) -> String in String(text.split(whereSeparator: \.isWhitespace).joined(separator: " ").prefix(40)) }
+        let head = words(written)
+        guard !head.isEmpty else { return true }
+        return items.suffix(4).contains { $0.kind == .answer && words($0.text).hasPrefix(head) }
+    }
+
     /// The record with what the agent's screen said to commands, each a note where its time puts it.
     public static func withNotices(items: [RecordItem], notices: [ScreenNotice]) -> [RecordItem] {
         guard !notices.isEmpty else { return items }
@@ -236,7 +249,8 @@ public struct SessionRecord: Decodable, Sendable, Hashable {
 
     public static func withSent(items: [RecordItem], sent: [SentReply], working: Bool) -> [RecordItem] {
         guard !sent.isEmpty else { return items }
-        let recent = items.suffix(12).filter { $0.kind == .user }
+        // Another session's message is not one of yours, whenever it came.
+        let recent = items.suffix(12).filter { $0.kind == .user && $0.from == nil }
         let words = { (text: String) -> String in String(text.split(whereSeparator: \.isWhitespace).joined(separator: " ").prefix(24)) }
         let waiting = sent.filter { reply in
             !recent.contains { $0.at >= reply.at - 3000 && (reply.files > 0 || words($0.text) == words(reply.text)) }
@@ -471,8 +485,9 @@ public enum TerminalRecordEvent: Equatable, Sendable {
     case notices([ScreenNotice])
     /// What it is doing now changed.
     case activity(TerminalActivity?, [TerminalSubagent])
-    /// Its session's record changed.
-    case record(rev: String)
+    /// Its session's record changed (`rev`, its file's version), or the terminal went to `session`, which has no file
+    /// yet (`rev` empty). `session`: nil from an older service, which does not say.
+    case record(rev: String, session: String?)
     /// The agent is on another model now.
     case model(String)
     /// It asks in another way now (its permission mode, in its own word).
@@ -481,6 +496,8 @@ public enum TerminalRecordEvent: Equatable, Sendable {
     case suggestion(String?)
     /// Codex's Daybreak switch stands otherwise now.
     case daybreak(Bool)
+    /// What it is writing now (nil: nothing is).
+    case writing(AgentWriting?)
 
     public static func decode(event: String, data: String) -> TerminalRecordEvent? {
         let bytes = Data(data.utf8)
@@ -489,8 +506,10 @@ public enum TerminalRecordEvent: Equatable, Sendable {
             struct Body: Decodable { let activity: TerminalActivity?; let subagents: [TerminalSubagent]? }
             return (try? JSONDecoder().decode(Body.self, from: bytes)).map { .activity($0.activity, $0.subagents ?? []) }
         case "record":
-            struct Body: Decodable { let rev: String }
-            return (try? JSONDecoder().decode(Body.self, from: bytes)).map { .record(rev: $0.rev) }
+            struct Body: Decodable { let rev: String; let session: String? }
+            return (try? JSONDecoder().decode(Body.self, from: bytes)).map { .record(rev: $0.rev, session: $0.session) }
+        case "writing":
+            return .writing(AgentWriting.decode(data))
         case "model":
             struct Body: Decodable { let model: String }
             return (try? JSONDecoder().decode(Body.self, from: bytes)).map { .model($0.model) }

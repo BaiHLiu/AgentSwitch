@@ -462,6 +462,10 @@ export class TaskLoop {
           if (type === "text" && typeof payload.text === "string") observedText = evidenceExcerpt([observedText, payload.text].filter(Boolean).join("\n"));
           this.ctx.emit(task.id, type, payload); dog.touch();
         },
+        writing: (w) => {
+          if (attemptCtl.signal.aborted || !this.active(task.id, signal)) return;
+          this.ctx.bus.publishWriting(task.id, w);
+        },
         approve: async (action, evidence, requestSignal) => {
           if (attemptCtl.signal.aborted || !this.active(task.id, signal)) return "deny";
           if (readOnly) {
@@ -554,6 +558,8 @@ export class TaskLoop {
       if (dog.cancelledWith !== null) return this.failedAttempt(task, { ...target, kind: "rejected", excerpt: `supervisor cancelled a silent run: ${dog.cancelledWith}`.slice(0, ATTEMPT_EXCERPT_CHARS), sideEffects, sideEffectsKnown: false }, observations);
       return this.failedAttempt(task, { ...target, kind: "transport", excerpt: evidenceExcerpt(message, ATTEMPT_EVIDENCE_CHARS), sideEffects, sideEffectsKnown: false }, observations);
     } finally {
+      // Whatever the run left half written is not being written any more.
+      this.ctx.bus.publishWriting(task.id, null);
       if (onAttemptAbort) attemptCtl.signal.removeEventListener("abort", onAttemptAbort);
       signal.removeEventListener("abort", onTaskAbort);
       try {

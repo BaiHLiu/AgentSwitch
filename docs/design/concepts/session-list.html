@@ -1,0 +1,1185 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terminals List Hierarchy</title>
+<style>
+/* The Terminals page's list, second draft (2026-10-17, user: 当前目录树和session，我分不太清楚主次…找一些session的时候
+   很费劲 → 你找找有没有什么规范 → 画到演示网页里…不要画的太简略). Not a spec: the main window and the phone with today's
+   list beside the one the guidelines lead to (docs/terminal-v0.md §1, 列表的主次与找会话). Folders, terminals and
+   sessions are made up; the clock stands still at Sat 17 Oct 2026 15:40. */
+:root {
+  --bg: #000; --panel: #0b0b0b; --raise: #151515; --hover: #121212; --card: #0b0b0b;
+  --ink: #e9e6df; --ink2: #8d8a84; --ink3: #4d4b48; --ink4: #262524;
+  --signal: #ff2e88; --cyan: #2ee6ff; --green: #9be22d; --amber: #ffb000; --red: #ff4a3d; --accent: #ff2e88;
+  --mono: "MesloLGS NF", "SF Mono", ui-monospace, Menlo, "PingFang SC", monospace;
+  --ui: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+  --code: "MesloLGS NF", "SF Mono", ui-monospace, Menlo, "PingFang SC", monospace;
+  color-scheme: dark;
+}
+.light {
+  --bg: #f4f1ea; --panel: #ece8df; --raise: #e4dfd4; --hover: #e9e5dc; --card: #ece8df;
+  --ink: #16140f; --ink2: #6b675f; --ink3: #a6a196; --ink4: #d6d1c6;
+  --signal: #e0106f; --cyan: #0096b3; --green: #3d8a00; --amber: #b87400; --red: #c9281b; --accent: #e0106f;
+  color-scheme: light;
+}
+/* the classic look (ui-v0 §8): the system's type, round shapes, line icons, dots, the system's blue */
+.classic { --accent: #0a84ff; --signal: var(--accent); --cyan: #0a84ff; --amber: #ff9f0a; --green: #30d158; --red: #ff453a;
+  --bg: #000; --panel: #000; --raise: #232326; --hover: #18181b; --card: #141416;
+  --ink: #ededf0; --ink2: #a2a2a8; --ink3: #6c6c72; --ink4: #2a2a2d; }
+.classic.light { --accent: #007aff; --signal: #007aff; --cyan: #007aff; --amber: #d98200; --green: #1f9d3f; --red: #e0352b;
+  --bg: #ffffff; --panel: #f7f7f9; --raise: #ececf0; --hover: #f2f2f5; --card: #f4f4f7;
+  --ink: #1c1c1e; --ink2: #6e6e73; --ink3: #aeaeb2; --ink4: #e3e3e8; }
+
+* { box-sizing: border-box; }
+html, body { overflow-x: hidden; }
+body { margin: 0; background: #1b1b1d; color: #d8d4cc; font: 13px var(--ui); }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+button:focus { outline: none; }
+button:focus-visible { outline: 2px solid #0a84ff; outline-offset: -2px; }
+.top { max-width: 1240px; margin: 0 auto; padding: 18px 16px 4px; }
+h1 { font: 700 15px var(--mono); margin: 0 0 8px; color: #e9e6df; }
+.lede { color: #a9a6a0; font-size: 12.5px; line-height: 1.75; margin: 0 0 10px; max-width: 112ch; }
+.lede code, .cap code, .docs code { font: 12px var(--mono); color: #d8d4cc; }
+.lede b, .cap b, .docs b { color: #e9e6df; font-weight: 600; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; font: 12px var(--mono); color: #8f8b84; }
+.tools > span { display: inline-flex; gap: 8px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid #3a3a3e; }
+.seg button { color: #b5b1aa; font: 12px var(--mono); padding: 4px 10px; }
+.seg button.on { background: #e9e6df; color: #111; }
+.sec { max-width: 1240px; margin: 34px auto 12px; padding: 0 16px; font: 11px var(--mono); letter-spacing: .14em; color: #77746e; }
+.stage { max-width: 1240px; margin: 0 auto; padding: 0 16px; }
+.cap { max-width: 1240px; margin: 10px auto 0; padding: 0 16px; color: #8f8b84; font-size: 12.5px; line-height: 1.75; min-height: 7em; }
+.cap ol { margin: 4px 0 0; padding-left: 1.5em; }
+.ctl { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
+.ctl button { border: 1px solid #3a3a3e; color: #b5b1aa; font: 12px var(--mono); padding: 3px 10px; }
+.ctl button.on { background: #e9e6df; color: #111; }
+.ctl .gap { width: 10px; }
+.fit { position: relative; width: 100%; overflow: hidden; }
+.fit > .scaled { transform-origin: 0 0; position: absolute; left: 0; top: 0; }
+
+.px { display: block; image-rendering: pixelated; }
+.li { display: block; flex: none; }
+.sq { width: 8px; height: 8px; display: inline-block; flex: none; }
+.classic .sq { border-radius: 50%; }
+.spin { color: var(--cyan); }
+.cspin { width: 11px; height: 11px; border-radius: 50%; display: inline-block; flex: none; vertical-align: -1px;
+  border: 1.6px solid color-mix(in srgb, var(--ink2) 30%, transparent); border-top-color: var(--ink2); animation: rot .9s linear infinite; }
+@keyframes rot { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cspin { animation: none; } }
+.cag { font: 600 12px var(--ui); display: inline-block; min-width: 13px; text-align: center; color: var(--ink2); flex: none; }
+.btn { font: 12px var(--mono); color: var(--ink); white-space: nowrap; }
+.btn:hover { background: var(--ink); color: var(--bg); }
+.btn.pri { background: var(--ink); color: var(--bg); padding: 0 2px; }
+.btn.pri:hover { background: var(--signal); color: #000; }
+.cbtn { font: 600 12px var(--ui); padding: 3px 10px; border-radius: 7px; background: var(--raise); color: var(--ink); white-space: nowrap; }
+.cbtn.pri { background: var(--accent); color: #fff; }
+
+/* ---------- the window ---------- */
+.win { width: 1200px; height: 720px; background: var(--bg); color: var(--ink); display: grid; grid-template-rows: 32px minmax(0, 1fr) 24px;
+  font: 13px var(--mono); border-radius: 10px; overflow: hidden; position: relative; box-shadow: 0 0 0 .5px rgba(255,255,255,.2), 0 26px 70px rgba(0,0,0,.6); }
+.classic.win { border-radius: 12px; }
+.bar { position: relative; display: flex; align-items: center; gap: 4px; padding: 0 10px 0 20px; border-bottom: 1px solid var(--ink4); }
+.lights { display: flex; gap: 8px; margin-right: 14px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.lights i:nth-child(1) { background: #ff5f57; } .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+.bar .ttl { position: absolute; left: 50%; transform: translateX(-50%); font: 600 13px var(--ui); display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; pointer-events: none; }
+.bar .ttl small { font: 11.5px var(--mono); color: var(--ink2); font-weight: 400; }
+.classic .bar .ttl small { font-family: var(--ui); }
+.bar .end { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.tb { width: 26px; height: 22px; display: grid; place-items: center; color: var(--ink2); position: relative; }
+.tb:hover { color: var(--ink); }
+.classic .tb { border-radius: 6px; }
+.body { display: grid; grid-template-columns: 44px 290px minmax(0, 1fr); min-height: 0; position: relative; }
+.rail { border-right: 1px solid var(--ink4); display: flex; flex-direction: column; align-items: center; gap: 18px; padding-top: 14px; color: var(--ink2); }
+.rail .ic { position: relative; padding: 2px; }
+.rail .ic.on { color: var(--ink); }
+.rail .ic.on::before { content: ""; position: absolute; left: -15px; top: 0; bottom: 0; width: 2px; background: var(--signal); }
+.rail .gap { flex: 1; }
+.classic .rail { gap: 12px; padding-top: 10px; }
+.classic .rail .ic { padding: 5px; border-radius: 8px; }
+.classic .rail .ic.on { background: var(--raise); color: var(--accent); }
+.classic .rail .ic.on::before { display: none; }
+.status { border-top: 1px solid var(--ink4); display: flex; align-items: center; gap: 14px; padding: 0 12px; font: 11.5px var(--mono); color: var(--ink2); }
+.classic .status { font-family: var(--ui); }
+.status .sp { flex: 1; }
+
+/* ---------- the list's column ---------- */
+.side { border-right: 1px solid var(--ink4); display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); min-height: 0; font: 12.5px var(--mono); position: relative; }
+.classic .side { font-family: var(--ui); font-size: 13px; }
+/* the search line (`/ Search ⌘F`), and the token in it */
+.sl { margin: 8px 10px 4px; height: 26px; border: 1px solid var(--ink4); display: flex; align-items: center; gap: 5px; padding: 0 6px; cursor: text; }
+.sl.focus { border-color: var(--ink2); }
+.sl .slash { color: var(--signal); font-weight: 700; }
+.classic .sl { margin: 10px 8px 6px; height: 28px; border: 0; border-radius: 7px; background: color-mix(in srgb, var(--ink) 7%, transparent); padding: 0 8px; }
+.classic .sl.focus { box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--accent) 45%, transparent); }
+.sl input { flex: 1; width: 0; min-width: 20px; background: transparent; border: 0; outline: none; color: var(--ink); font: inherit; padding: 0; }
+.sl input::placeholder { color: var(--ink3); }
+.sl .k { color: var(--ink3); font-size: 11px; }
+.sl .clr { color: var(--ink3); width: 16px; height: 16px; display: grid; place-items: center; }
+.tok { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--ink2); padding: 0 2px 0 5px; height: 18px; font-size: 11.5px; color: var(--ink); white-space: nowrap; max-width: 130px; flex: none; }
+.tok span { overflow: hidden; text-overflow: ellipsis; }
+.tok button { color: var(--ink2); padding: 0 2px; }
+.classic .tok { border: 0; border-radius: 5px; background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); font-weight: 600; padding: 0 3px 0 6px; }
+.classic .tok button { color: var(--accent); }
+/* the filter line: each agent, the view, Active */
+.fl { display: flex; align-items: center; gap: 2px; padding: 0 10px 5px; }
+.fl .sp { flex: 1; }
+.fm { min-width: 26px; height: 20px; display: inline-grid; place-items: center; padding: 0 5px; color: var(--ink2); position: relative; font-size: 11.5px; }
+.fm .px { opacity: .6; }
+.fm.on { color: var(--ink); font-weight: 700; }
+.fm.on .px { opacity: 1; }
+.fm.on::after { content: ""; position: absolute; left: 3px; right: 3px; bottom: -1px; height: 2px; background: var(--signal); }
+.classic .fm { border-radius: 5px; font-size: 11px; font-weight: 500; }
+.classic .fm.on { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); font-weight: 600; }
+.classic .fm.on::after { display: none; }
+.fseg { display: inline-flex; margin-right: 6px; }
+.classic .fseg { background: color-mix(in srgb, var(--ink) 7%, transparent); border-radius: 6px; padding: 1px; }
+.classic .fseg .fm { height: 18px; min-width: 24px; }
+.classic .fseg .fm.on { background: var(--raise); color: var(--ink); box-shadow: 0 0 0 .5px var(--ink4); }
+
+.list { overflow-y: auto; overflow-x: hidden; min-height: 0; position: relative; padding-bottom: 18px; scrollbar-width: thin; scrollbar-color: var(--ink4) transparent; }
+
+/* rows: today's and the draft's share the frame (TerminalSidebar.swift RowFrame) */
+.r { position: relative; display: flex; align-items: center; height: 22px; padding-right: 12px; white-space: nowrap; cursor: default; }
+.r:hover, .r.ctx { background: var(--hover); }
+.r .ix { flex: none; width: calc(10px + 3ch); padding-left: 10px; color: var(--ink3); font-size: 11px; }
+.r .tw { flex: none; color: var(--ink3); white-space: pre; opacity: .75; }
+.r .mk { flex: none; width: 2.6ch; display: inline-flex; align-items: center; }
+.r .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.r .mt { flex: none; display: flex; gap: 7px; align-items: center; color: var(--ink3); font-size: 11px; padding-left: 8px; }
+.r.s .nm { color: var(--ink2); }
+.r.more .nm { color: var(--ink3); font-size: 11.5px; }
+.r.more:hover .nm { color: var(--ink); }
+.r.sub .nm { color: var(--ink2); }
+.r.sub .nm i { font-style: normal; color: var(--ink3); margin-left: 1ch; }
+.r.sel { background: var(--raise); }
+.r.sel::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--signal); }
+.r.sel .ix { color: var(--signal); }
+.r .wait { color: var(--amber); }
+.r input { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--signal); padding: 0 4px; height: 19px; outline: none; }
+.classic .r { height: 28px; margin: 0 6px; border-radius: 6px; padding-right: 8px; }
+.classic .r .ix, .classic .r .tw { display: none; }
+.classic .r .mk { width: 24px; justify-content: center; }
+.classic .r.sel { background: var(--raise); }
+.classic .r.sel::before { display: none; }
+.classic .r input { border-radius: 5px; border-color: var(--accent); height: 22px; }
+.classic .r .wait { font: 600 10.5px var(--ui); }
+
+/* today's folder line (FolderLine) */
+.fo { display: flex; align-items: center; height: 22px; padding-right: 12px; white-space: nowrap; cursor: default; }
+.fo:hover { background: var(--hover); }
+.fo .chev { width: 2ch; color: var(--ink3); flex: none; }
+.fo .nm { font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+.fo.bin .nm { font-weight: 500; color: var(--ink2); }
+.fo .git { color: var(--ink3); font-size: 11px; margin-left: 1ch; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 3 auto; }
+.fo .cts { margin-left: auto; padding-left: 6px; display: flex; gap: 6px; font-size: 11px; color: var(--ink3); flex: none; }
+.classic .fo { height: 26px; margin: 0 6px; border-radius: 6px; padding-right: 8px; gap: 6px; }
+.classic .fo .chev { width: auto; display: flex; gap: 5px; align-items: center; }
+.classic .fo .nm { font-size: 12px; font-weight: 600; color: var(--ink2); }
+.classic .fo.bin .nm { font-weight: 500; }
+.classic .fo .git { margin-left: 2px; }
+.cnt { font: 700 11px var(--ui); min-width: 18px; height: 18px; border-radius: 9px; display: inline-grid; place-items: center; padding: 0 5px; color: rgba(0,0,0,.8); background: var(--green); }
+.cnt.w { background: var(--amber); color: #fff; }
+
+/* the draft: a folder as a group's head, two levels (HIG · Sidebars) */
+.grp { position: relative; }
+.gh { position: sticky; top: 0; z-index: 3; background: var(--bg); display: flex; align-items: center; height: 26px; margin-top: 12px; padding: 0 12px 0 10px; white-space: nowrap; cursor: default; }
+.grp:first-child > .gh { margin-top: 4px; }
+.gh:hover { background: color-mix(in srgb, var(--bg) 92%, var(--ink)); }
+.gh.stuck { box-shadow: 0 1px 0 var(--ink4); }
+.gh .chev { width: 2ch; color: var(--ink3); flex: none; }
+.gh .path { display: flex; min-width: 0; flex: 0 1 auto; }
+.gh .pre { color: var(--ink3); overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1000 auto; }
+.gh .nm { font-weight: 700; color: var(--ink); flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; }
+.gh .git { color: var(--ink3); font-size: 11px; margin-left: 1ch; flex: 0 3 auto; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.gh .cts { margin-left: auto; padding-left: 8px; display: flex; gap: 6px; align-items: center; font-size: 11px; color: var(--ink3); flex: none; }
+.gh.holds { background: var(--raise); }
+.gh.holds::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--signal); }
+.gh.ctx { background: var(--hover); }
+.classic .gh { height: 32px; margin-top: 10px; padding: 0 10px 0 12px; }
+.classic .gh .chev { width: auto; display: flex; gap: 6px; align-items: center; margin-right: 7px; }
+.classic .gh .pre { font-size: 12px; align-self: center; }
+.classic .gh .nm { font-size: 14px; font-weight: 600; }
+.classic .gh .git { font-size: 11.5px; margin-left: 7px; }
+.classic .gh.holds { background: color-mix(in srgb, var(--accent) 16%, var(--bg)); }
+.classic .gh.holds::before { display: none; }
+/* the line between what is open and what came before (VS Code · Quick Picks: separators) */
+.sep { display: flex; align-items: center; height: 20px; padding-right: 12px; color: var(--ink3); font-size: 11px; letter-spacing: .04em; white-space: nowrap; cursor: default; }
+.sep .ix { width: calc(10px + 3ch); flex: none; }
+.sep .tw { white-space: pre; opacity: .75; }
+.sep:hover { color: var(--ink2); }
+.sep .chev { margin-left: 6px; }
+.classic .sep { height: 24px; padding-left: 44px; letter-spacing: 0; font-weight: 600; font-size: 11px; gap: 4px; }
+.classic .sep .ix, .classic .sep .tw { display: none; }
+/* the draft's rows: the open ones a step brighter than history */
+.classic .grp .r { padding-left: 14px; }
+.classic .grp .r.t { height: 28px; }
+.classic .grp .r.s { height: 25px; font-size: 12.5px; }
+.classic .grp .r.sub { padding-left: 38px; height: 24px; font-size: 12px; }
+.classic .grp .r.more { padding-left: 38px; height: 24px; }
+.classic .grp .r.more .mk { display: none; }
+.pinm { color: var(--signal); }
+
+/* two lines a row: search results, recent, by time (VS Code · Quick Picks: the detail line) */
+.r2 { position: relative; display: grid; grid-template-columns: 2.6ch minmax(0, 1fr) auto; column-gap: 2px; align-items: center; padding: 4px 12px 5px 12px; cursor: default; }
+.r2:hover { background: var(--hover); }
+.r2 .mk { grid-row: 1; grid-column: 1; display: inline-flex; align-items: center; }
+.r2 .t1 { grid-row: 1; grid-column: 2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.r2 .tm { grid-row: 1; grid-column: 3; color: var(--ink3); font-size: 11px; padding-left: 8px; white-space: nowrap; display: flex; gap: 6px; align-items: center; }
+.r2 .t2 { grid-row: 2; grid-column: 2 / 4; color: var(--ink3); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+.r2 .t2 q { color: var(--ink2); quotes: "“" "”"; }
+.r2.sel { background: var(--raise); }
+.r2.sel::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--signal); }
+.classic .r2 { margin: 0 6px; border-radius: 7px; padding: 5px 8px; grid-template-columns: 24px minmax(0, 1fr) auto; }
+.classic .r2 .mk { justify-content: center; }
+.classic .r2 .t2 { font-size: 11.5px; }
+.classic .r2.sel { background: var(--raise); }
+.classic .r2.sel::before { display: none; }
+mark { background: transparent; color: var(--signal); font-weight: 700; }
+.classic mark { background: color-mix(in srgb, #ffd60a 38%, transparent); color: inherit; font-weight: inherit; border-radius: 2px; }
+.lab { display: flex; align-items: center; gap: 8px; padding: 12px 12px 3px; color: var(--ink3); font-size: 11px; letter-spacing: .06em; }
+.lab button { margin-left: auto; color: var(--ink2); letter-spacing: 0; }
+.lab button:hover { color: var(--ink); }
+.classic .lab { padding: 12px 14px 3px; letter-spacing: 0; font-weight: 600; font-size: 11.5px; }
+.classic .lab button { color: var(--accent); font-weight: 500; }
+.sum { padding: 2px 12px 0; color: var(--ink3); font-size: 11px; }
+.classic .sum { padding: 2px 14px 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 12px 2px; }
+.chip { border: 1px solid var(--ink4); color: var(--ink2); padding: 1px 7px; font-size: 11.5px; }
+.chip:hover { color: var(--ink); border-color: var(--ink2); }
+.classic .chip { border: 0; border-radius: 11px; background: var(--raise); padding: 2px 9px; }
+.hint { padding: 12px 12px 0; color: var(--ink3); font-size: 11px; line-height: 1.6; font-family: var(--ui); }
+.classic .hint { padding: 14px 14px 0; }
+.none { padding: 22px 16px 4px; text-align: center; color: var(--ink2); font-family: var(--ui); font-size: 12.5px; line-height: 1.7; }
+.none b { display: block; color: var(--ink); font-size: 13px; margin-bottom: 2px; }
+.none .act { margin-top: 10px; }
+/* a time heading (by time) */
+.th { position: sticky; top: 0; z-index: 3; background: var(--bg); display: flex; align-items: center; gap: 8px; height: 26px; margin-top: 8px; padding: 0 12px; color: var(--ink2); font-size: 11px; letter-spacing: .06em; font-weight: 700; }
+.th.stuck { box-shadow: 0 1px 0 var(--ink4); }
+.th .n { color: var(--ink3); font-weight: 400; }
+.classic .th { padding: 0 14px; font-size: 12.5px; letter-spacing: 0; font-weight: 600; color: var(--ink); height: 30px; }
+.sug .r2 .t1 { font-weight: 600; }
+
+/* numbered notes on today's list */
+.anns { position: absolute; inset: 0; pointer-events: none; z-index: 8; }
+.ann { position: absolute; width: 18px; height: 18px; border-radius: 50%; background: var(--signal); color: #fff; font: 700 11px var(--ui); display: grid; place-items: center; box-shadow: 0 0 0 2px var(--bg); }
+
+/* ---------- the pane on the right ---------- */
+.center { min-height: 0; display: grid; position: relative; }
+.pane { min-height: 0; min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+.shd { display: flex; align-items: center; gap: 8px; padding: 10px 26px; border-bottom: 1px solid var(--ink4); color: var(--ink2); font-size: 11.5px; white-space: nowrap; overflow: hidden; }
+.classic .shd { font-family: var(--ui); }
+.shd b { color: var(--ink); font: 600 12.5px var(--ui); }
+.shd .sp { flex: 1; }
+.rec { overflow: hidden; padding: 18px 26px 8px; display: flex; flex-direction: column; gap: 12px; font: 13.5px/1.65 var(--ui); max-width: 760px; width: 100%; justify-self: center; }
+.ub { align-self: flex-end; max-width: 82%; background: var(--raise); border: 1px solid var(--ink4); padding: 6px 12px; }
+.classic .ub { border: 0; border-radius: 16px; background: color-mix(in srgb, var(--ink) 9%, transparent); }
+.md p { margin: 0 0 6px; } .md ul { margin: 0; padding-left: 1.2em; }
+.work { font: 12px var(--mono); color: var(--ink2); display: flex; gap: 10px; align-items: center; }
+.classic .work { font-family: var(--ui); }
+.work .d { margin-left: auto; color: var(--green); } .work .d i { color: var(--red); font-style: normal; }
+.now { font: 12px var(--mono); color: var(--ink2); display: flex; gap: 8px; align-items: center; }
+.classic .now { font-family: var(--ui); }
+.now code { font-family: var(--code); color: var(--ink); }
+.now .t { margin-left: auto; color: var(--ink3); }
+.reply { padding: 8px 26px 14px; max-width: 812px; width: 100%; justify-self: center; }
+.box { border: 1px solid var(--ink3); min-height: 40px; display: flex; align-items: center; padding: 6px 10px; color: var(--ink3); font: 13px var(--ui); gap: 8px; }
+.box .tx { flex: 1; color: var(--ink3); }
+.classic .box { border-radius: 17px; border-color: var(--ink4); background: var(--card); }
+.ask { border: 1px solid var(--amber); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font: 13px var(--ui); background: var(--panel); }
+.ask .h { color: var(--amber); font: 600 12px var(--mono); }
+.classic .ask { border-radius: 12px; border-width: .5px; }
+.classic .ask .h { font-family: var(--ui); }
+.ask pre { margin: 0; font: 12px var(--code); background: var(--bg); border: 1px solid var(--ink4); padding: 6px 8px; }
+.classic .ask pre { border-radius: 7px; }
+.ask .a { display: flex; gap: 8px; justify-content: flex-end; }
+.rbar { display: flex; align-items: center; gap: 10px; padding: 10px 26px 14px; border-top: 1px solid var(--ink4); color: var(--ink3); font: 12px var(--ui); }
+.rbar .sp { flex: 1; }
+.empty { display: grid; place-items: center; color: var(--ink3); font: 13px var(--ui); }
+
+/* a system menu (right click) */
+.menu { position: absolute; z-index: 9; min-width: 214px; padding: 5px; border-radius: 8px; background: rgba(38,38,40,.97); color: #f2f2f4; font: 13px var(--ui);
+  box-shadow: 0 0 0 .5px rgba(255,255,255,.18), 0 12px 32px rgba(0,0,0,.55); }
+.light .menu { background: rgba(246,246,248,.98); color: #1c1c1e; box-shadow: 0 0 0 .5px rgba(0,0,0,.18), 0 12px 32px rgba(0,0,0,.2); }
+.menu .it { display: flex; align-items: center; gap: 8px; padding: 3px 10px 3px 22px; border-radius: 5px; position: relative; white-space: nowrap; cursor: default; }
+.menu .it .k { margin-left: auto; padding-left: 24px; opacity: .55; }
+.menu .it:hover { background: #0a84ff; color: #fff; }
+.menu .it.red { color: #ff453a; }
+.menu .it.red:hover { color: #fff; }
+.menu hr { border: 0; border-top: 1px solid rgba(255,255,255,.14); margin: 4px 8px; }
+.light .menu hr { border-top-color: rgba(0,0,0,.12); }
+
+/* ---------- the phone ---------- */
+.phones { display: flex; flex-wrap: wrap; gap: 28px 40px; align-items: flex-start; }
+.phonebox { display: flex; flex-direction: column; gap: 8px; }
+.phonebox .lbl { font: 11px var(--mono); letter-spacing: .1em; color: #77746e; }
+.phone { width: 320px; height: 680px; border-radius: 44px; background: var(--bg); color: var(--ink); box-shadow: 0 0 0 9px #222, 0 0 0 10px #444, 0 26px 60px rgba(0,0,0,.6);
+  overflow: hidden; margin: 10px; position: relative; display: grid; grid-template-rows: 44px auto auto auto minmax(0, 1fr) auto; font: 13.5px var(--mono); }
+.classic.phone { font-family: var(--ui); font-size: 15px; }
+.phone .sbar { display: flex; justify-content: space-between; padding: 15px 28px 0; font: 600 13px var(--ui); }
+.phone .ptitle { display: flex; align-items: flex-end; padding: 2px 16px 6px; }
+.phone .ptitle b { font: 700 17px var(--mono); flex: 1; }
+.classic.phone .ptitle b { font: 700 30px var(--ui); letter-spacing: -.01em; }
+.phone .ptitle span { color: var(--ink); font-size: 22px; padding-bottom: 4px; }
+.classic.phone .ptitle span { color: var(--accent); }
+.phone .psearch { margin: 0 14px 6px; height: 34px; border: 1px solid var(--ink4); display: flex; align-items: center; gap: 6px; padding: 0 8px; color: var(--ink3); font-size: 13.5px; }
+.classic.phone .psearch { border: 0; border-radius: 10px; background: color-mix(in srgb, var(--ink) 9%, transparent); height: 36px; font-size: 16px; }
+.phone .psearch .tx { flex: 1; color: var(--ink); white-space: nowrap; overflow: hidden; }
+.phone .psearch .ph { color: var(--ink3); }
+.phone .psearch .cancel { color: var(--ink); font-size: 14px; margin-left: 4px; }
+.classic.phone .psearch .cancel { color: var(--accent); font-size: 16px; }
+.phone .pfl { display: flex; align-items: center; gap: 4px; padding: 0 12px 6px; }
+.phone .pfl .sp { flex: 1; }
+.phone .pfl .fm { height: 26px; min-width: 32px; font-size: 12.5px; }
+.classic.phone .pfl .fm { font-size: 13px; }
+.phone .plist { overflow-y: auto; min-height: 0; padding-bottom: 12px; scrollbar-width: none; }
+.phone .plist::-webkit-scrollbar { display: none; }
+.phone .gh { height: 38px; margin-top: 10px; padding: 0 14px 0 12px; }
+.classic.phone .gh { height: 40px; padding: 0 16px; background: color-mix(in srgb, var(--bg) 94%, var(--ink)); margin-top: 6px; }
+.classic.phone .gh .nm { font-size: 16px; }
+.classic.phone .gh .pre { font-size: 13.5px; }
+.phone .r { height: 42px; padding-right: 14px; }
+.phone .r .ix { padding-left: 12px; }
+.classic.phone .grp .r { height: 46px; margin: 0; border-radius: 0; padding: 0 16px 0 14px; border-bottom: .5px solid var(--ink4); }
+.classic.phone .grp .r.s { height: 42px; font-size: 14.5px; }
+.classic.phone .r .mk { width: 28px; }
+.phone .r .mt { font-size: 12px; }
+.phone .sep { height: 30px; }
+.classic.phone .sep { padding-left: 16px; font-size: 13px; height: 34px; }
+.classic.phone .grp .r.more { padding-left: 42px; height: 40px; border-bottom: 0; }
+.classic.phone .grp .r.sub { padding-left: 42px; }
+.phone .r2 { padding: 7px 14px 8px; }
+.classic.phone .r2 { margin: 0; border-radius: 0; padding: 8px 16px 9px 12px; border-bottom: .5px solid var(--ink4); grid-template-columns: 28px minmax(0, 1fr) auto; }
+.classic.phone .r2 .t2 { font-size: 13px; }
+.phone .r2 .t2 { font-size: 12px; }
+.phone .lab { padding: 14px 14px 4px; font-size: 12px; }
+.classic.phone .lab { padding: 16px 16px 6px; font-size: 13px; }
+.phone .sum { padding: 2px 14px 0; font-size: 12px; }
+.phone .th { height: 34px; padding: 0 14px; }
+.classic.phone .th { height: 34px; font-size: 15px; padding: 0 16px; background: color-mix(in srgb, var(--bg) 94%, var(--ink)); }
+.ptabs { display: flex; justify-content: space-around; align-items: center; margin: 6px 10px 18px; height: 56px; border-radius: 28px; background: color-mix(in srgb, var(--raise) 88%, transparent); box-shadow: 0 0 0 .5px var(--ink4), 0 8px 24px rgba(0,0,0,.35); font: 10px var(--ui); }
+.ptabs .t { display: grid; justify-items: center; gap: 3px; color: var(--ink3); min-width: 48px; }
+.ptabs .t.on { color: var(--ink); }
+.classic .ptabs .t.on { color: var(--accent); }
+
+/* ---------- the notes under the demos ---------- */
+.docs { max-width: 1240px; margin: 0 auto; padding: 0 16px; display: flex; flex-direction: column; gap: 14px; color: #a9a6a0; font-size: 12.5px; line-height: 1.75; }
+.docs ol, .docs ul { margin: 0; padding-left: 1.4em; max-width: 112ch; }
+.docs li { margin: 2px 0; }
+.tbl { overflow-x: auto; border: 1px solid #333; }
+.tbl table { border-collapse: collapse; width: 100%; font-size: 12.5px; min-width: 760px; }
+.tbl th, .tbl td { text-align: left; vertical-align: top; padding: 7px 12px; border-bottom: 1px solid #2c2c2f; }
+.tbl th { font: 600 11px var(--mono); letter-spacing: .08em; color: #8f8b84; }
+.tbl td:first-child { color: #d8d4cc; white-space: nowrap; }
+.tbl tr:last-child td { border-bottom: 0; }
+.tbl td q { color: #d8d4cc; font-style: italic; quotes: none; }
+@media (max-width: 720px) { .phone { margin: 10px 0; } .phones { justify-content: center; } }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <h1>Terminals 列表 · 第二稿：两层、组头、一个搜索</h1>
+  <p class="lede">配 <code>docs/terminal-v0.md</code> §1「列表的主次与找会话」。第一稿的三种改法按查到的规范收成一套：<b>侧栏只两层</b>（文件夹是组头，组里是终端和会话；子文件夹自己成一组，前面淡色写上一组的名字），<b>组头比行大一号、主色、上面空一段</b>，滚动时停在顶上；组里先是开着的终端，再是 <code>// History</code> 分隔线下的历史会话；<b>收起、展开都记住</b>；会话能<b>置顶、改名</b>；<b>只有一个搜索</b>（<code>⌘F</code>）：没打字时是最近的，打字分组出结果，<code>@</code> 选文件夹缩小范围；另有<b>按时间看</b>。下面的窗口能点：组头（收起）、<code>// History</code>、<code>Show All</code>、行（选中，右边打开）、右键（组头、终端、会话）、搜索框（能打字，<code>↑ ↓ ↩ esc</code>，打 <code>@</code>）、过滤行的 agent、<code>◷</code>、<code>Active</code>。文件夹、终端、会话都是编的。</p>
+  <div class="tools">
+    <span>外观 <span class="seg" data-opt="look"><button data-v="pixel">Pixel</button><button data-v="classic" class="on">Classic</button></span></span>
+    <span><span class="seg" data-opt="theme"><button data-v="dark" class="on">Dark</button><button data-v="light">Light</button></span></span>
+  </div>
+</div>
+
+<div class="sec">1 · MAC — 主窗口的终端页</div>
+<div class="stage">
+  <div class="ctl" id="ctlMac">
+    <button data-mac="now">① 现在</button><span class="gap"></span>
+    <button data-mac="new" class="on">② 第二稿</button><button data-mac="scroll">③ 往下滚</button><button data-mac="fold">④ 收起与记住</button><button data-mac="menu">⑤ 右键：置顶、改名</button>
+    <span class="gap"></span>
+    <button data-mac="recent">⑥ ⌘F 还没打字</button><button data-mac="typing">⑦ 打字</button><button data-mac="token">⑧ @ 文件夹</button><button data-mac="nothing">⑨ 没找到</button>
+    <span class="gap"></span>
+    <button data-mac="time">⑩ 按时间</button>
+  </div>
+  <div class="fit" id="fitMac"><div class="scaled"><div class="win" id="win"></div></div></div>
+</div>
+<div class="cap" id="capMac"></div>
+
+<div class="sec">2 · IPHONE — TERMINALS 标签页</div>
+<div class="stage"><div class="phones" id="phones"></div></div>
+<div class="cap" style="min-height:0">手机是同一套：组头是 iOS 普通列表的分组头（本来就停在顶上），行高按手指（44 点上下）；<code>// History</code>、<code>Show All</code>、置顶照旧；搜索点开就是 Mac 上那块（最近的、分组的结果、<code>@</code> 文件夹标签，右边 <code>Cancel</code>）；过滤行同样有 <code>◷</code> 换成按时间。左滑一条会话是 <code>Pin</code> 和 <code>Delete</code>，长按是同一个菜单（这里没画）。手机上的列表能滚，看组头停在顶上。</div>
+
+<div class="sec">3 · 查到的规范，用在哪</div>
+<div class="docs">
+  <div class="tbl"><table>
+    <tr><th>来源</th><th>说的</th><th>这里</th></tr>
+    <tr><td>HIG · Sidebars</td><td><q>In general, show no more than two levels of hierarchy in a sidebar.</q> 超过两层考虑分栏；每组用简短的标题；内容多就用可收起的组；让人自己定放什么、什么在前</td><td>两层：文件夹的组头、组里的行；子文件夹自成一组（<code>lumen/</code> 前缀），只用来归类的文件夹不占行；组头能收起；会话能置顶</td></tr>
+    <tr><td>HIG · Outline views</td><td><q>Retain people's expansion choices.</q> 层级只放在第一列</td><td>组收起、<code>// History</code> 收起、<code>Show All</code> 都记住（现在 <code>More</code> 不记）</td></tr>
+    <tr><td>HIG · Lists and tables</td><td>一直亮着选中的那一行，说清走到了哪；字要短；中间省略能留住首尾</td><td>选中的行一直亮，它的组收起时组头亮；组头太长时先缩前缀，名字留着</td></tr>
+    <tr><td>HIG · Searching</td><td><q>Aim to make your app's content searchable through a single location.</q> 可以给最近搜过的，但顾及隐私、能清掉；能缩小范围，并清楚显示当前范围</td><td>只有 <code>⌘F</code> 一个（第一稿的 <code>⌘P</code> 并进来）；<code>Recent Searches</code> 带 <code>Clear</code>；<code>@</code> 文件夹标签，占位字写着在哪搜</td></tr>
+    <tr><td>HIG · Search fields</td><td>打字就搜；最相关的在前，并分类；范围栏用于定义清楚的几类；标签用于常见的项；默认范围宽</td><td>结果分 <code>Open</code> <code>Titles</code> <code>Folders</code> <code>In Text</code>；agent 用已有的过滤行（就是范围栏），文件夹用标签；没找到给 <code>Search All Folders</code></td></tr>
+    <tr><td>VS Code · Quick Picks</td><td>有几组明显的选项时用分隔线分开；第二行写简短的补充</td><td><code>// History</code> 分隔线；搜索结果、最近的、按时间每条两行（第二行是文件夹和 agent）</td></tr>
+    <tr><td>NN/g · Common Region</td><td>边框或底色把东西圈成一组</td><td>没用框（下一条）；靠组头的字号、主色、组前的留白，停在顶上时一条细线</td></tr>
+    <tr><td>ui-v0 §7 第 3 条</td><td>层级靠字重、字号和留白，不靠框</td><td>经典：组头 14 点半粗主色，终端 13 点主色，历史 12.5 点次要色；像素：组头粗体主色、上面空 12 点</td></tr>
+    <tr><td>ChatGPT 等</td><td><code>Today</code> <code>Yesterday</code> <code>Previous 7 Days</code> <code>Previous 30 Days</code>，再往前更粗；按最后一次活动</td><td>同样的组名，再往前按月、按年；但按<b>开始时间</b>（下一条）</td></tr>
+    <tr><td>terminal-v0 §1</td><td>目录树顺序固定（9 月 30 日）；按真实层级嵌套（10 月 3 日）</td><td>顺序不变：组按路径，组里终端按打开先后、会话按开始时间。嵌套改成两层——这一条和 10 月 3 日的定法冲突，<b>等你定</b></td></tr>
+  </table></div>
+</div>
+
+<div class="sec">4 · 和现在比，改了什么</div>
+<div class="docs"><ol>
+  <li><b>两层。</b>每个有自己终端或会话的文件夹都是一组。子文件夹不再缩进到父文件夹里面：它自己成一组，排在父文件夹后面（按路径排，所以总是挨着），组头前面淡色写上一组的名字（<code>lumen/</code> <b>packages/api</b>）。只用来归类的文件夹（现在的 <code>Projects/</code>、<code>packages/</code>）不再占一行，名字进了前缀。</li>
+  <li><b>组头像组头。</b>比行大一号（经典 14 点半粗，现在是 12 点次要色）、主色、上面空一段；文件夹图标用强调色。滚动时停在顶上，下一组把它推走，停住时底下一条细线。右边是开着的终端数（等你时琥珀色）和会话数，git 状态在名字后面、先被挤掉。</li>
+  <li><b>组里的顺序：</b>开着的终端（按打开先后，子代理在它下面）→ <code>// History · N</code> → 历史会话。分隔线只在组里有终端时出现，点它只收起历史；没有终端的组直接是历史。</li>
+  <li><b>历史会话淡一档：</b>经典 12.5 点次要色、行矮一点；置顶的排在最前、带图钉，然后按开始时间新的在上；露 3 条，<code>Show All 9</code> 展开、<code>Show Fewer</code> 收回，都记住。</li>
+  <li><b>右键会话：</b><code>Resume</code> <code>Resume As</code> · <code>Rename</code> <code>Pin to Top</code> · <code>Search in “lumen”</code> <code>Show in Files</code> · <code>Delete</code>。改名只改列表里显示的名字，悬停能看到第一句话。组头右键多一个 <code>Search in “lumen”</code> 和 <code>Collapse Others</code>。</li>
+  <li><b>一个搜索：</b><code>⌘F</code>。没打字时是 <code>Recent Searches</code>（可 <code>Clear</code>）和 <code>Recently Opened</code>；打字就出结果，分四组、每条两行，<code>↑ ↓</code> 选、<code>↩</code> 打开、<code>⌘↩</code> 在旁边一块打开、<code>esc</code> 清空再退出，退出后列表展开到打开的那一行。<code>@</code> 选文件夹（含它下面的），变成框里的一个标签，<code>⌫</code> 删掉；agent 仍在过滤行选，两样能一起用。</li>
+  <li><b>按时间看</b>（过滤行的 <code>◷</code>）：开着的终端在最上面，历史按<b>开始时间</b>分 <code>Today</code> <code>Yesterday</code> <code>Previous 7 Days</code> <code>Previous 30 Days</code>、再按月、按年，每条第二行写文件夹；组名停在顶上。</li>
+  <li><b>手机同一套</b>（第 2 节）。</li>
+</ol></div>
+
+<div class="sec">5 · 等你定</div>
+<div class="docs"><ol>
+  <li><b>两层，还是留着嵌套？</b>这一稿照 HIG 改成两层，等于收回 10 月 3 日的“按真实层级嵌套”（那时的问题是两个 <code>Worktop</code>、<code>靶场</code> 独立在外——两层下它们按路径挨着，前缀写清是谁的）。另一条路：留着嵌套，只改组头、顺序、记住和搜索。</li>
+  <li><b>按时间看要不要。</b>不要的话过滤行少一个 <code>◷</code>，找“昨天那个”靠 <code>⌘F</code> 的 <code>Recently Opened</code>。</li>
+  <li><b>改名记在哪。</b>agent 自己有改名办法的，用它自己的（在它的 CLI 里也看得到同一个名字，合“看上去就是 agent 自己做的”）；没有的，AgentSwitch 自己记，只在 AgentSwitch 里显示。</li>
+  <li><b><code>Recently Opened</code> 是什么。</b>这一稿是“在 AgentSwitch 里最近打开过的”（含手机上开的）；也可以是“最近写过的”（别处在写的也算）。</li>
+</ol></div>
+<div style="height:60px"></div>
+
+<script src="pixel.js"></script>
+<script>
+const P = window.Pixel;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const attr = (s) => esc(s).replace(/'/g, "&#39;");
+
+// ---------- the made-up folders, terminals and sessions ----------
+const MIN = 60e3, H = 60 * MIN, DAY = 24 * H;
+const NOW = new Date(2026, 9, 17, 15, 40).getTime();
+const d = (n) => n * 24;
+let uid = 0;
+const s = (title, ag, startH, updH, o = {}) => ({ id: `s${++uid}`, kind: "s", title, ag, start: NOW - startH * H, upd: NOW - updH * H, said: o.said ?? [], pin: !!o.pin, rename: o.rename ?? null, active: !!o.active });
+const t = (n, name, ag, st, o = {}) => ({ id: `t${n}`, kind: "t", n: String(n).padStart(2, "0"), name, ag, st, first: o.first ?? name, reply: o.reply ?? "", doing: o.doing ?? null, sub: o.sub ?? null, said: o.said ?? [], opened: NOW - (o.openedH ?? 1) * H });
+
+const GROUPS = [
+  { id: "scratch", path: "/private/tmp/scratch", pre: "/private/tmp/", name: "scratch", git: "", terms: [], sess: [
+    s("试一下新的 diff 算法，比较 patience 和 histogram 在大文件上的差别", "codex", 1.2, 0.9, { said: ["histogram 在这个文件上快了一倍"] })] },
+  { id: "home", path: "~", pre: "", name: "~", git: "", terms: [], sess: [
+    s("整理下载文件夹，按类型分到子文件夹", "cc", d(2) + 3, d(2) + 2, { said: ["安装包和压缩包放进 Archives"] }),
+    s("批量改照片文件名为拍摄日期", "codex", d(90), d(90))] },
+  { id: "notes", path: "~/Notes", pre: "~/", name: "Notes", git: "", terms: [
+    t(4, "十月的计划", "pi", "idle", { first: "整理一下十月要做的事，按周分。", reply: "按周排好了：第一周收尾两个项目，第二周开始写年度回顾的提纲。", openedH: 5 })], sess: [
+    s("读书笔记整理", "pi", 3, 2.5),
+    s("周报模板", "pi", d(7) + 2, d(7), { said: ["列表里按项目分组，每项一句话"] }),
+    s("旅行清单", "pi", d(22), d(21)),
+    s("年度回顾的提纲", "cc", d(300), d(299))] },
+  { id: "harbor", path: "~/Projects/harbor", pre: "~/Projects/", name: "harbor", git: "main ↓3", terms: [], sess: [
+    s("部署脚本换成 compose，旧的 shell 脚本留一份", "cc", 5, 0.1, { active: true, said: ["部署时先拉镜像再停旧的容器"] }),
+    s("健康检查加缓存", "codex", 28, 27, { said: ["健康检查接口每次都查库，加了 5 秒缓存"] }),
+    s("日志太多了，降一级", "cc", d(4), d(4)),
+    s("证书续期", "pi", d(15), d(15)),
+    s("备份脚本每天跑两次", "codex", d(37), d(36)),
+    s("磁盘告警阈值", "cc", d(70), d(70))] },
+  { id: "deploy", path: "~/Projects/harbor/deploy", pre: "harbor/", name: "deploy", git: "main ↓3", terms: [], sess: [
+    s("回滚步骤写清楚", "cc", d(2) - 5, d(2) - 6, { said: ["回滚前先确认部署的版本号"] }),
+    s("staging 的环境变量", "codex", d(18), d(18))] },
+  { id: "lumen", path: "~/Projects/lumen", pre: "~/Projects/", name: "lumen", git: "main ±2", terms: [
+    t(1, "排序改成最近使用", "cc", "busy", { first: "把列表的排序改成按最近使用，置顶的仍然在最前，从没用过的排在最后。", reply: "改好了：列表现在按最近使用排，置顶的仍然在最前。", doing: ["Read", "docs/design.md"],
+      sub: { type: "Explore", task: "找出排序相关的代码", doing: "运行 rg sort" }, said: ["列表现在按最近使用排", "排序放在 store.ts 里做"], openedH: 2 }),
+    t(2, "列表的空状态", "codex", "idle", { first: "列表空的时候显示一句提示和一个新建按钮。", reply: "加了空状态：一句“还没有项目”和一个 New Project 按钮。", said: ["列表空的时候显示一句提示"], openedH: 1.5 })], sess: [
+    s("发布流程备忘", "cc", d(41), d(41), { pin: true, said: ["发布前跑一遍 e2e"] }),
+    s("给列表加一个按名字搜索，搜索框放在顶上，回车打开第一条", "cc", 3, 2, { said: ["搜索框放在列表顶上"] }),
+    s("置顶的行排在最前", "cc", 26, 25, { said: ["置顶的行不参与排序"] }),
+    s("把 store 拆成两个文件", "codex", 30, 29),
+    s("测试里的时间写死了", "cc", d(3), d(3)),
+    s("README 补一节运行方式", "pi", d(5), d(5)),
+    s("拖拽排序的手感", "cc", d(9), d(8), { said: ["拖动到边上时列表要自动滚动"] }),
+    s("升级 vite 到 7", "codex", d(20), d(19)),
+    s("图标换成 SF Symbols", "cc", d(48), d(47))] },
+  { id: "api", path: "~/Projects/lumen/packages/api", pre: "lumen/", name: "packages/api", git: "main ±2", terms: [
+    t(3, "登录接口加 refreshToken", "codex", "waiting", { first: "登录接口的返回加上 refreshToken 字段。", reply: "已在 routes/auth.ts 的登录返回里加了 refreshToken，过期时间取配置里的 REFRESH_TTL。接下来跑一下认证相关的测试。", said: ["登录返回里加了 refreshToken"], openedH: 3 })], sess: [
+    s("文件接口的分页", "codex", 4, 3.5, { said: ["分页参数用 cursor，不用 offset"] }),
+    s("数据库连接池的大小怎么定，现在偶尔超时", "cc", d(2), d(2), { rename: "连接池（定稿）" }),
+    s("错误码统一", "cc", d(12), d(12), { said: ["所有接口返回同一种错误格式"] }),
+    s("限流中间件", "codex", d(25), d(25), { said: ["登录接口每分钟最多 10 次"] }),
+    s("OpenAPI 文档生成", "cc", d(60), d(60))] },
+  { id: "web", path: "~/Projects/lumen/packages/web", pre: "lumen/", name: "packages/web", git: "main ±2", terms: [], sess: [
+    s("首页加载慢", "cc", 6, 5.5, { said: ["首页的列表一次拉了 500 条"] }),
+    s("暗色模式的对比度", "codex", d(8), d(8)),
+    s("表单校验的提示文案", "cc", d(33), d(33))] },
+  { id: "peixun", path: "~/Worktop/培训", pre: "~/Worktop/", name: "培训", git: "", terms: [], sess: [
+    s("课件大纲", "cc", d(10), d(10)),
+    s("练习题答案核对", "codex", d(45), d(45))] },
+  { id: "range", path: "~/Worktop/培训/靶场", pre: "培训/", name: "靶场", git: "", terms: [
+    t(5, "字典去重", "codex", "busy", { first: "把几个字典文件合并去重，按出现次数排序。", reply: "合并了 4 个文件，共 18 万行，去重后 9.2 万行。", doing: ["Run", "sort | uniq -c"], openedH: 0.5 })], sess: [
+    s("扫描结果汇总", "cc", 22, 21),
+    s("端口清单去重", "codex", d(6), d(6)),
+    s("报告模板", "cc", d(40), d(40))] },
+];
+// Today's tree (docs/terminal-v0.md §1 目录树的层级): a folder with its own rows or holding two or more is shown, under
+// the nearest one shown; the shallow places (~) only take their direct children. `ann` numbers the notes under it.
+const NOW_TREE = [
+  { g: "scratch", name: "tmp/scratch" },
+  { g: "home", name: "~", kids: [
+    { g: "notes", name: "Notes" },
+    { box: "Projects", kids: [
+      { g: "harbor", name: "harbor", kids: [{ g: "deploy", name: "deploy" }] },
+      { g: "lumen", name: "lumen", ann: 1, kids: [{ box: "packages", ann: 2, kids: [{ g: "api", name: "api", ann: 4 }, { g: "web", name: "web" }] }] },
+    ] },
+  ] },
+  { g: "peixun", name: "Worktop/培训", kids: [{ g: "range", name: "靶场" }] },
+];
+const G = Object.fromEntries(GROUPS.map((g) => [g.id, g]));
+const byId = new Map(), gOf = new Map();
+GROUPS.forEach((g) => [...g.terms, ...g.sess].forEach((x) => { byId.set(x.id, x); gOf.set(x.id, g); }));
+const sid = (title) => [...byId.values()].find((x) => x.kind === "s" && x.title.startsWith(title)).id;
+const AG_NAME = { cc: "Claude Code", codex: "Codex", pi: "pi", oc: "OpenCode" };
+
+// ---------- state ----------
+const S = {
+  look: "classic", light: false, preset: "new", mode: "new", view: "folder", sel: "t1",
+  folded: new Set(), hist: new Set(), all: new Set(), pins: new Set([...byId.values()].filter((x) => x.pin).map((x) => x.id)), names: {},
+  menu: null, renaming: null, searching: false, q: "", token: null, pick: 0, agent: null, active: false, focusQ: false,
+  recentQ: ["refreshToken", "部署", "排序"], recentOpen: ["t3", sid("文件接口的分页"), sid("部署脚本"), "t1", sid("读书笔记"), sid("扫描结果")],
+};
+// What is folded and shown in full is remembered (HIG · Outline views); the demo keeps it in this browser.
+const SAVE = "agentswitch-demo.session-list";
+function save() { try { localStorage.setItem(SAVE, JSON.stringify({ folded: [...S.folded], hist: [...S.hist], all: [...S.all] })); } catch {} }
+function restore() { try { const v = JSON.parse(localStorage.getItem(SAVE) ?? "null"); if (v) { S.folded = new Set(v.folded); S.hist = new Set(v.hist); S.all = new Set(v.all); return true; } } catch {} return false; }
+const C = () => S.look === "classic";
+const look = () => `${S.look} ${S.light ? "light" : ""}`;
+let K = 1;
+
+// ---------- words, times ----------
+const title = (x) => x.kind === "t" ? x.name : (S.names[x.id] ?? x.rename ?? x.title);
+const pad = (n) => String(n).padStart(2, "0");
+const dayStart = (ms) => { const v = new Date(ms); v.setHours(0, 0, 0, 0); return v.getTime(); };
+const days = (ms) => Math.round((dayStart(NOW) - dayStart(ms)) / DAY);
+const hm = (ms) => { const v = new Date(ms); return `${pad(v.getHours())}:${pad(v.getMinutes())}`; };
+const md = (ms) => { const v = new Date(ms); return `${v.getMonth() + 1}/${v.getDate()}`; };
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function age(ms) {
+  const a = NOW - ms;
+  const w = a < MIN ? "Now" : a < H ? `${Math.round(a / MIN)}m` : a < DAY ? `${Math.round(a / H)}h` : a < 30 * DAY ? `${Math.round(a / DAY)}d` : a < 365 * DAY ? `${Math.round(a / DAY / 30)}mo` : `${Math.round(a / DAY / 365)}y`;
+  return C() && w !== "Now" ? `${w} ago` : w;
+}
+function bucket(ms) {
+  const n = days(ms);
+  if (n === 0) return "Today";
+  if (n === 1) return "Yesterday";
+  if (n < 7) return "Previous 7 Days";
+  if (n < 30) return "Previous 30 Days";
+  const v = new Date(ms);
+  return v.getFullYear() === new Date(NOW).getFullYear() ? MONTHS[v.getMonth()] : String(v.getFullYear());
+}
+const stamp = (ms) => { const n = days(ms); return n <= 1 ? hm(ms) : n < 7 ? WEEK[new Date(ms).getDay()] : md(ms); };
+const started = (ms) => { const n = days(ms); return n === 0 ? `Today ${hm(ms)}` : n === 1 ? `Yesterday ${hm(ms)}` : `${md(ms)} ${hm(ms)}`; };
+/** A folder as a second line names it: a sub-folder with the group above it (`lumen/packages/api`). */
+const where = (g) => g.pre && !g.pre.startsWith("~") && !g.pre.startsWith("/") ? `${g.pre}${g.name}` : g.name;
+
+// ---------- icons ----------
+const LINE = {
+  dispatch: '<circle cx="4.5" cy="12" r="2"/><path d="M6.5 12H19M6.5 12c5 0 5-6 10-6H19M6.5 12c5 0 5 6 10 6H19"/>',
+  terminals: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 10l3 2-3 2M12.5 15H17"/>',
+  terminal: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 10l3 2-3 2M12.5 15H17"/>',
+  browser: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c3.2 3 3.2 14 0 17M12 3.5c-3.2 3-3.2 14 0 17"/>',
+  clash: '<path d="M5 10l1-5 3.5 3h5L18 5l1 5v3.5a7 7 0 0 1-14 0z"/><path d="M9.5 13h.01M14.5 13h.01"/>',
+  settings: '<path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="1.9"/><circle cx="15" cy="12" r="1.9"/><circle cx="8" cy="17" r="1.9"/>',
+  folder: '<path d="M3.5 7.5V17.5a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2V9.5a2 2 0 0 0-2-2h-6.8l-2-2.5H5.5a2 2 0 0 0-2 2z"/>',
+  files: '<path d="M3.5 7.5V17.5a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2V9.5a2 2 0 0 0-2-2h-6.8l-2-2.5H5.5a2 2 0 0 0-2 2z"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  pin: '<path d="M9.5 3.5h5l-.8 6 3.3 3.2H7l3.3-3.2z"/><path d="M12 12.7V20.5"/>',
+  mag: '<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/>',
+  xc: '<circle cx="12" cy="12" r="9" fill="currentColor" stroke="none" opacity=".55"/><path d="M9 9l6 6M15 9l-6 6" stroke="var(--bg)"/>',
+  chevR: '<path d="M9.5 6l6 6-6 6"/>', chevD: '<path d="M6 9.5l6 6 6-6"/>',
+  list: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M9 5v14"/>',
+  record: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h5"/>',
+  right: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M12 5v14"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  bytime: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  byfolder: '<path d="M3.5 7.5V17.5a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2V9.5a2 2 0 0 0-2-2h-6.8l-2-2.5H5.5a2 2 0 0 0-2 2z"/>',
+};
+const PX = {
+  list: ["#########", "#..#....#", "#..#....#", "#..#....#", "#..#....#", "#########"],
+  record: ["#########", "#.......#", "#.#####.#", "#.......#", "#.###...#", "#.......#", "#########"],
+  terminal: ["#########", "#.......#", "#.#.....#", "#..#....#", "#.#..##.#", "#.......#", "#########"],
+  right: ["#########", "#...#####", "#...#####", "#...#####", "#...#####", "#########"],
+  plus: ["....#....", "....#....", "#########", "....#....", "....#...."],
+  files: ["###......", "#########", "#.......#", "#.......#", "#.......#", "#########"],
+  byfolder: ["###....", "#######", "#.....#", "#.....#", "#######"],
+  bytime: [".###.", "#.#.#", "#.###", "#...#", ".###."],
+  pin: [".###.", ".###.", "#####", "..#..", "..#.."],
+  dispatch: ["......###", ".....#...", "....#....", "###.#####", "###......", "....#....", ".....#...", "......###"],
+  terminals: ["#########", "#.......#", "#.#.....#", "#..#....#", "#.#..##.#", "#.......#", "#########"],
+  browser: [".#####.", "#..#..#", "#######", "#..#..#", "#######", "#..#..#", ".#####."],
+  clash: ["#.....#", "##...##", "#######", "#.#.#.#", "#######", ".#####."],
+  settings: ["#........", "#####....", "#........", "....#....", "#########", "....#....", "..#......", "#########", "..#......"],
+};
+const line = (k, size = 16, w) => `<svg class="li" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w ?? (size < 15 ? 2.1 : 1.6)}" stroke-linecap="round" stroke-linejoin="round">${LINE[k]}</svg>`;
+const icon = (k, size = 16, px = 1.5) => C() ? line(k, size) : P.sprite(PX[k], { px });
+const AGENT_LINE = { cc: "✳", codex: "›_", oc: "▢", pi: "π" };
+const agent = (a) => C() ? `<span class="cag">${AGENT_LINE[a]}</span>` : P.sprite(P.AGENT_PX[a], { px: 2 });
+const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+let frame = 0;
+const spin = () => C() ? `<span class="cspin"></span>` : `<span class="spin" data-spin>${SPIN[frame % SPIN.length]}</span>`;
+const mark = (st) => st === "busy" ? spin() : `<span class="sq" style="background:${st === "waiting" ? "var(--amber)" : "var(--green)"}"></span>`;
+const B = (word, kind = "", act = "", extra = "") => C() ? `<button class="cbtn ${kind}" ${act ? `data-act="${act}"` : ""} ${extra}>${word}</button>` : `<button class="btn ${kind}" ${act ? `data-act="${act}"` : ""} ${extra}>[ ${word} ]</button>`;
+const label = (w) => C() ? w : `// ${w}`;
+const chev = (open, size = 10) => C() ? `<span style="color:var(--ink3)">${line(open ? "chevD" : "chevR", size, 2.4)}</span>` : open ? "▾" : "▸";
+const pinMark = () => `<span class="pinm">${C() ? line("pin", 12, 2) : P.sprite(PX.pin, { px: 1.4 })}</span>`;
+const clockMark = () => C() ? `<span style="color:var(--ink3)">${line("clock", 12)}</span>` : "";
+const waitWord = () => `<span class="wait" style="color:var(--amber)">${C() ? "Needs You" : "Waiting"}</span>`;
+function hl(text, q) {
+  if (!q) return esc(text);
+  const i = text.toLowerCase().indexOf(q.toLowerCase());
+  return i < 0 ? esc(text) : `${esc(text.slice(0, i))}<mark>${esc(text.slice(i, i + q.length))}</mark>${esc(text.slice(i + q.length))}`;
+}
+
+// ---------- what a row passes, how a folder's rows are ordered ----------
+const passes = (x) => (!S.agent || x.ag === S.agent) && (!S.active || (x.kind === "t" ? true : x.active));
+const pinned = (x) => S.pins.has(x.id);
+const terms = (g) => g.terms.filter(passes);
+/** A folder's history: the pinned first, then the newest started (the order never moves: terminal-v0 §1). */
+function history(g) {
+  const ss = g.sess.filter(passes);
+  return [...ss.filter(pinned), ...ss.filter((x) => !pinned(x)).sort((a, b) => b.start - a.start)];
+}
+const SHOWN = 3;
+const shownHistory = (g) => { const h = history(g); const p = h.filter(pinned).length; return S.all.has(g.id) ? h : h.slice(0, p + SHOWN); };
+const liveMark = (live, waiting) => live ? (C() ? `<span class="cnt ${waiting ? "w" : ""}">${live}</span>` : `<span style="color:${waiting ? "var(--amber)" : "var(--green)"}">▪${live}</span>`) : "";
+function counts(g) {
+  const ts = terms(g), n = history(g).length;
+  return `${liveMark(ts.length, ts.some((x) => x.st === "waiting"))}${n ? `<span>${n}</span>` : ""}`;
+}
+
+// ---------- 1. the window ----------
+function drawMac() {
+  const win = document.getElementById("win");
+  const keep = win.querySelector(".list")?.scrollTop ?? 0;
+  const typing = document.activeElement?.id === "q";
+  win.className = `win ${look()}`;
+  const x = byId.get(S.sel), g = gOf.get(S.sel);
+  const tb = (k, tip) => `<button class="tb" aria-label="${attr(tip)}" title="${attr(tip)}">${icon(k)}</button>`;
+  const bar = `<div class="bar"><div class="lights"><i></i><i></i><i></i></div>${tb("list", "List ⌘B")}
+    <span class="ttl">${x ? `${x.kind === "t" ? mark(x.st) : ""}${esc(title(x))} <small>${esc(g.git || where(g))}</small>` : "Terminals"}</span>
+    <div class="end">${tb("files", "Show in Files ⌘⇧F")}${tb(x?.kind === "t" ? "terminal" : "record", "Terminal View ⌘⇧E")}${tb("right", "Split Right ⌘D")}${tb("plus", "New Terminal ⌘T")}</div></div>`;
+  const rail = `<div class="rail">${["dispatch", "terminals", "browser", "clash"].map((k) => `<span class="ic ${k === "terminals" ? "on" : ""}">${C() ? line(k, 20) : P.sprite(PX[k], { px: 2 })}</span>`).join("")}<span class="gap"></span><span class="ic" style="margin-bottom:12px">${C() ? line("settings", 20) : P.sprite(PX.settings, { px: 2 })}</span></div>`;
+  const status = `<div class="status"><span><span class="sq" style="background:var(--green)"></span> ${C() ? "Gateway OK" : "Gateway"}</span><span>iPhone Online</span><span class="sp"></span><span>${x ? AG_NAME[x.ag] : ""}</span><span>${x?.kind === "t" ? "Simple" : x ? "Record" : ""}</span></div>`;
+  win.innerHTML = `${bar}<div class="body">${rail}${sideHtml()}<div class="center">${centerHtml()}</div><div class="anns" id="anns"></div>${S.menu ? menuHtml() : ""}</div>${status}`;
+  const list = win.querySelector(".list");
+  list.scrollTop = keep;
+  list.addEventListener("scroll", afterScroll);
+  fitAll();
+  afterScroll();
+  placeMenu();
+  const q = document.getElementById("q");
+  if (q && (typing || S.focusQ)) { q.focus({ preventScroll: true }); q.setSelectionRange(q.value.length, q.value.length); }
+  S.focusQ = false;
+  const rn = win.querySelector("[data-rename]");
+  if (rn) { rn.focus({ preventScroll: true }); rn.select(); }
+  document.getElementById("capMac").innerHTML = capMac();
+}
+
+function sideHtml() {
+  const searching = S.mode === "new" && S.searching;
+  const mag = C() ? `<span style="color:var(--ink3)">${line("mag", 13)}</span>` : `<span class="slash">/</span>`;
+  const tok = S.token ? `<span class="tok">${C() ? line("folder", 11, 2.2) : ""}<span>${esc(G[S.token].name)}</span><button data-act="untoken" aria-label="Remove">×</button></span>` : "";
+  const ph = S.token ? `Search in ${G[S.token].name}` : "Search";
+  const tail = S.q || S.token ? `<button class="clr" data-act="clearq" aria-label="Clear">${C() ? line("xc", 14) : "×"}</button>` : searching ? "" : `<span class="k">⌘F</span>`;
+  const sl = S.mode === "now"
+    ? `<div class="sl">${mag}<span style="flex:1;color:var(--ink3)">Search</span><span class="k">⌘F</span></div>`
+    : `<label class="sl ${searching ? "focus" : ""}">${mag}${tok}<input id="q" value="${attr(S.q)}" placeholder="${attr(ph)}" autocomplete="off" spellcheck="false">${tail}</label>`;
+  const agents = ["cc", "codex", "pi"].map((a) => `<button class="fm ${S.agent === a ? "on" : ""}" data-act="agent" data-a="${a}" title="${AG_NAME[a]} Only">${C() ? `<span class="cag" style="color:inherit">${AGENT_LINE[a]}</span>` : P.sprite(P.AGENT_PX[a], { px: 2 })}</button>`).join("");
+  const views = S.mode === "now" ? "" : `<span class="fseg"><button class="fm ${S.view === "folder" ? "on" : ""}" data-act="view" data-v="folder" title="By Folder">${icon("byfolder", 13, 1.5)}</button><button class="fm ${S.view === "time" ? "on" : ""}" data-act="view" data-v="time" title="By Time">${icon("bytime", 13, 1.5)}</button></span>`;
+  const fl = `<div class="fl">${agents}<span class="sp"></span>${views}<button class="fm ${S.active ? "on" : ""}" data-act="activef" title="Running Terminals and Sessions Being Written Now">Active</button></div>`;
+  return `<div class="side">${sl}${fl}<div class="list" id="list">${listHtml()}</div></div>`;
+}
+function listHtml() {
+  if (S.mode === "now") return nowList();
+  if (S.searching) return searchHtml();
+  return S.view === "time" ? timeList() : folderList();
+}
+
+// ---------- today's list, as the app draws it (TerminalSidebar.swift) ----------
+function nowList() {
+  const out = [];
+  const under = (n) => (n.g ? [G[n.g]] : []).concat((n.kids ?? []).flatMap(under));
+  const walk = (node, depth) => {
+    const g = node.g ? G[node.g] : null, box = !g;
+    const own = g ? terms(g).length + history(g).length : 0;
+    const all = under(node);
+    const live = all.reduce((a, o) => a + terms(o).length, 0), waiting = all.some((o) => terms(o).some((x) => x.st === "waiting"));
+    const n = all.reduce((a, o) => a + history(o).length, 0);
+    const nm = box ? node.box : node.name;
+    const top = C() ? (depth === 0 ? 6 : 0) : (own || depth === 0 ? 8 : 2);
+    out.push(`<div class="fo ${box ? "bin" : ""}" style="padding-left:${C() ? 6 + depth * 14 : 10}px;margin-top:${top}px" ${node.ann ? `data-ann="${node.ann}"` : ""}>
+      <span class="chev" ${C() ? "" : `style="margin-left:${depth * 2}ch"`}>${C() ? `${line("chevD", 10, 2.4)}<span style="color:var(--ink2)">${line("folder", 13)}</span>` : "▾"}</span>
+      <span class="nm">${esc(C() ? nm : nm === "~" ? "~" : `${nm}/`)}</span>${g?.git ? `<span class="git">${esc(g.git)}</span>` : ""}<span class="cts">${liveMark(live, waiting)}${n ? `<span>${n}</span>` : ""}</span></div>`);
+    const rows = [];
+    if (g) {
+      terms(g).forEach((x) => { rows.push({ x }); if (x.sub) rows.push({ sub: x }); });
+      const h = g.sess.filter(passes).sort((a, b) => b.start - a.start);
+      h.slice(0, 3).forEach((x) => rows.push({ x }));
+      if (h.length > 3) rows.push({ more: h.length - 3, ann: node.g === "lumen" ? 3 : 0 });
+    }
+    const kids = node.kids ?? [];
+    rows.forEach((r, i) => {
+      const last = i === rows.length - 1 && !kids.length;
+      const tw = `${"  ".repeat(depth)}${r.sub ? "│ └─" : last ? "└─" : "├─"}`;
+      const pl = C() ? `padding-left:${depth * 14 + (r.sub ? 33 : 19)}px` : "";
+      if (r.more) { out.push(`<div class="r more" style="${pl}" ${r.ann ? `data-ann="${r.ann}"` : ""}><span class="ix"></span><span class="tw">${tw}</span><span class="mk">${C() ? `<span style="color:var(--ink3)">${line("chevR", 10, 2.4)}</span>` : "▸"}</span><span class="nm">${r.more} More</span></div>`); return; }
+      if (r.sub) { out.push(`<div class="r sub" style="${pl}"><span class="ix"></span><span class="tw">${tw}</span><span class="mk">${spin()}</span><span class="nm">${esc(r.sub.sub.task)}<i>${esc(r.sub.sub.doing)}</i></span><span class="mt">${esc(r.sub.sub.type)}</span></div>`); return; }
+      const x = r.x;
+      if (x.kind === "t") {
+        out.push(`<div class="r t ${S.sel === x.id ? "sel" : ""}" style="${pl}" data-row="${x.id}"><span class="ix">${x.n}</span><span class="tw">${tw}</span><span class="mk">${mark(x.st)}</span><span class="nm" style="color:var(--ink)">${esc(x.name)}</span><span class="mt">${x.st === "waiting" ? waitWord() : agent(x.ag)}</span></div>`);
+      } else {
+        out.push(`<div class="r s ${S.sel === x.id ? "sel" : ""}" style="${pl}" data-row="${x.id}"><span class="ix"></span><span class="tw">${tw}</span><span class="mk">${clockMark()}</span><span class="nm">${esc(x.title)}</span><span class="mt">${agent(x.ag)}<span>${x.active ? (C() ? "Working" : "Busy") : age(x.upd)}</span></span></div>`);
+      }
+    });
+    kids.forEach((k) => walk(k, depth + 1));
+  };
+  NOW_TREE.forEach((n) => walk(n, 0));
+  return out.join("");
+}
+
+// ---------- the draft: by folder ----------
+function folderList() {
+  const out = [];
+  const shownGroups = GROUPS.filter((g) => terms(g).length || history(g).length);
+  if (!shownGroups.length) return `<div class="none"><b>${S.active ? "Nothing Active" : "No Sessions"}</b></div>`;
+  for (const g of shownGroups) {
+    const open = !S.folded.has(g.id);
+    const ts = terms(g), h = history(g);
+    const holds = !open && gOf.get(S.sel) === g;
+    const ctx = S.menu?.kind === "g" && S.menu.id === g.id;
+    out.push(`<section class="grp" data-g="${g.id}"><div class="gh ${holds ? "holds" : ""} ${ctx ? "ctx" : ""}" data-gh="${g.id}" title="${attr(g.path)}">
+      <span class="chev">${C() ? `${line(open ? "chevD" : "chevR", 10, 2.4)}<span style="color:var(--accent)">${line("folder", 15)}</span>` : open ? "▾" : "▸"}</span>
+      <span class="path">${g.pre ? `<span class="pre">${esc(g.pre)}</span>` : ""}<span class="nm">${esc(C() || g.name === "~" ? g.name : `${g.name}/`)}</span></span>${g.git ? `<span class="git">${esc(g.git)}</span>` : ""}
+      <span class="cts">${counts(g)}</span></div>`);
+    if (open) {
+      const rows = [];
+      ts.forEach((x) => { rows.push({ x }); if (x.sub) rows.push({ sub: x }); });
+      const histOpen = !(ts.length && S.hist.has(g.id));
+      if (h.length && ts.length) rows.push({ sep: true });
+      if (histOpen) {
+        shownHistory(g).forEach((x) => rows.push({ x }));
+        if (h.length > h.filter(pinned).length + SHOWN) rows.push({ more: true });
+      }
+      rows.forEach((r, i) => {
+        const last = i === rows.length - 1;
+        const tw = r.sub ? "│ └─" : r.sep ? "│  " : last ? "└─" : "├─";
+        if (r.sep) { out.push(`<div class="sep" data-act="hist" data-g="${g.id}"><span class="ix"></span><span class="tw">${tw}</span><span>${C() ? `History · ${h.length}` : `// History · ${h.length}`}</span><span class="chev">${chev(histOpen, 9)}</span></div>`); return; }
+        if (r.more) { out.push(`<div class="r more" data-act="more" data-g="${g.id}"><span class="ix"></span><span class="tw">${tw}</span><span class="mk"></span><span class="nm">${S.all.has(g.id) ? "Show Fewer" : `Show All ${h.length}`}</span></div>`); return; }
+        if (r.sub) { out.push(`<div class="r sub"><span class="ix"></span><span class="tw">${tw}</span><span class="mk">${spin()}</span><span class="nm">${esc(r.sub.sub.task)}<i>${esc(r.sub.sub.doing)}</i></span><span class="mt">${esc(r.sub.sub.type)}</span></div>`); return; }
+        out.push(rowHtml(r.x, tw));
+      });
+    }
+    out.push(`</section>`);
+  }
+  return out.join("");
+}
+function rowHtml(x, tw) {
+  const sel = S.sel === x.id ? "sel" : "", ctx = S.menu?.id === x.id ? "ctx" : "";
+  if (x.kind === "t") {
+    return `<div class="r t ${sel} ${ctx}" data-row="${x.id}"><span class="ix">${x.n}</span><span class="tw">${tw}</span><span class="mk">${mark(x.st)}</span><span class="nm" style="color:var(--ink)">${esc(x.name)}</span><span class="mt">${x.st === "waiting" ? waitWord() : agent(x.ag)}</span></div>`;
+  }
+  const name = S.renaming === x.id ? `<input data-rename="${x.id}" value="${attr(title(x))}">` : `<span class="nm" title="${attr(x.title)}">${esc(title(x))}</span>`;
+  return `<div class="r s ${sel} ${ctx}" data-row="${x.id}"><span class="ix"></span><span class="tw">${tw}</span><span class="mk">${pinned(x) ? pinMark() : clockMark()}</span>${name}<span class="mt">${agent(x.ag)}<span>${x.active ? (C() ? "Working" : "Busy") : age(x.upd)}</span></span></div>`;
+}
+
+// ---------- the draft: by time (started, so a row never moves to another heading) ----------
+function timeList() {
+  const out = [];
+  const open = GROUPS.flatMap((g) => terms(g).map((x) => ({ x, g })));
+  if (open.length) {
+    out.push(`<section class="grp"><div class="th">${label("Open")}<span class="n">${open.length}</span></div>`);
+    open.forEach(({ x, g }) => out.push(r2(x, g, { meta: x.st === "waiting" ? waitWord() : agent(x.ag) })));
+    out.push(`</section>`);
+  }
+  const all = GROUPS.flatMap((g) => history(g).map((x) => ({ x, g }))).sort((a, b) => b.x.start - a.x.start);
+  for (const b of [...new Set(all.map(({ x }) => bucket(x.start)))]) {
+    const rows = all.filter(({ x }) => bucket(x.start) === b);
+    out.push(`<section class="grp"><div class="th">${label(b)}<span class="n">${rows.length}</span></div>`);
+    rows.forEach(({ x, g }) => out.push(r2(x, g, { time: stamp(x.start) })));
+    out.push(`</section>`);
+  }
+  return out.join("");
+}
+/** A row in two lines: its name and when; under it, where and which agent (or what was said). */
+function r2(x, g, { q = "", line2 = null, time = null, meta = "", keep = false, pick = false } = {}) {
+  const mk = x.kind === "t" ? mark(x.st) : pinned(x) ? pinMark() : clockMark();
+  const second = line2 ?? `${esc(where(g))} · ${AG_NAME[x.ag]}`;
+  const right = meta || esc(time ?? (x.kind === "t" ? "" : x.active ? (C() ? "Working" : "Busy") : age(x.upd)));
+  const sel = pick || (S.sel === x.id && !S.searching);
+  return `<div class="r2 ${x.kind} ${sel ? "sel" : ""}" data-row="${x.id}" ${keep ? "data-keep" : ""}><span class="mk">${mk}</span><span class="t1" title="${attr(x.kind === "s" ? x.title : x.first)}">${hl(title(x), q)}</span><span class="tm">${right}</span><span class="t2">${second}</span></div>`;
+}
+
+// ---------- the draft: one search (⌘F) ----------
+function scopeOk(g) { if (!S.token) return true; const p = G[S.token].path; return g.path === p || g.path.startsWith(p + "/"); }
+function results() {
+  const q = S.q.trim(), ql = q.toLowerCase();
+  const when = (x) => x.upd ?? x.opened;
+  const rank = (a, b) => (title(b.x).toLowerCase().startsWith(ql) - title(a.x).toLowerCase().startsWith(ql)) || when(b.x) - when(a.x);
+  const items = GROUPS.filter(scopeOk).flatMap((g) => [...terms(g), ...history(g)].map((x) => ({ x, g })));
+  const open = items.filter(({ x }) => x.kind === "t" && title(x).toLowerCase().includes(ql)).sort(rank);
+  const titles = items.filter(({ x }) => x.kind === "s" && (title(x).toLowerCase().includes(ql) || x.title.toLowerCase().includes(ql))).sort(rank);
+  const folders = S.token ? [] : GROUPS.filter((g) => (terms(g).length || history(g).length) && g.path.toLowerCase().includes(ql)).map((g) => ({ g }));
+  const seen = new Set([...open, ...titles].map(({ x }) => x.id));
+  const text = items.filter(({ x }) => !seen.has(x.id) && x.said.some((w) => w.toLowerCase().includes(ql)))
+    .map(({ x, g }) => ({ x, g, said: x.said.find((w) => w.toLowerCase().includes(ql)) })).sort((a, b) => when(b.x) - when(a.x));
+  return { q, open, titles, folders, text, flat: [...open, ...titles, ...folders, ...text] };
+}
+function snippet(said, q) {
+  const i = said.toLowerCase().indexOf(q.toLowerCase());
+  const a = Math.max(0, i - 8), b = Math.min(said.length, i + q.length + 16);
+  return `${a > 0 ? "…" : ""}${hl(said.slice(a, b), q)}${b < said.length ? "…" : ""}`;
+}
+const folderRow = (g, { q = "", act, pick }) => `<div class="r2 ${pick ? "sel" : ""}" data-act="${act}" data-g="${g.id}" data-keep><span class="mk" style="color:var(--accent)">${C() ? line("folder", 14) : "▸"}</span><span class="t1">${g.pre ? `<span style="color:var(--ink3);font-weight:400">${esc(g.pre)}</span>` : ""}${hl(g.name, q)}</span><span class="tm">${counts(g)}</span><span class="t2">${hl(g.path, q)}</span></div>`;
+function searchHtml() {
+  const at = /(?:^|\s)@(\S*)$/.exec(S.q);
+  if (at) {
+    const w = at[1].toLowerCase();
+    const fs = GROUPS.filter((g) => (terms(g).length || history(g).length) && g.path.toLowerCase().includes(w));
+    S.pick = Math.min(S.pick, Math.max(0, fs.length - 1));
+    return `<div class="lab">${label("Search in Folder")}</div><div class="sug">${fs.map((g, i) => folderRow(g, { q: at[1], act: "token", pick: i === S.pick })).join("") || `<div class="hint">没有叫这个的文件夹。</div>`}</div>
+      <div class="hint">选一个文件夹，在它和它下面的文件夹里搜。agent 在上面那一行选。</div>`;
+  }
+  if (!S.q.trim()) {
+    const recent = S.recentOpen.map((id) => byId.get(id)).filter((x) => x && scopeOk(gOf.get(x.id)) && passes(x));
+    S.pick = Math.min(S.pick, Math.max(0, recent.length - 1));
+    return `${S.recentQ.length && !S.token ? `<div class="lab">${label("Recent Searches")}<button data-act="clearrecent" data-keep>Clear</button></div><div class="chips">${S.recentQ.map((w) => `<button class="chip" data-act="recentq" data-q="${attr(w)}" data-keep>${esc(w)}</button>`).join("")}</div>` : ""}
+      <div class="lab">${label(S.token ? `Recently Opened in ${G[S.token].name}` : "Recently Opened")}</div>
+      ${recent.map((x, i) => r2(x, gOf.get(x.id), { keep: true, pick: i === S.pick, meta: x.kind === "t" ? (x.st === "waiting" ? waitWord() : agent(x.ag)) : "" })).join("") || `<div class="hint">这个文件夹里最近没有打开过的。</div>`}
+      <div class="hint">打字搜终端、会话的标题、文件夹，和会话里说过的话；打 <b style="color:var(--ink2)">@</b> 选一个文件夹，只在它下面搜。</div>`;
+  }
+  const R = results();
+  S.pick = Math.min(S.pick, Math.max(0, R.flat.length - 1));
+  if (!R.flat.length) {
+    return `<div class="none"><b>No Results</b>${S.token ? `“${esc(R.q)}”在 ${esc(G[S.token].name)} 和它下面没有找到。` : `没有找到“${esc(R.q)}”。`}${S.token ? `<div class="act">${B("Search All Folders", "pri", "untoken", "data-keep")}</div>` : ""}</div>`;
+  }
+  let i = 0;
+  const parts = [];
+  const sum = [[R.open.length, "Open"], [R.titles.length, R.titles.length === 1 ? "Title" : "Titles"], [R.folders.length, R.folders.length === 1 ? "Folder" : "Folders"], [R.text.length, "In Text"]].filter(([n]) => n).map(([n, w]) => `${n} ${w}`).join(" · ");
+  parts.push(`<div class="sum">${C() ? `${R.flat.length} ${R.flat.length === 1 ? "Result" : "Results"}` : `// ${sum}`}</div>`);
+  if (R.open.length) parts.push(`<div class="lab">${label("Open")}</div>${R.open.map(({ x, g }) => r2(x, g, { q: R.q, keep: true, pick: i++ === S.pick, meta: x.st === "waiting" ? waitWord() : agent(x.ag) })).join("")}`);
+  if (R.titles.length) parts.push(`<div class="lab">${label("Titles")}</div>${R.titles.map(({ x, g }) => r2(x, g, { q: R.q, keep: true, pick: i++ === S.pick })).join("")}`);
+  if (R.folders.length) parts.push(`<div class="lab">${label("Folders")}</div>${R.folders.map(({ g }) => folderRow(g, { q: R.q, act: "revealg", pick: i++ === S.pick })).join("")}`);
+  if (R.text.length) parts.push(`<div class="lab">${label("In Text")}</div>${R.text.map(({ x, g, said }) => r2(x, g, { keep: true, pick: i++ === S.pick, line2: `${esc(where(g))} · <q>${snippet(said, R.q)}</q>` })).join("")}`);
+  parts.push(`<div class="hint">↑ ↓ 选 · ↩ 打开 · ⌘↩ 在旁边打开 · esc 清空</div>`);
+  return parts.join("");
+}
+
+// ---------- the pane on the right: the selected terminal, or a session's record ----------
+function centerHtml() {
+  const x = byId.get(S.sel), g = gOf.get(S.sel);
+  if (!x) return `<div class="empty">Select a Terminal or a Session</div>`;
+  if (x.kind === "t") {
+    const now = x.st === "busy" ? `<div class="now">${spin()}<span>${esc(x.doing[0])}</span><code>${esc(x.doing[1])}</code><span class="t">0:${pad(8 + (+x.n % 5) * 7)}</span></div>` : "";
+    const ask = x.st === "waiting" ? `<div class="ask"><span class="h">${C() ? "Approval Needed" : "// Waiting for You"}</span><span>Codex 想运行：</span><pre>npm test -- auth</pre><div class="a">${B("Deny")}${B("Allow", "pri")}</div></div>` : "";
+    return `<div class="pane"><div></div><div class="rec">
+      <div class="ub">${esc(x.first)}</div>
+      <div class="work">${C() ? line("chevR", 11, 2.4) : "▸"}<span>Worked 1m 12s · Read 3 · Edited 2</span><span class="d">+15 <i>−7</i></span></div>
+      <div class="md"><p>${esc(x.reply)}</p></div>${now}${ask}</div>
+      <div class="reply"><div class="box"><span style="font:16px var(--mono); color:var(--ink2)">+</span><span class="tx">回复…</span>${B("Send", "pri")}</div></div></div>`;
+  }
+  return `<div class="pane"><div class="shd">${agent(x.ag)}<b>${esc(title(x))}</b><span>${esc(g.path)}</span><span class="sp"></span><span>Started ${started(x.start)}</span><span>· Last Written ${x.active ? "Now" : age(x.upd)}</span></div>
+    <div class="rec"><div class="ub">${esc(x.title)}</div>
+      <div class="work">${C() ? line("chevR", 11, 2.4) : "▸"}<span>Worked 3m 40s · Read 6 · Edited 3</span><span class="d">+42 <i>−18</i></span></div>
+      <div class="md"><p>做完了。改动和验证如下：</p><ul><li>改了 3 个文件，规则写在注释里；</li><li>相关的测试补了两条，全部通过。</li></ul></div>
+      <div class="ub">好，先这样。</div></div>
+    <div class="rbar"><span>这是以前的会话，只读。</span><span class="sp"></span>${B("Resume Beside", "", "", 'title="⌘↩"')}${B("Resume", "pri")}</div></div>`;
+}
+
+// ---------- menus (right click) ----------
+function menuHtml() {
+  const m = S.menu;
+  const it = (w, act, extra = "", k = "") => `<div class="it ${extra}" data-act="${act}">${w}${k ? `<span class="k">${k}</span>` : ""}</div>`;
+  let body;
+  if (m.kind === "g") {
+    const g = G[m.id];
+    body = `${it("New Terminal Here", "mclose")}${it(`Search in “${esc(g.name)}”`, "msearch")}${it("Show in Files", "mclose")}<hr>${it("Collapse Others", "mcollapse")}`;
+  } else if (m.kind === "t") {
+    body = `${it("Rename", "mclose")}${it("Show in Files", "mclose")}${it("Open in New Window", "mclose")}<hr>${it("Close", "mclose", "red")}`;
+  } else {
+    const x = byId.get(m.id), g = gOf.get(m.id);
+    body = `${it("Resume", "mclose", "", "↩")}${it("Resume As", "mclose", "", "›")}<hr>${it("Rename", "mrename")}${it(pinned(x) ? "Unpin" : "Pin to Top", "mpin")}<hr>${it(`Search in “${esc(g.name)}”`, "msearch")}${it("Show in Files", "mclose")}<hr>${it("Delete", "mclose", "red")}`;
+  }
+  return `<div class="menu" id="menu">${body}</div>`;
+}
+function placeMenu() {
+  const menu = document.getElementById("menu");
+  if (!menu) return;
+  const body = document.querySelector("#win .body");
+  const el = document.querySelector(S.menu.kind === "g" ? `#win [data-gh="${S.menu.id}"]` : `#win [data-row="${S.menu.id}"]`);
+  if (!el) return;
+  const b = body.getBoundingClientRect(), r = el.getBoundingClientRect();
+  menu.style.left = `${(r.left - b.left) / K + 90}px`;
+  menu.style.top = `${Math.max(4, Math.min((r.bottom - b.top) / K - 4, body.offsetHeight - menu.offsetHeight - 6))}px`;
+}
+
+// ---------- after a scroll: heads that stand at the top, the notes on today's list ----------
+function afterScroll() {
+  const list = document.getElementById("list");
+  if (!list) return;
+  const top = list.getBoundingClientRect().top;
+  list.querySelectorAll(".gh, .th").forEach((h) => {
+    h.classList.toggle("stuck", h.parentElement.getBoundingClientRect().top < top - 1 && Math.abs(h.getBoundingClientRect().top - top) < 2);
+  });
+  const anns = document.getElementById("anns");
+  if (!anns) return;
+  if (S.mode !== "now") { anns.innerHTML = ""; return; }
+  const body = document.querySelector("#win .body").getBoundingClientRect(), side = list.getBoundingClientRect();
+  anns.innerHTML = [...list.querySelectorAll("[data-ann]")].map((el) => {
+    const r = el.getBoundingClientRect();
+    if (r.bottom < side.top || r.top > side.bottom) return "";
+    return `<span class="ann" style="left:${(side.right - body.left) / K + 6}px;top:${(r.top - body.top) / K + r.height / K / 2 - 9}px">${el.dataset.ann}</span>`;
+  }).join("");
+}
+
+// ---------- the captions ----------
+const CAPS = {
+  now: `<b>现在</b>（照 App 里的规则画；列表右边缘的号码对应下面）。<ol><li><b>组头不像组头：</b>经典外观里文件夹名是 12 点、次要色，比它下面 13 点、主色的终端行还小还淡；像素外观里文件夹行和别的行一样高、一样的字。</li><li><b>子文件夹排在会话和 <code>More</code> 后面：</b><code>packages</code> 像是 lumen 会话列表的下一条，lumen 在哪里结束看不出来。</li><li><b>每个文件夹只露 3 条，</b><code>More</code> 展开了也不记住；要找就得先记得在哪个文件夹。</li><li><b>层级没有上限：</b><code>~</code> › <code>Projects</code> › <code>lumen</code> › <code>packages</code> › <code>api</code>，api 的会话在第六层。</li></ol>`,
+  new: `<b>第二稿，按文件夹。</b>每个有自己东西的文件夹是一组：组头比行大一号、主色、上面空一段，前面淡色写它在哪；子文件夹（<code>lumen/</code> <b>packages/api</b>）自己成一组、紧跟在后面，只用来归类的 <code>Projects</code>、<code>packages</code> 不再占一行。组里先是开着的终端（子代理在它下面），再是 <code>// History · 9</code>，历史淡一档；置顶的在最前（lumen 的“发布流程备忘”），露 3 条。选中的一行一直亮着。点组头收起，点 <code>// History</code> 只收起历史，点行在右边打开。`,
+  scroll: `<b>往下滚。</b>当前组的组头停在顶上，下一组的组头把它推走；停住时底下一条细线。滚一下列表试试——不管滚到哪，最上面那行都告诉你“这是哪个文件夹的”。`,
+  fold: `<b>收起与记住。</b>harbor 和 培训 收着，lumen 的 <code>Show All 9</code> 开着、Notes 的历史收着（点 <code>// History</code>）。这些都记住：刷新页面还是这样（演示记在浏览器里，App 里记在设置里，下次打开也一样）。收起的组里有选中的那一行时，组头亮。`,
+  menu: `<b>右键一条会话。</b><code>Pin to Top</code>：在组里排在最前、带图钉（再点是 <code>Unpin</code>）。<code>Rename</code>：在行里直接改，↩ 存、esc 不改；只改列表里显示的名字，悬停能看到第一句话（packages/api 的“连接池（定稿）”就是改过的）。<code>Search in “lumen”</code>：带着这个文件夹去搜（⑧）。组头右键有 <code>New Terminal Here</code>、<code>Search in “lumen”</code>、<code>Show in Files</code>、<code>Collapse Others</code>。`,
+  recent: `<b>⌘F，还没打字。</b>列表换成最近的：<code>Recent Searches</code>（点一个就搜它；<code>Clear</code> 清掉——HIG 说给人看搜索记录就要能清）和 <code>Recently Opened</code>（在 AgentSwitch 里最近打开过的终端和会话，每条第二行是文件夹和 agent）。<code>↑ ↓ ↩</code> 也能用。打 <code>@</code> 选文件夹。`,
+  typing: `<b>打字就出结果</b>（这里是“接口”）。分 <code>Open</code>、<code>Titles</code>、<code>Folders</code>、<code>In Text</code>，组内标题以它开头的在前、再按最近；<code>In Text</code> 第二行是那句话。<code>↑ ↓</code> 选、<code>↩</code> 在右边打开（退出搜索后列表展开到那一行并亮着）、<code>esc</code> 清空、再按退出。试试打“列表”“部署”“refresh”。`,
+  token: `<b>@ 文件夹。</b>打 <code>@</code> 选一个文件夹（或组头、会话右键 <code>Search in “lumen”</code>），它成了框里的一个标签，占位字写着在哪搜；搜的是它和它下面的（packages/web 的“首页加载慢”也在）。<code>⌫</code> 删标签。agent 照旧在过滤行选，两样一起用：点一下过滤行的 Codex 看看。`,
+  nothing: `<b>没找到。</b>说清在哪没找到，给 <code>Search All Folders</code> 回到全部（HIG：默认范围宽，缩小了要能放开）。`,
+  time: `<b>按时间</b>（过滤行的 <code>◷</code>）。开着的终端在最上面；历史按<b>开始时间</b>分 <code>Today</code>、<code>Yesterday</code>、<code>Previous 7 Days</code>、<code>Previous 30 Days</code>，再往前按月（<code>September</code>）、按年；每条第二行是文件夹和 agent，右边是时间。按开始时间而不是最后写的时间：一条会话不会因为又写了几句就跳到别的组（目录树顺序固定那条）。组名同样停在顶上。`,
+};
+function capMac() {
+  if (S.mode === "now") return CAPS.now;
+  if (S.searching) {
+    if (/(?:^|\s)@\S*$/.test(S.q)) return CAPS.token;
+    if (!S.q.trim()) return S.token ? CAPS.token : CAPS.recent;
+    return !results().flat.length ? CAPS.nothing : S.token ? CAPS.token : CAPS.typing;
+  }
+  if (S.view === "time") return CAPS.time;
+  if (S.menu || S.renaming || S.preset === "menu") return CAPS.menu;
+  return ["scroll", "fold"].includes(S.preset) ? CAPS[S.preset] : CAPS.new;
+}
+
+// ---------- 2. the phone ----------
+function phoneHtml(kind) {
+  const sb = `<div class="sbar"><span>15:40</span><span>●●●</span></div>`;
+  const searching = kind === "search";
+  const ttl = searching ? `<div></div>` : `<div class="ptitle"><b>Terminals</b><span>+</span></div>`;
+  const mag = C() ? line("mag", 15) : `<span style="color:var(--signal);font-weight:700">/</span>`;
+  const field = searching
+    ? `<div class="psearch">${mag}<span class="tok" style="height:22px;font-size:13px">${C() ? line("folder", 12, 2.2) : ""}<span>lumen</span></span><span class="tx">列表<span style="display:inline-block;width:1.5px;height:16px;background:var(--accent);vertical-align:-3px;margin-left:1px"></span></span><span class="cancel">Cancel</span></div>`
+    : `<div class="psearch">${mag}<span class="tx ph">Search</span></div>`;
+  const fm = (on, inner) => `<span class="fm ${on ? "on" : ""}">${inner}</span>`;
+  const agents = ["cc", "codex", "pi"].map((a) => fm(false, C() ? `<span class="cag" style="color:inherit;font-size:14px">${AGENT_LINE[a]}</span>` : P.sprite(P.AGENT_PX[a], { px: 2 }))).join("");
+  const fl = `<div class="pfl">${agents}<span class="sp"></span><span class="fseg">${fm(kind !== "time", icon("byfolder", 15, 1.6))}${fm(kind === "time", icon("bytime", 15, 1.6))}</span>${fm(false, "Active")}</div>`;
+  // The phone draws from the same rules with nothing selected and nothing folded.
+  const keep = { sel: S.sel, searching: S.searching, q: S.q, token: S.token, pick: S.pick, agent: S.agent, active: S.active, all: S.all, folded: S.folded, hist: S.hist };
+  Object.assign(S, { sel: null, agent: null, active: false, all: new Set(), folded: new Set(), hist: new Set() });
+  let body;
+  if (kind === "folder") body = folderList();
+  else if (kind === "time") body = timeList();
+  else { Object.assign(S, { searching: true, q: "列表", token: "lumen", pick: -1 }); body = searchHtml().replace(/<div class="hint">↑[\s\S]*?<\/div>/, ""); }
+  Object.assign(S, keep);
+  const tabs = [["dispatch", "Dispatch"], ["terminals", "Terminals"], ["files", "Files"], ["browser", "Browser"], ["settings", "Settings"]];
+  const bar = searching ? "" : `<div class="ptabs">${tabs.map(([k, w]) => `<span class="t ${k === "terminals" ? "on" : ""}">${C() ? line(k, 22) : P.sprite(PX[k], { px: 2 })}<span>${w}</span></span>`).join("")}</div>`;
+  return `<div class="phone ${look()}">${sb}${ttl}${field}${fl}<div class="plist">${body}</div>${bar}</div>`;
+}
+function drawPhones() {
+  const el = document.getElementById("phones");
+  el.innerHTML = [["folder", "按文件夹"], ["search", "搜索 · @lumen 列表"], ["time", "按时间"]]
+    .map(([k, w]) => `<div class="phonebox"><span class="lbl">${w}</span>${phoneHtml(k)}</div>`).join("");
+  el.querySelectorAll(".plist").forEach((l) => { l.addEventListener("scroll", () => stuckIn(l)); stuckIn(l); });
+}
+function stuckIn(list) {
+  const top = list.getBoundingClientRect().top;
+  list.querySelectorAll(".gh, .th").forEach((h) => h.classList.toggle("stuck", h.parentElement.getBoundingClientRect().top < top - 1));
+}
+
+// ---------- interaction ----------
+function draw() { drawMac(); drawPhones(); }
+/** While typing only the list changes: the field keeps its caret and the input method its word. */
+function drawList() {
+  const list = document.getElementById("list");
+  const field = document.querySelector("#win .sl");
+  const hasTail = !!field?.querySelector(".clr");
+  if (hasTail !== !!(S.q || S.token)) return drawMac();
+  list.innerHTML = listHtml();
+  afterScroll();
+  const sel = list.querySelector(".r2.sel");
+  if (sel) { const lr = list.getBoundingClientRect(), r = sel.getBoundingClientRect(); if (r.bottom > lr.bottom || r.top < lr.top) list.scrollTop += (r.top - lr.top) / K - 60; }
+  document.getElementById("capMac").innerHTML = capMac();
+}
+function reveal(id) {
+  const g = gOf.get(id), x = byId.get(id);
+  S.folded.delete(g.id);
+  if (x.kind === "s") { S.hist.delete(g.id); if (!shownHistory(g).includes(x)) S.all.add(g.id); }
+  save();
+}
+function scrollToRow(sel) {
+  requestAnimationFrame(() => {
+    const list = document.getElementById("list"), el = list?.querySelector(sel);
+    if (!el) return;
+    const lr = list.getBoundingClientRect(), r = el.getBoundingClientRect();
+    list.scrollTop += (r.top - lr.top) / K - 110;
+    afterScroll();
+  });
+}
+function openItem(id) {
+  S.sel = id;
+  S.recentOpen = [id, ...S.recentOpen.filter((v) => v !== id)].slice(0, 8);
+  const w = S.q.trim();
+  if (w && !w.startsWith("@")) S.recentQ = [w, ...S.recentQ.filter((v) => v !== w)].slice(0, 5);
+  reveal(id);
+  S.focusQ = true;
+  draw();
+}
+function leaveSearch() {
+  S.searching = false; S.q = ""; S.token = null; S.pick = 0;
+  document.getElementById("q")?.blur();
+  draw();
+  scrollToRow(`[data-row="${S.sel}"]`);
+}
+function setToken(id) {
+  S.token = id;
+  S.q = S.q.replace(/(?:^|\s)@\S*$/, "").trim();
+  S.pick = 0; S.searching = true; S.focusQ = true;
+  draw();
+}
+function revealGroup(g) {
+  S.searching = false; S.q = ""; S.token = null; S.folded.delete(g); save();
+  draw();
+  scrollToRow(`[data-gh="${g}"]`);
+}
+
+document.addEventListener("click", (e) => {
+  const opt = e.target.closest("[data-opt] button");
+  if (opt) {
+    opt.parentElement.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === opt));
+    if (opt.parentElement.dataset.opt === "look") S.look = opt.dataset.v; else S.light = opt.dataset.v === "light";
+    return draw();
+  }
+  const pre = e.target.closest("#ctlMac [data-mac]");
+  if (pre) { document.querySelectorAll("#ctlMac [data-mac]").forEach((b) => b.classList.toggle("on", b === pre)); return preset(pre.dataset.mac); }
+  if (!e.target.closest("#win")) return;
+  const a = e.target.closest("[data-act]");
+  if (S.menu && !e.target.closest("#menu")) { S.menu = null; if (!a) return draw(); }
+  if (a) {
+    const act = a.dataset.act, g = a.dataset.g;
+    switch (act) {
+      case "agent": S.agent = S.agent === a.dataset.a ? null : a.dataset.a; S.pick = 0; S.focusQ = S.searching; return draw();
+      case "activef": S.active = !S.active; S.focusQ = S.searching; return draw();
+      case "view": S.view = a.dataset.v; S.searching = false; S.q = ""; S.token = null; return draw();
+      case "hist": S.hist.has(g) ? S.hist.delete(g) : S.hist.add(g); save(); return draw();
+      case "more": S.all.has(g) ? S.all.delete(g) : S.all.add(g); save(); return draw();
+      case "untoken": S.token = null; S.pick = 0; S.focusQ = true; return draw();
+      case "clearq": S.q = ""; S.token = null; S.pick = 0; S.focusQ = true; return draw();
+      case "clearrecent": S.recentQ = []; S.focusQ = true; return draw();
+      case "recentq": S.q = a.dataset.q; S.pick = 0; S.focusQ = true; return draw();
+      case "token": return setToken(g);
+      case "revealg": return revealGroup(g);
+      case "mpin": { const id = S.menu.id; S.pins.has(id) ? S.pins.delete(id) : S.pins.add(id); S.menu = null; return draw(); }
+      case "mrename": S.renaming = S.menu.id; S.menu = null; return draw();
+      case "msearch": { const gid = S.menu.kind === "g" ? S.menu.id : gOf.get(S.menu.id).id; S.menu = null; S.view = "folder"; return setToken(gid); }
+      case "mcollapse": { const keepG = S.menu.id; S.folded = new Set(GROUPS.map((o) => o.id).filter((id) => id !== keepG)); S.menu = null; save(); return draw(); }
+      case "mclose": S.menu = null; return draw();
+    }
+  }
+  const head = e.target.closest("[data-gh]");
+  if (head) { const g = head.dataset.gh; S.folded.has(g) ? S.folded.delete(g) : S.folded.add(g); save(); return draw(); }
+  const row = e.target.closest("[data-row]");
+  if (row && !S.renaming) {
+    if (S.searching) return openItem(row.dataset.row);
+    S.sel = row.dataset.row; return draw();
+  }
+});
+// A click on a result keeps the keyboard in the search field.
+document.addEventListener("mousedown", (e) => { if (e.target.closest("#win [data-keep]") && document.activeElement?.id === "q") e.preventDefault(); });
+document.addEventListener("contextmenu", (e) => {
+  if (!e.target.closest("#win") || S.mode !== "new" || S.searching) return;
+  const head = e.target.closest("[data-gh]"), row = e.target.closest(".grp [data-row]");
+  if (!head && !row) return;
+  e.preventDefault();
+  S.menu = head ? { kind: "g", id: head.dataset.gh } : { kind: byId.get(row.dataset.row).kind, id: row.dataset.row };
+  draw();
+});
+document.addEventListener("focusin", (e) => { if (e.target.id === "q" && !S.searching) { S.searching = true; S.focusQ = true; S.menu = null; draw(); } });
+document.addEventListener("focusout", (e) => {
+  if (e.target.id !== "q") return;
+  setTimeout(() => { if (document.activeElement?.id !== "q" && S.searching && !S.q && !S.token) { S.searching = false; draw(); } }, 150);
+});
+let composing = false;
+document.addEventListener("compositionstart", (e) => { if (e.target.id === "q") composing = true; });
+document.addEventListener("compositionend", (e) => { if (e.target.id === "q") { composing = false; S.q = e.target.value; S.pick = 0; drawList(); } });
+document.addEventListener("input", (e) => { if (e.target.id === "q" && !composing) { S.q = e.target.value; S.pick = 0; drawList(); } });
+document.addEventListener("keydown", (e) => {
+  if (e.target.dataset?.rename) {
+    if (e.key === "Enter") { const v = e.target.value.trim(); if (v) S.names[e.target.dataset.rename] = v; S.renaming = null; draw(); }
+    if (e.key === "Escape") { S.renaming = null; draw(); }
+    return;
+  }
+  if (e.target.id !== "q" || composing || e.isComposing) return;
+  const picks = () => [...document.querySelectorAll("#list .r2")];
+  if (e.key === "ArrowDown") { e.preventDefault(); S.pick = Math.min(S.pick + 1, picks().length - 1); return drawList(); }
+  if (e.key === "ArrowUp") { e.preventDefault(); S.pick = Math.max(0, S.pick - 1); return drawList(); }
+  if (e.key === "Enter") {
+    e.preventDefault();
+    const el = picks()[S.pick];
+    if (!el) return;
+    if (el.dataset.act === "token") return setToken(el.dataset.g);
+    if (el.dataset.act === "revealg") return revealGroup(el.dataset.g);
+    return openItem(el.dataset.row);
+  }
+  if (e.key === "Escape") { e.preventDefault(); if (S.q || S.token) { S.q = ""; S.token = null; S.pick = 0; S.focusQ = true; return draw(); } return leaveSearch(); }
+  if (e.key === "Backspace" && !S.q && S.token) { e.preventDefault(); S.token = null; S.focusQ = true; return draw(); }
+});
+
+function preset(name) {
+  S.preset = name;
+  Object.assign(S, { mode: "new", view: "folder", menu: null, renaming: null, searching: false, q: "", token: null, pick: 0, agent: null, active: false, sel: "t1" });
+  S.folded = new Set(); S.hist = new Set(); S.all = new Set();
+  let scrollTo = null;
+  switch (name) {
+    case "now": S.mode = "now"; scrollTo = { sel: '[data-ann="1"]', by: -150 }; break;
+    case "scroll": scrollTo = { sel: '[data-g="lumen"]', by: 150 }; break;
+    case "fold": S.folded = new Set(["harbor", "peixun"]); S.all = new Set(["lumen"]); S.hist = new Set(["notes"]); save(); break;
+    case "menu": S.sel = sid("置顶的行"); S.menu = { kind: "s", id: S.sel }; scrollTo = { sel: '[data-g="lumen"]', by: -10 }; break;
+    case "recent": S.searching = true; S.focusQ = true; break;
+    case "typing": S.searching = true; S.q = "接口"; S.focusQ = true; break;
+    case "token": S.searching = true; S.token = "lumen"; S.q = "列表"; S.focusQ = true; break;
+    case "nothing": S.searching = true; S.token = "api"; S.q = "部署"; S.focusQ = true; break;
+    case "time": S.view = "time"; break;
+  }
+  const list = document.getElementById("list");
+  if (list) list.scrollTop = 0;
+  draw();
+  if (scrollTo) {
+    const l = document.getElementById("list"), el = l.querySelector(scrollTo.sel);
+    l.scrollTop += (el.getBoundingClientRect().top - l.getBoundingClientRect().top) / K + scrollTo.by;
+    afterScroll(); placeMenu();
+  }
+}
+
+// ---------- fitting the window to a narrow page ----------
+function fitAll() {
+  const box = document.getElementById("fitMac");
+  const inner = box.firstElementChild, win = document.getElementById("win");
+  K = Math.min(1, box.clientWidth / (win.offsetWidth + 2));
+  inner.style.transform = `scale(${K})`;
+  box.style.height = `${Math.ceil(win.offsetHeight * K) + 4}px`;
+}
+window.addEventListener("resize", () => { fitAll(); afterScroll(); placeMenu(); });
+setInterval(() => { if (document.hidden) return; frame++; document.querySelectorAll("[data-spin]").forEach((x) => { x.textContent = SPIN[frame % SPIN.length]; }); }, 90);
+
+// ?look=pixel&theme=light&mac=token
+const qs = new URLSearchParams(location.search);
+if (qs.get("look") === "pixel") S.look = "pixel";
+if (qs.get("theme") === "light") S.light = true;
+document.querySelectorAll('[data-opt="look"] button').forEach((b) => b.classList.toggle("on", b.dataset.v === S.look));
+document.querySelectorAll('[data-opt="theme"] button').forEach((b) => b.classList.toggle("on", (b.dataset.v === "light") === S.light));
+const mac0 = qs.get("mac") ?? "new";
+document.querySelectorAll("#ctlMac [data-mac]").forEach((b) => b.classList.toggle("on", b.dataset.mac === mac0));
+preset(mac0);
+if (mac0 === "new" && restore()) draw();
+</script>
+</body>
+</html>

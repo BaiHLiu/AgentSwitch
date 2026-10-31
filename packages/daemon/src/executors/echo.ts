@@ -1,5 +1,6 @@
 /** Test executor. Reads a directive from the task text so a single task can script its own run:
  *    @echo {"delayMs":50,"fail":"refusal","approval":"rm -rf /tmp/x","question":{"text":"which?","options":["a","b"]},"result":"hello","tokens":123}
+ *    @echo {"writing":["终端","终端怎样"],"writingMs":60}   what it writes, piece by piece, before its text
  *  `fail` is a FailureKind; `failTimes` limits how many attempts fail (default: every attempt). */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -25,6 +26,10 @@ export type EchoDirective = {
   readonly sideEffects?: { filesChanged?: number; commandsRun?: number };
   /** Files to write under <cwd>/out/ (path → content), to exercise artifact collection. */
   readonly out?: Record<string, string>;
+  /** What it writes as it goes (docs/simple-view-v0.md §5.14): each a part's text so far, `writingMs` apart; then its
+   *  text, which ends them. */
+  readonly writing?: readonly string[];
+  readonly writingMs?: number;
 };
 
 const DIRECTIVE = /@echo\s+(\{[^\n]*\})/;
@@ -76,7 +81,9 @@ export function echoExecutor(harness: string): Executor & { readonly runs: Execu
       runs.push(input);
       const d = parseDirective(input.task);
       if (d.delayMs) await sleep(d.delayMs, input.signal);
+      for (const text of d.writing ?? []) { input.writing?.({ text }); await sleep(d.writingMs ?? 0, input.signal); }
       input.emit("text", { text: `echo[${harness}/${input.model}] ${input.brief.slice(0, ECHO_BRIEF_CHARS)}` });
+      if (d.writing?.length) input.writing?.(null);
       const asked = approvalsAsked.get(input.taskId) ?? 0;
       if (d.approval && (d.approvalTimes === undefined || asked < d.approvalTimes)) {
         approvalsAsked.set(input.taskId, asked + 1);

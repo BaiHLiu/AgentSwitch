@@ -10,6 +10,9 @@ final class TaskDetailModel {
     private(set) var detail: TaskDetail?
     private(set) var events: [TaskEvent] = []
     private(set) var live = false
+    /// What its run is writing now (docs/simple-view-v0.md §5.14), at the end of its process; gone once the part is in
+    /// its events.
+    private(set) var writing: AgentWriting?
     private(set) var handedOffTo: AgentTask?
     /// True while waiting for the summarizer's spoken script after the task ended.
     private(set) var awaitingSummary = false
@@ -39,11 +42,12 @@ final class TaskDetailModel {
         guard stream == nil, let api = model.api else { return }
         let after = events.last?.seq ?? 0
         let id = taskId
+        let writes: @Sendable (AgentWriting?) -> Void = { [weak self] w in Task { @MainActor in if self?.writing != w { self?.writing = w } } }
         stream = Task { [weak self] in
             await self?.reload(api, model)
             self?.live = true
             do {
-                for try await event in api.events(taskId: id, after: after) {
+                for try await event in api.events(taskId: id, after: after, writing: writes) {
                     guard let self else { return }
                     self.events.append(event)
                     if event.touchesApprovals || event.endsStream { await self.reload(api, model) }
@@ -55,6 +59,7 @@ final class TaskDetailModel {
             // A cancelled stream was stopped by the view; a newer one may already be running.
             guard !Task.isCancelled else { return }
             self?.live = false
+            self?.writing = nil
             await model.refreshApprovals()
             await self?.awaitSummary(api, model)
             self?.stream = nil
@@ -79,6 +84,7 @@ final class TaskDetailModel {
         stream?.cancel()
         stream = nil
         live = false
+        writing = nil
     }
 
     func reload(_ api: AgentSwitchAPI, _ model: AppModel) async {

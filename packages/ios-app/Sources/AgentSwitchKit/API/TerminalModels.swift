@@ -702,14 +702,17 @@ public enum TerminalEvent: Sendable, Equatable {
     case choices(ScreenChoices?)
     /// What its screen said to commands sent from a screen, the latest last.
     case notices([ScreenNotice])
-    /// Its session's record changed.
-    case record(rev: String)
+    /// Its session's record changed (`rev`, its file's version), or the terminal went to `session`, which has no file
+    /// yet (`rev` empty). `session`: nil from an older Mac, which does not say.
+    case record(rev: String, session: String?)
     /// The agent is on another model now.
     case model(String)
     /// What it offers as your next message changed (nil: it offers none now).
     case suggestion(String?)
     /// Codex's Daybreak switch stands otherwise now.
     case daybreak(Bool)
+    /// What it is writing now (docs/simple-view-v0.md §5.14; nil: nothing is).
+    case writing(AgentWriting?)
 
     /// The SSE frame: the event name, the JSON data. Anything unknown or broken is skipped (nil), not fatal.
     public static func parse(event: String, data: String) -> TerminalEvent? {
@@ -717,6 +720,8 @@ public enum TerminalEvent: Sendable, Equatable {
         let int = { (k: String) in (obj[k] as? NSNumber)?.intValue }
         let seq = { (obj["seq"] as? NSNumber)?.int64Value }
         switch event {
+        case "writing":
+            return .writing(AgentWriting.decode(data))
         case "snapshot":
             guard let s = seq(), let cols = int("cols"), let rows = int("rows"), let d = obj["data"] as? String else { return nil }
             return .snapshot(seq: s, cols: cols, rows: rows, data: d)
@@ -765,7 +770,7 @@ public enum TerminalEvent: Sendable, Equatable {
             let notices = obj["notices"].flatMap { try? JSONSerialization.data(withJSONObject: $0) }.flatMap { try? JSONDecoder().decode([ScreenNotice].self, from: $0) } ?? []
             return .notices(notices)
         case "record":
-            return (obj["rev"] as? String).map { .record(rev: $0) }
+            return (obj["rev"] as? String).map { .record(rev: $0, session: obj["session"] as? String) }
         case "model":
             return (obj["model"] as? String).map { .model($0) }
         case "suggestion":

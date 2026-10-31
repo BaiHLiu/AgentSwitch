@@ -89,7 +89,7 @@ describe("read-denied paths (2026-09-24)", () => {
   // read them. Before this, Claude's Read/Glob/Grep/LS were allowed everywhere.
   it("defaultProtected read-denies the gate home, the browser profiles, the shared browser's agent files and the remote listener's key", () => {
     const p = defaultProtected({ HOME: "/h", AGENTSWITCH_HOME: "/h/.as", SECRET_GATE_HOME: "/h/.sg" });
-    expect(p.readDenied).toEqual(["/h/.sg", join(GATE_PUBLIC_DIR, "gate.sock"), "/h/.as/browser-profiles", "/h/.as/browser", "/h/.as/remote", "/h/.as/local-token", "/h/.as/nodes"]);
+    expect(p.readDenied).toEqual(["/h/.sg", join(GATE_PUBLIC_DIR, "gate.sock"), "/h/.as/browser-profiles", "/h/.as/browser", "/h/.as/remote", "/h/.as/local-token", "/h/.as/nodes", "/h/.as/profiles"]);
     // The agents' session tokens and Playwright MCP's unredacted snapshots (docs/browser-v0.md §5 step 3).
     expect(decideTool("Read", { file_path: "/h/.as/browser/sessions/ab12.token" }, "/w", new Set(), p).kind).toBe("deny");
     expect(decideTool("Bash", { command: "cat /h/.as/browser/agents/ab12-cd34/page.yml" }, "/w", new Set(), p).kind).toBe("deny");

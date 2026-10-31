@@ -242,7 +242,7 @@ struct ProfileProxySheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("\(profile.name) · Proxy").font(.headline)
-            Text("在这个配置名下开的终端，agent 和它运行的命令发出去的流量都从这个代理走，它的浏览器（一个单独的窗口，/login 的登录页也开在里面）也是；这台 Mac 自己的地址不走。开终端之前会先查一次这个代理，不通就不开，不会改成直连。可以把整条代理地址（http://用户名:密码@主机:端口）直接粘进 Server，用户名和密码会自己分到下面两栏。密码在这台 Mac 上加密后才保存。")
+            Text("在这个配置名下开的终端，agent 和它运行的命令发出去的流量都从这个代理走，它的浏览器（一个单独的窗口，登录页也开在里面）也是；这台 Mac 自己的地址不走。开终端之前会先查一次这个代理，不通就不开，不会改成直连。可以把整条代理地址（http://用户名:密码@主机:端口）直接粘进 Server，用户名和密码会自己分到下面两栏。密码在这台 Mac 上加密后才保存。")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Form {
                 TextField("Server", text: $draft.server, prompt: Text("http://user:pass@host:port"))
@@ -396,7 +396,7 @@ struct ProfileNewSheet: View {
                 }
             }
             .formStyle(.columns)
-            Text(byKey ? ApiKeyWords.about(agent) : "一份新的登录，放在它自己的目录里。建好后在它名下开一个终端，会直接从登录开始。")
+            Text(byKey ? ApiKeyWords.about(agent) : ProfileNewWords.account(agent))
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let said = (byKey ? draft.problem(agent: agent.rawValue) : nil) ?? problem { Text(said).font(.callout).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
             HStack {
@@ -502,6 +502,14 @@ private struct ApiKeyFields: View {
     }
 }
 
+/// What a new profile that signs in with an account is (docs/profiles-v0.md §3.1, §6.2).
+enum ProfileNewWords {
+    static func account(_ agent: AgentCLI) -> String {
+        guard agent == .codex else { return "一份新的登录，放在它自己的目录里。建好后在它名下开一个终端，会直接从登录开始。" }
+        return "一份新的 ChatGPT 登录，放在它自己的目录里；设置、技能与会话和这台 Mac 原有的 Codex 共用。建好后在它名下开一个终端，会先用设备码登录：登录页开在这个配置自己的浏览器里，把终端里显示的一次性码填进去。"
+    }
+}
+
 enum ApiKeyWords {
     static func about(_ agent: AgentCLI) -> String {
         let own = agent == .claude ? "Anthropic" : "OpenAI"
@@ -598,7 +606,7 @@ struct ProfilesSection: View {
             Text("\(agent.title) Profiles")
         } footer: {
             if profiles.creatable {
-                Footer("每个配置是一份单独的登录，放在它自己的目录里，不改这台 Mac 原有的那一份。用哪个配置在开终端的地方选：新建终端的面板里有一行 Profile，默认是上次用的；恢复一段对话默认回到它上次所在的配置，要换就用右键菜单里的 Resume As。新建之后在它名下开一个终端，没登录的配置会直接从登录开始。每个配置有一个颜色（名字前的圆点，点它可以换）：在它名下运行的终端，列表和底栏里带着同色的亮点。配置可以有自己的代理（Proxy…）：在它名下开终端之前，先经这个代理查一次通不通、从哪里出去，不通就不开；查到的出口写在终端底栏的配置名后面。每个配置还有它自己的浏览器——一个单独的浏览器窗口，登录态和指纹都是它自己的，agent 的浏览器工具和 /login 打开的登录页都在里面；有代理的配置，浏览器和 agent 从同一个代理出去。")
+                Footer("每个配置是一份单独的登录，放在它自己的目录里，不改这台 Mac 原有的那一份。用哪个配置在开终端的地方选：新建终端的面板里有一行 Profile，默认是上次用的；恢复一段对话默认回到它上次所在的配置，要换就用右键菜单里的 Resume As。新建之后在它名下开一个终端，没登录的配置会直接从登录开始。每个配置有一个颜色（名字前的圆点，点它可以换）：在它名下运行的终端，列表和底栏里带着同色的亮点。配置可以有自己的代理（Proxy…）：在它名下开终端之前，先经这个代理查一次通不通、从哪里出去，不通就不开；查到的出口写在终端底栏的配置名后面。每个配置还有它自己的浏览器——一个单独的浏览器窗口，登录态和指纹都是它自己的，agent 的浏览器工具和登录页都在里面；有代理的配置，浏览器和 agent 从同一个代理出去。")
             }
         }
     }

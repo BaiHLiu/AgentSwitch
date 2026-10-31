@@ -48,6 +48,13 @@ final class PaneRecord {
     private(set) var suggestion: String?
     /// The thinking level just asked for here, until the record says one of its own.
     private(set) var effortAsked: String?
+    /// What it is writing now (docs/simple-view-v0.md §5.14), drawn at the record's end. Once the service says the part
+    /// is done it stays until the record has it — the next read of the record, or `writingKeep` — so nothing goes blank
+    /// between the two.
+    private(set) var writing: AgentWriting?
+    @ObservationIgnored private var writingDone = false
+    @ObservationIgnored private var writingTimer: Task<Void, Never>?
+    static let writingKeep: Duration = .milliseconds(1500)
     /// A change of model or level is on its way to the agent.
     private(set) var changing = false
     private(set) var error: String?
@@ -89,6 +96,10 @@ final class PaneRecord {
         /// no file behind it: `pasted` goes to the service first.
         let path: String?
         let pasted: DispatchUploadFile?
+        /// `path` is the terminal's node's own (the Files column's): given as it is there, never sent.
+        var onNode = false
+        /// It may hold a password or a key (docs/files-v0.md §4): its chip says so.
+        var sensitive = false
 
         static func == (a: DraftFile, b: DraftFile) -> Bool { a.id == b.id }
     }
@@ -105,6 +116,9 @@ final class PaneRecord {
     @ObservationIgnored private var terminal: String?
     @ObservationIgnored private var harness = ""
     @ObservationIgnored private var session: String?
+    /// The session the record's own stream last named: the terminals' list, read every few seconds, may still name the
+    /// one before it.
+    @ObservationIgnored private var toldSession: String?
     @ObservationIgnored private var cursor: Int64 = 0
     @ObservationIgnored private var reading = false
     @ObservationIgnored private var again = false
@@ -137,10 +151,17 @@ final class PaneRecord {
             }
         }
         if info.status != "working" { stillNow() }
-        // The agent says which session it writes a moment after it starts; a `/clear` or a fork changes it.
+        // The agent says which session it writes a moment after it starts; a `/clear` or a fork changes it. Once the
+        // record's stream has named one, it is the one followed (it says a change at once).
+        if let told = toldSession, told != info.agentSessionId { return }
         guard info.agentSessionId != session || info.harness != harness else { return }
-        harness = info.harness
-        session = info.agentSessionId
+        begin(harness: info.harness, session: info.agentSessionId)
+    }
+
+    /// The record of `session` from its start: what was shown of another is gone.
+    private func begin(harness: String, session id: String?) {
+        self.harness = harness
+        session = id
         items = []; plan = []; usage = nil; mode = nil; more = false; cursor = 0; error = nil; effortAsked = nil; start = nil
         openFiles = []; diffs = [:]
         loaded = session == nil
@@ -153,9 +174,11 @@ final class PaneRecord {
         following = nil
         terminal = nil
         session = nil
+        toldSession = nil
         items = []; plan = []; usage = nil; mode = nil; more = false; cursor = 0; loaded = false; error = nil; start = nil
         activity = nil; subagents = []; activitySince = nil; modelNow = nil; effortAsked = nil; modeNow = nil; suggestion = nil; daybreakNow = nil
         progress = nil; sent = []; choices = nil; notices = []
+        writingTimer?.cancel(); writingTimer = nil; writing = nil; writingDone = false
         draft = ""
         draftFiles = []
         insert = nil
@@ -183,8 +206,10 @@ final class PaneRecord {
             if choices != now { choices = now }
         case .notices(let now):
             if notices != now { notices = now }
-        case .record:
-            refresh()
+        case .record(_, let named):
+            // Another session (a `/clear`, another one resumed): followed now, not when the list next says so.
+            if let named { toldSession = named }
+            if let named, named != session { begin(harness: harness, session: named) } else { refresh() }
         case .model(let model):
             modelNow = model
         case .mode(let mode):
@@ -193,6 +218,8 @@ final class PaneRecord {
             suggestion = text
         case .daybreak(let on):
             daybreakNow = on
+        case .writing(let now):
+            writes(now)
         case nil:
             // A turn began or ended: its clock starts over, and what the record holds may have moved on.
             if event == "status" { activitySince = Date(); refresh() }
@@ -260,7 +287,28 @@ final class PaneRecord {
         }
     }
 
+    /// What it is writing now; nil: the part is done, kept until the record has it.
+    private func writes(_ now: AgentWriting?) {
+        writingTimer?.cancel()
+        writingTimer = nil
+        if let now {
+            writingDone = false
+            if writing != now { writing = now }
+            return
+        }
+        guard writing != nil else { return }
+        writingDone = true
+        writingTimer = Task { [weak self] in
+            try? await Task.sleep(for: Self.writingKeep)
+            guard !Task.isCancelled, let self, self.writingDone else { return }
+            self.writing = nil
+            self.writingDone = false
+        }
+    }
+
     private func take(_ page: SessionRecord) {
+        // The part that was being written is in the record now: its last answer begins as it did.
+        if writingDone, let w = writing, SessionRecord.holds(page.items, written: w.text) { writingTimer?.cancel(); writingTimer = nil; writing = nil; writingDone = false }
         if plan != page.plan { plan = page.plan }
         // The record names a level of its own again (changed on the agent's own screen): that is the one in force.
         if usage?.effort != page.usage?.effort, usage != nil { effortAsked = nil }
@@ -312,11 +360,12 @@ final class PaneRecord {
             defer { self?.sending = false }
             do {
                 // On this Mac a file is named by its path; another node cannot read this Mac's disk, so there every
-                // file is sent, as a phone sends its own (docs/mesh-v0.md §5.2).
+                // file of this Mac's is sent, as a phone sends its own (docs/mesh-v0.md §5.2) — but one from that
+                // node's own Files column is named by its path there (docs/files-v0.md §4).
                 let remote = client().isRemote
-                var refs = remote ? [] : files.compactMap { file in file.path.map { TerminalReplyFile(token: file.token, path: $0) } }
+                var refs = files.filter { !remote || $0.onNode }.compactMap { file in file.path.map { TerminalReplyFile(token: file.token, path: $0) } }
                 // A picture off the clipboard has no path yet: the service keeps it with the terminal's files.
-                let sent = files.filter { remote || $0.path == nil }
+                let sent = files.filter { (remote && !$0.onNode) || $0.path == nil }
                 if !sent.isEmpty {
                     let staged = try await client().upload(try sent.map(Self.upload))
                     guard staged.count == sent.count else { throw DaemonError.unreachable("文件未能送达") }
@@ -419,19 +468,38 @@ final class PaneRecord {
 
     // MARK: the reply's files
 
-    /// Files from the disk (dragged in, `Files…`, copied in Finder): kept for the reply, their placeholders typed where
-    /// the caret is. A folder too: its path is typed, as a terminal types it.
+    /// Files from this Mac's disk (dragged in, `Files…`, copied in Finder): offered to the pane, which asks about one
+    /// that may hold a password (docs/files-v0.md §4), then kept for the reply, their placeholders typed where the caret
+    /// is. A folder too: its path is typed, as a terminal types it.
     func attach(urls: [URL]) {
         guard terminal != nil else { return }
-        var tokens: [String] = []
+        var picks: [FilesPick] = []
         for url in urls where url.isFileURL {
             let path = url.standardizedFileURL.path
             var folder: ObjCBool = false
             guard FileManager.default.fileExists(atPath: path, isDirectory: &folder) else { error = "\(url.lastPathComponent) 无法读取"; continue }
-            if draftFiles.contains(where: { $0.path == path }) { continue }
-            let image = !folder.boolValue && TerminalDraft.isImage(name: url.lastPathComponent)
-            let name = url.lastPathComponent + (folder.boolValue ? "/" : "")
-            guard let token = add(name: name, image: image, thumbnail: image ? RecordPictureStore.image(url: url, side: 104) : nil, path: path, pasted: nil) else { break }
+            picks.append(FilesPick(path: path, name: url.lastPathComponent, folder: folder.boolValue, sensitive: FilesSensitive.reason(path) != nil, onNode: !client().isRemote))
+        }
+        if let onFiles { return onFiles(picks) }
+        // No pane to ask over (a terminal's own window): the window's alert.
+        Task { [weak self] in
+            let kept = Set(await FilesAsking.kept(picks.map { URL(fileURLWithPath: $0.path) }).map(\.path))
+            self?.attach(picks: picks.filter { kept.contains($0.path) })
+        }
+    }
+
+    /// The pane's hand: what is offered goes through it (the question), then comes back to `attach(picks:)`.
+    @ObservationIgnored var onFiles: (([FilesPick]) -> Void)?
+
+    /// Files kept for the reply (the Files column's, or this Mac's once offered): their placeholders typed at the caret.
+    func attach(picks: [FilesPick]) {
+        guard terminal != nil else { return }
+        var tokens: [String] = []
+        for pick in picks {
+            if draftFiles.contains(where: { $0.path == pick.path }) { continue }
+            let thumbnail = pick.image && pick.onNode && !client().isRemote ? RecordPictureStore.image(url: URL(fileURLWithPath: pick.path), side: 104) : nil
+            guard let token = add(name: pick.name + (pick.folder ? "/" : ""), image: pick.image, thumbnail: thumbnail, path: pick.path, pasted: nil,
+                                  onNode: pick.onNode && client().isRemote, sensitive: pick.sensitive) else { break }
             tokens.append(token)
         }
         type(tokens)
@@ -490,11 +558,14 @@ final class PaneRecord {
         if !waiting.isEmpty, waiting.allSatisfy({ draft.contains($0) }) { insert = nil }
     }
 
-    private func add(name: String, image: Bool, thumbnail: NSImage?, path: String?, pasted: DispatchUploadFile?) -> String? {
+    private func add(name: String, image: Bool, thumbnail: NSImage?, path: String?, pasted: DispatchUploadFile?, onNode: Bool = false, sensitive: Bool = false) -> String? {
         guard draftFiles.count < TerminalDraft.maxFiles else { error = "每次最多 \(TerminalDraft.maxFiles) 个附件"; return nil }
         let number = (draftFiles.map(\.number).max() ?? 0) + 1
         let token = TerminalDraft.token(image: image, number: number)
-        draftFiles.append(DraftFile(token: token, number: number, isImage: image, name: name, thumbnail: thumbnail, path: path, pasted: pasted))
+        var file = DraftFile(token: token, number: number, isImage: image, name: name, thumbnail: thumbnail, path: path, pasted: pasted)
+        file.onNode = onNode
+        file.sensitive = sensitive
+        draftFiles.append(file)
         return token
     }
 
@@ -642,6 +713,9 @@ final class PaneRecord {
 
     /// The design preview's: what it offers as the next message.
     func stageSuggestion(_ text: String?) { suggestion = text }
+
+    /// The design preview's: what it is writing now.
+    func stageWriting(_ now: AgentWriting?) { writing = now }
 
     /// The design preview's: the box offering rows for what is typed.
     func stageHints(_ rows: [ReplyHintRow], pick: Int = 0, mark: ReplyHints.Mark? = nil) {

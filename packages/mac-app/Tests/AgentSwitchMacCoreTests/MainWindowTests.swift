@@ -136,6 +136,12 @@ final class MainWindowTests: XCTestCase {
         MainShortcut.Press(key: key, keyCode: keyCode, command: command, control: control, option: false, shift: shift)
     }
 
+    func testFilesColumnOnEveryPage() {
+        for page in MainPage.allCases {
+            XCTAssertEqual(MainShortcut.action(for: MainShortcut.Press(key: "f", keyCode: 3, command: true, control: false, option: false, shift: true), on: page, canGoBack: false), .files)
+        }
+    }
+
     func testShortcutsOnBothPages() {
         for page in MainPage.allCases {
             XCTAssertEqual(MainShortcut.action(for: press("0"), on: page, canGoBack: false), .page(.dispatch))

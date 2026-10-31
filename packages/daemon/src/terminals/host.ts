@@ -4,10 +4,11 @@
  *  companion beside it (OpenCode's own server), else from output activity. Permission requests from a hook wait here until a screen answers (or the wait runs out and the agent asks
  *  in the terminal). */
 
+import type { Writing } from "../core/writing.js";
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import headless from "@xterm/headless";
 import serialize from "@xterm/addon-serialize";
 import * as pty from "node-pty";
@@ -165,7 +166,12 @@ export type TerminalEvent =
    *  shows the record, beside what it is doing. */
   | { readonly type: "progress"; readonly progress: TurnProgress | null }
   /** Its session's record changed (the stream's own, not the host's: it watches the agent's file). */
-  | { readonly type: "record"; readonly rev: string };
+  /** The record of `session` changed (`rev`, its file's version), or the terminal went to `session`, which has no
+   *  file yet (`rev` empty). Only to a record view (api/terminals.ts `watchRecord`). */
+  | { readonly type: "record"; readonly rev: string; readonly session: string }
+  /** What it is writing now (docs/simple-view-v0.md §5.14): the part of its answer being written, its text so far;
+   *  null once it is not (the part is in its record, the turn ended). For a screen that shows the record. */
+  | { readonly type: "writing"; readonly writing: Writing | null };
 
 /** What a launcher gets: the new terminal's id and hook token go into the agent's env. */
 export type LaunchRequest = {
@@ -186,9 +192,9 @@ export type LaunchRequest = {
   /** The profile's own browser, by its key, for the agent's browser tool and for the pages it asks the system to
    *  open (docs/profiles-v0.md §5.1); absent: the shared browser, and the system's own for those pages. */
   readonly browserKey?: string;
-  /** What the agent is given as its first input, as if typed (Claude Code: `/login` for a profile nobody is signed
-   *  in to, docs/profiles-v0.md §3.1); absent: it starts at its prompt. */
-  readonly firstInput?: string;
+  /** Nobody is signed in to its profile (docs/profiles-v0.md §3.1): the agent starts at its sign-in — Claude Code at
+   *  `/login`, Codex at its device-code sign-in in front of it (§6.2); absent: it starts at its prompt. */
+  readonly signIn?: true;
   /** Its profile pays by a key (docs/profiles-v0.md §3.6): the agent asks this service for the key when it needs it
    *  (hookClient.ts `key`), and is told here where to send it and the model to start on when none is chosen. */
   readonly api?: { readonly name: string; readonly baseUrl?: string; readonly model?: string };
@@ -238,6 +244,8 @@ export type CompanionLink = {
   /** Its sub-agents at work now, all of them each time (OpenCode's sub-agent sessions that run), by their sessions'
    *  ids: `type` is the agent's kind, `name` what it was sent to do. */
   subagents?(list: readonly { readonly id: string; readonly type: string; readonly name: string }[]): void;
+  /** What it is writing now, where the companion hears it (Codex's server, OpenCode's): null once it is not. */
+  writing?(writing: Writing | null): void;
 };
 
 /** pi's built-in tools under the names and fields the protected-path floor reads (Claude Code's); anything else, an
@@ -425,6 +433,8 @@ export function meaningfulTitle(title: string, harness: TerminalHarness): string
 export function terminalName(custom: string | null, title: string, harness: TerminalHarness, cwd: string, given: string | null = null): string {
   return custom ?? meaningfulTitle(title, harness) ?? given ?? (basename(cwd) || AGENT_LABELS[harness]);
 }
+/** What is being written is cut at this many characters (an answer is seldom longer; a screen shows its end). */
+const MAX_WRITING = 60_000;
 const MAX_SUMMARY = 400;
 /** How long after a screen asked for a model its change goes through without Claude Code's own question. */
 const MODEL_ASK_MS = 20_000;
@@ -784,6 +794,8 @@ class Session {
   status: TerminalStatus = "idle";
   statusSince: number;
   activity: { tool: string; target: string; note?: string } | null = null;
+  /** What it is writing now (docs/simple-view-v0.md §5.14): never stored, gone when it rests. */
+  writing: Writing | null = null;
   /** The folder the agent last said it works in (a hook call's `cwd`); null before it says. */
   agentCwd: string | null = null;
   /** The model the agent says it is on now (PostModelSwitch); and one a screen asked for a moment ago. */
@@ -814,6 +826,8 @@ class Session {
   givenName: string | null = null;
   exitCode: number | null = null;
   agentSessionId: string | null = null;
+  /** Where its hooks said the session is written (`transcript_path`); null when they did not, or for another session. */
+  recordFile: string | null = null;
   /** A hook call of the agent's has named its session (Codex's turn-end notice names a thread, which may be a helper's). */
   sessionByHook = false;
   /** The session this terminal started (a new one, or a fork's): the only record closing it may delete. */
@@ -926,13 +940,13 @@ export class TerminalHost {
 
   /** Starts an agent. The terminal is listed from the moment it is made (a second resume of the same session finds it),
    *  while a companion starts; the program follows. */
-  async spawn(req: { harness: TerminalHarness; cwd: string; model?: string; effort?: string; resume?: string; fork?: boolean; name?: string; mode?: PermissionMode; allowBypass?: boolean; cols?: number; rows?: number; profile?: { id: string; name: string; /** Absent: it runs in the Mac's own folder. */ home?: string; proxy?: string; exit?: { ip: string; place: string | null }; browserKey?: string; color?: string; api?: { baseUrl?: string; model?: string }; telemetryOff?: true }; firstInput?: string }): Promise<TerminalInfo> {
+  async spawn(req: { harness: TerminalHarness; cwd: string; model?: string; effort?: string; resume?: string; fork?: boolean; name?: string; mode?: PermissionMode; allowBypass?: boolean; cols?: number; rows?: number; profile?: { id: string; name: string; /** Absent: it runs in the Mac's own folder. */ home?: string; proxy?: string; exit?: { ip: string; place: string | null }; browserKey?: string; color?: string; api?: { baseUrl?: string; model?: string }; telemetryOff?: true }; signIn?: true }): Promise<TerminalInfo> {
     if (!this.helperChecked) { ensureSpawnHelper(); this.helperChecked = true; }
     const id = randomUUID().slice(0, 8);
     const hookToken = randomBytes(24).toString("base64url");
     let plan: LaunchPlan;
     try {
-      plan = this.opts.launcher({ id, harness: req.harness, cwd: req.cwd, hookToken, mode: req.mode ?? "manual", ...(req.profile ? { ...(req.profile.home ? { configHome: req.profile.home } : {}), ...(req.profile.proxy ? { proxy: req.profile.proxy } : {}), ...(req.profile.browserKey ? { browserKey: req.profile.browserKey } : {}), ...(req.profile.api ? { api: { name: req.profile.name, ...req.profile.api } } : {}), ...(req.profile.telemetryOff ? { telemetryOff: true as const } : {}) } : {}), ...(req.firstInput ? { firstInput: req.firstInput } : {}), ...(req.allowBypass ? { allowBypass: true } : {}), ...(req.model ? { model: req.model } : {}), ...(req.effort ? { effort: req.effort } : {}), ...(req.resume ? { resume: req.resume, ...(req.fork ? { fork: true } : {}) } : {}) });
+      plan = this.opts.launcher({ id, harness: req.harness, cwd: req.cwd, hookToken, mode: req.mode ?? "manual", ...(req.profile ? { ...(req.profile.home ? { configHome: req.profile.home } : {}), ...(req.profile.proxy ? { proxy: req.profile.proxy } : {}), ...(req.profile.browserKey ? { browserKey: req.profile.browserKey } : {}), ...(req.profile.api ? { api: { name: req.profile.name, ...req.profile.api } } : {}), ...(req.profile.telemetryOff ? { telemetryOff: true as const } : {}) } : {}), ...(req.signIn ? { signIn: true as const } : {}), ...(req.allowBypass ? { allowBypass: true } : {}), ...(req.model ? { model: req.model } : {}), ...(req.effort ? { effort: req.effort } : {}), ...(req.resume ? { resume: req.resume, ...(req.fork ? { fork: true } : {}) } : {}) });
     } catch (err) {
       this.ended(id, true);
       throw new TerminalError("unavailable", (err as Error).message);
@@ -1031,6 +1045,7 @@ export class TerminalHost {
       ask: async (tool, input, signal) => (await this.ask(s, tool, input, signal))?.decision ?? null,
       session: (id) => { if (id && id !== s.agentSessionId) this.reported(s, id); },
       subagents: (list) => this.subagentsAre(s, list),
+      writing: (w) => this.writes(s, w),
     });
   }
 
@@ -1407,7 +1422,14 @@ export class TerminalHost {
     const s = this.sessions.get(id);
     if (!s || !same(token, s.hookToken)) throw new TerminalError("forbidden", "unknown terminal or hook token");
     const p = call.payload;
-    if (typeof p.session_id === "string" && p.session_id) { this.reported(s, p.session_id); s.sessionByHook = true; }
+    if (typeof p.session_id === "string" && p.session_id) {
+      this.reported(s, p.session_id);
+      s.sessionByHook = true;
+      // The file it writes the session to, which a new session has only once its first message is in: the record's
+      // watch looks at it often. Only a file named for that session (it is a hint; the watch finds it by its id).
+      const file = p.transcript_path;
+      if (typeof file === "string" && isAbsolute(file) && file.length < 4096 && basename(file).includes(p.session_id)) s.recordFile = file;
+    }
     // How it asks now: Claude Code says it with every call.
     if (typeof p.permission_mode === "string" && /^[A-Za-z]{2,40}$/.test(p.permission_mode)) this.modeIs(s, p.permission_mode);
     // Where it works now (the window's title says it): Claude Code and Codex send it with every call.
@@ -1502,6 +1524,11 @@ export class TerminalHost {
       case "PiSession": return null;
       case "PiAgentStart": this.setStatus(s, "working"); return null;
       case "PiAgentEnd": this.turnEnded(s, true, null); this.setStatus(s, "idle"); return null;
+      // What it is writing: its extension's pieces of the part being written, the text so far; `done` once its
+      // message ends (docs/simple-view-v0.md §5.14).
+      case "PiWriting":
+        this.writes(s, p.done === true || typeof p.text !== "string" ? null : { text: p.text.slice(0, MAX_WRITING), ...(p.thinking === true ? { thinking: true } : {}) });
+        return null;
       // pi blocks on a question of its own (a confirm or a choice in its screen): the terminal waits for you.
       case "PiWaiting": this.setStatus(s, "waiting"); return null;
       case "CodexNotify": {
@@ -1542,12 +1569,18 @@ export class TerminalHost {
     s.device ??= this.device(s);
     if (s.agentSessionId !== sessionId) {
       this.opts.onSession?.(s.harness, sessionId, s.profile?.id ?? null);
+      s.recordFile = null;
       // What its screen said to commands belongs with the record it was said beside, not a new one (`/clear`).
       if (s.agentSessionId && s.notices.length) { s.notices = []; s.emit({ type: "notices", notices: [] }); }
     }
     s.agentSessionId = sessionId;
     if (!s.ownSessionId && (!s.resumedFrom || s.forked) && sessionId !== s.resumedFrom) s.ownSessionId = sessionId;
     this.persist(s);
+  }
+
+  /** The file its agent's hooks said its session is written to (Claude Code's and Codex's `transcript_path`), if any. */
+  recordFileOf(id: string): string | null {
+    return this.sessions.get(id)?.recordFile ?? null;
   }
 
   /** The session terminal `id` started itself, if its agent has reported one. */
@@ -1967,12 +2000,23 @@ export class TerminalHost {
     if (s.status === status || s.status === "exited") return;
     s.status = status;
     s.statusSince = this.o.now();
-    if (status === "idle" || status === "exited") { s.activity = null; s.compactFrom = null; this.progressed(s, null); }
+    if (status === "idle" || status === "exited") { s.activity = null; s.compactFrom = null; this.progressed(s, null); this.writes(s, null); }
     s.emit({ type: "status", status });
     this.sentRests(s);
     this.suggests(s);
     this.doing(s);
   }
+
+  /** What it is writing now, for the screens that show its record. */
+  private writes(s: Session, writing: Writing | null): void {
+    if (!writing && !s.writing) return;
+    if (writing && s.writing && writing.text === s.writing.text && !!writing.thinking === !!s.writing.thinking) return;
+    s.writing = writing;
+    s.emit({ type: "writing", writing });
+  }
+
+  /** What terminal `id` is writing now (a screen that has just come). */
+  writingOf(id: string): Writing | null { return this.sessions.get(id)?.writing ?? null; }
 
   /** Tells the screens what it is doing now. */
   private doing(s: Session): void {

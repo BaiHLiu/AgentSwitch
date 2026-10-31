@@ -56,14 +56,18 @@ export function defaultProtected(env: NodeJS.ProcessEnv = process.env): Protecte
   return {
     roots: [home, gate, DAEMON_CONFIG_DIR, socket].map(canonicalPath),
     exempt: EXEMPT_UNDER_HOME.map((d) => canonicalPath(join(home, d))),
-    // The local API's token too: an executor that read it could call the API to loosen its own approval policy.
-    readDenied: [gate, socket, join(home, BROWSER_PROFILES_DIR), join(home, BROWSER_STATE_DIR), join(home, "remote"), join(home, LOCAL_TOKEN_NAME), join(home, NODES_DIR)].map(canonicalPath),
+    // The local API's token too: an executor that read it could call the API to loosen its own approval policy. And the
+    // profiles' folders: a Codex account profile keeps its ChatGPT sign-in there in a file (docs/profiles-v0.md §6.2).
+    readDenied: [gate, socket, join(home, BROWSER_PROFILES_DIR), join(home, BROWSER_STATE_DIR), join(home, "remote"), join(home, LOCAL_TOKEN_NAME), join(home, NODES_DIR), join(home, PROFILES_DIR)].map(canonicalPath),
   };
 }
 
 /** Under `$AGENTSWITCH_HOME`: the other nodes this one uses, their tokens and the nodes key (nodes/book.ts keeps the
  *  same name; no agent reads it, in a terminal either). */
 export const NODES_DIR = "nodes";
+
+/** Under `$AGENTSWITCH_HOME`: the profiles (profiles/store.ts keeps the same name), their folders and what they keep. */
+export const PROFILES_DIR = "profiles";
 
 /** Under `$AGENTSWITCH_HOME`: the local API token (api/localAuth.ts keeps the same name; executors never read it). */
 export const LOCAL_TOKEN_NAME = "local-token";
