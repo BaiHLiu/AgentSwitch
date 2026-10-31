@@ -12,6 +12,8 @@
 #
 #   scripts/install.sh               build, switch, (re)start
 #   scripts/install.sh --no-service  build and switch only
+#   scripts/install.sh --with-window the desktop window too (docs/linux-app-v0.md): a menu entry and a login item for
+#                                    it, run by the system's Electron; a machine without a desktop leaves this out
 #
 # Run from one of the node's own terminals (an agent working on AgentSwitch, from a Mac or a phone), the script is in
 # the service's cgroup: restarting the service would end it with that terminal, before it checked the new runtime or
@@ -25,7 +27,13 @@ SHARE="${XDG_DATA_HOME:-$HOME/.local/share}/agentswitch"
 RUNTIMES="$SHARE/runtime"
 BIN="$HOME/.local/bin"
 SERVICE=1
-[ "${1:-}" = "--no-service" ] && SERVICE=0
+WINDOW=0
+for arg in "$@"; do
+  case "$arg" in
+    --no-service) SERVICE=0 ;;
+    --with-window) WINDOW=1 ;;
+  esac
+done
 
 log() { printf '\n==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -99,6 +107,19 @@ chmod 755 "$BIN/agentswitch.new"
 mv "$BIN/agentswitch.new" "$BIN/agentswitch"
 echo "command: $BIN/agentswitch"
 case ":$PATH:" in *":$BIN:"*) ;; *) echo "note: $BIN is not on your PATH" ;; esac
+
+# The window: its menu entry and its login item (started hidden, in the tray), both through `current`.
+if [ "$WINDOW" = 1 ]; then
+  apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+  autostart="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
+  run="$RUNTIMES/current/linux-app/scripts/run.sh"
+  mkdir -p "$apps" "$autostart"
+  "$RUNTIMES/current/node/bin/node" "$RUNTIMES/current/linux-app/scripts/icon.js" "$SHARE/icon.png"
+  sed -e "s|@RUN@|$run|" -e "s|@ICON@|$SHARE/icon.png|" "$RUNTIMES/current/linux-app/agentswitch.desktop.in" > "$apps/agentswitch.desktop"
+  sed -e "s|@RUN@|$run --hidden|" -e "s|@ICON@|$SHARE/icon.png|" "$RUNTIMES/current/linux-app/agentswitch.desktop.in" > "$autostart/agentswitch.desktop"
+  echo "window: $apps/agentswitch.desktop (and at login, in the tray)"
+  command -v electron >/dev/null || echo "note: the window needs Electron (Arch: sudo pacman -S electron)"
+fi
 
 [ "$SERVICE" = 1 ] || { log "done (the service was not restarted)"; exit 0; }
 if grep -q '/agentswitch\.service$' /proc/self/cgroup 2>/dev/null; then

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=AgentSwitch
+Comment=AgentSwitch's terminals and Dispatch on this node
+Exec=@RUN@ %U
+Icon=@ICON@
+Terminal=false
+Categories=Development;
+StartupWMClass=AgentSwitch
+SingleMainWindow=true

@@ -47,6 +47,9 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: linux-app (the desktop window's parts that need no Electron, docs/linux-app-v0.md)
+        working-directory: packages/linux-app
+        run: npm test
 
   secret-gate:
     name: secret-gate · pytest
