@@ -55,7 +55,27 @@ final class NodesStore {
     }
 
     func setKeyboard(_ on: Bool, _ model: AppModel) async {
-        do { mesh = try await model.client.saveMeshSettings(MeshSettings(keyboard: on)) } catch { model.errorMessage = error.localizedDescription }
+        do { mesh = try await model.client.saveMeshSettings(MeshSettings(keyboard: on, files: mesh?.files ?? true, changes: mesh?.changes ?? true)) } catch { model.errorMessage = error.localizedDescription }
+    }
+
+    /// `Paired Nodes May Read Files` (docs/files-v0.md §7.5).
+    func setFiles(_ on: Bool, _ model: AppModel) async {
+        do { mesh = try await model.client.saveMeshSettings(MeshSettings(keyboard: mesh?.keyboard ?? true, files: on, changes: mesh?.changes ?? true)) } catch { model.errorMessage = error.localizedDescription }
+    }
+
+    /// `Paired Nodes May Change Files` (docs/files-v0.md §12.5).
+    func setChanges(_ on: Bool, _ model: AppModel) async {
+        do { mesh = try await model.client.saveMeshSettings(MeshSettings(keyboard: mesh?.keyboard ?? true, files: mesh?.files ?? true, changes: on)) } catch { model.errorMessage = error.localizedDescription }
+    }
+
+    /// What of this Mac's files a paired device may read; the devices read again for their rows.
+    func setScope(_ scope: FileScope, of device: Device, _ model: AppModel) async {
+        busy = true
+        defer { busy = false }
+        do {
+            _ = try await model.client.setDeviceFiles(id: device.id, scope: scope)
+            await model.refreshDevices()
+        } catch { model.errorMessage = (error as? DaemonError)?.reason ?? error.localizedDescription }
     }
 
     /// Pair with the node a link names; the answer, or why not in the service's own words.

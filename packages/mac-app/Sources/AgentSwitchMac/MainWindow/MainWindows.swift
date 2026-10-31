@@ -30,6 +30,9 @@ final class MainWindows {
         wire(main, name: "main")
     }
 
+    /// The nodes with a window of their own open now.
+    var nodeWindows: [String] { more.compactMap { $0.window != nil ? $0.state.nodeId : nil } }
+
     /// The open window whose pages are this node's (nil: this Mac's).
     func on(_ node: String?) -> MainWindowController? {
         all.first { $0.window != nil && $0.state.nodeId == node }

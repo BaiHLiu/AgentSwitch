@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { AgentContext, type McpContext, type McpTab } from "../src/browser/agentMcp.js";
 import { HeldTraffic } from "../src/browser/heldTraffic.js";
 import { BrowserHost } from "../src/browser/host.js";
+import { TAB_EVENTS } from "../src/browser/tabLimits.js";
 import { YOU, type TabOwner } from "../src/browser/types.js";
 import { FakeDriver, type FakePage } from "./fakeBrowser.js";
 
@@ -29,7 +30,10 @@ class FakeMcp implements McpContext {
   }
 
   private make(page: unknown): void {
-    const tab: McpTab = { page, context: this, targetLocator: async () => ({ locator: { boundingBox: async () => ({ x: 10.4, y: 20.6, width: 99.5, height: 30 }) } }) };
+    // With the lists `tools.Tab` keeps of its page and the member that adds to them.
+    const buffers = { _recentEventEntries: [] as object[], _requests: [] as object[], _consoleLog: null, _resetLogs: () => undefined,
+      _addLogEntry(entry: object) { this._recentEventEntries.push(entry); } };
+    const tab: McpTab = Object.assign(buffers, { page, context: this, targetLocator: async () => ({ locator: { boundingBox: async () => ({ x: 10.4, y: 20.6, width: 99.5, height: 30 }) } }) });
     (page as Record<symbol, McpTab>)[FakeMcp.TAG] = tab;
     this.made.push(tab);
     this.current ??= tab;
@@ -169,6 +173,21 @@ describe("an agent's context", () => {
     expect(Date.now() - started).toBeGreaterThanOrEqual(30);   // the grace after the hand-back
     const second = await context.newPage();
     expect(guarded.at(-1)).toBe(second);
+    context.dispose();
+  });
+
+  it("limits what each tab Playwright MCP makes keeps of its page, with no holds to follow too (tabLimits.ts)", async () => {
+    const { host } = setup();
+    await host.open(CODEX, "https://own.example/");
+    const context = new AgentContext(host, CODEX, tabOf);
+    const mcp = new FakeMcp(context);
+    await context.newPage();
+    expect(mcp.made).toHaveLength(2);
+    for (const tab of mcp.made) {
+      const t = tab as unknown as { _recentEventEntries: object[]; _requests: object[]; _addLogEntry(entry: object): void };
+      for (let i = 0; i < 1_000; i++) t._addLogEntry({ type: "console" });
+      expect(t._recentEventEntries).toHaveLength(TAB_EVENTS);
+    }
     context.dispose();
   });
 });

@@ -50,6 +50,16 @@ final class ClashIntegrationTests: XCTestCase {
         XCTAssertTrue(try view(#""found":true,"running":true,"tun":true,"active":true,"upToDate":false"#).todo[0].contains("更新一次"))
     }
 
+    /// Only My Rules (§7.11): read when the service says it, off when it says nothing (a node from before), and always sent.
+    func testOnlyMyRulesIsReadAndSent() throws {
+        XCTAssertFalse(try view(#""found":true,"running":true,"active":true,"upToDate":true"#).settings.ownRules)
+        let json = #"{"claude":{"nodes":[]},"openai":{"nodes":[]},"direct":[],"autoUpdateHours":24,"renameDefault":false,"dns":{"on":false,"text":null},"templates":{"domestic":{"on":false,"rules":null},"block":{"on":false,"rules":null}},"ownRules":true}"#
+        let read = try JSONDecoder().decode(ClashSettings.self, from: Data(json.utf8))
+        XCTAssertEqual(read, ClashSettings(ownRules: true))
+        let sent = try JSONSerialization.jsonObject(with: JSONEncoder().encode(ClashSettings())) as? [String: Any]
+        XCTAssertEqual(sent?["ownRules"] as? Bool, false)
+    }
+
     func testSettingsGoBackWhole() throws {
         var settings = ClashSettings()
         settings[.openai].nodes = ["US 01"]

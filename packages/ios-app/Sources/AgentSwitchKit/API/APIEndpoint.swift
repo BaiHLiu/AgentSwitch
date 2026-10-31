@@ -43,7 +43,11 @@ public struct APIEndpoint: Codable, Sendable, Hashable {
         comps.percentEncodedHost = HostAddress.urlHost(host)
         comps.port = port
         comps.percentEncodedPath = "/" + segments.map(Self.encodeSegment).joined(separator: "/")
-        if !query.isEmpty { comps.queryItems = query }
+        if !query.isEmpty {
+            comps.queryItems = query
+            // A `+` is left as it is in a query, and read back as a space by the Mac (a path like `c++/notes`).
+            comps.percentEncodedQuery = comps.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        }
         return comps.url!
     }
 

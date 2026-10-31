@@ -156,6 +156,12 @@ final class TerminalsPageController: NSObject, WKNavigationDelegate, TerminalsPa
     }
 
     /// The bar's menu: the terminal of the pane in focus goes to a window of its own.
+    // The web page has no Files column of its own to reach.
+    var files: FilesColumn? { get { nil } set {} }
+    var paneFolder: String? { nil }
+    func filesTarget() -> FilesTarget? { nil }
+    func newTerminal(in folder: String) { newTerminal() }
+
     func detachShown() {
         if let id = screen?.shown { onDetach(id) }
     }
@@ -462,6 +468,8 @@ private final class ScriptBridge: NSObject, WKScriptMessageHandler {
 final class TerminalHead {
     /// The folder the agent works in now (its name), and that folder's git (`main ±5 ↑2`).
     var name = ""
+    /// That folder's whole path: where the bar's Files icon opens the column.
+    var folder: String?
     var git = ""
     /// The terminal's own name and the folder's path, under the pointer.
     var help = ""

@@ -79,10 +79,12 @@ extension DispatchModel {
 
     /// Files from the disk (dropped, `Files…`, pasted from Finder), read off the main thread; what cannot join is said.
     func attach(urls: [URL]) {
-        let files = urls.filter(\.isFileURL)
-        guard !files.isEmpty else { return }
+        let given = urls.filter(\.isFileURL)
+        guard !given.isEmpty else { return }
         preparing += 1
         Task {
+            // One that may hold a password is asked about first (docs/files-v0.md §4); `Cancel` keeps the others.
+            let files = await FilesAsking.kept(given)
             let read = await Task.detached(priority: .userInitiated) { files.map(Self.read) }.value
             preparing -= 1
             add(read)

@@ -7,10 +7,13 @@ import { streamSSE } from "hono/streaming";
 import { existsSync, rmSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
+import { diskSpelling, keptDiskSpelling } from "../core/paths.js";
 import { z } from "zod";
 import { remoteCaller } from "../core/caller.js";
 import { SSE_HEARTBEAT_MS } from "../core/limits.js";
 import type { TerminalAudit } from "../terminals/audit.js";
+import { attachable } from "../files/browse.js";
+import { viewerFor } from "./browse.js";
 import type { ElsewhereCheck } from "../terminals/elsewhere.js";
 import { checkPicks, MAX_OTHER, PERMISSION_MODES, TERMINAL_HARNESSES, TerminalError, type QuestionPick, type TerminalEvent, type TerminalHarness, type TerminalHost, CLAUDE_MODES } from "../terminals/host.js";
 import type { TerminalStyle } from "../terminals/style.js";
@@ -53,7 +56,7 @@ export type Terminals = {
   /** Where a terminal's attached files go (`<dir>/<id>/`); default the system's temporary folder (no spaces). */
   readonly attachDir?: string;
   /** Before an agent starts (Codex: its hooks trusted, codexHooks.ts); whatever happens, the start goes on. */
-  readonly prepare?: (harness: TerminalHarness) => Promise<unknown>;
+  readonly prepare?: (harness: TerminalHarness, home?: string) => Promise<unknown>;
   /** The tree's git status (default: `git status` itself, gitStatus.ts). */
   readonly git?: GitStatus;
   /** Whether `harness` is signed in, in the folder a profile gives it (signIn.ts); null or absent: not known. */
@@ -61,8 +64,11 @@ export type Terminals = {
 };
 
 /** A terminal as the screens list it: each sub-agent with what it is doing in words (`doing`, as the Live Activity). */
+/** A terminal as the list gives it: its folders spelled as the disk spells them (one opened as `~/x/pi` is in the same
+ *  folder as the sessions recorded in `~/x/Pi`, and listed with them). */
 function shown(t: TerminalInfo) {
-  return { ...t, subagents: t.subagents.map((a) => ({ ...a, doing: subagentDoing(a.activity, t.cwd) })) };
+  const cwd = keptDiskSpelling(t.cwd), workdir = keptDiskSpelling(t.workdir);
+  return { ...t, cwd, workdir, subagents: t.subagents.map((a) => ({ ...a, doing: subagentDoing(a.activity, t.cwd) })) };
 }
 
 const MAX_INPUT = 20_000;
@@ -125,9 +131,10 @@ function expandCwd(cwd: string): string {
 
 /** Consecutive output events as one (a busy agent writes in many small pieces). */
 /** How often a record's stream looks at the session's file, and how often it looks for the file while there is none
- *  yet (a terminal just started has no session until the agent says which). */
+ *  yet (a terminal just started has no session until the agent says which; a new session has no file until its first
+ *  message). The file the agent's hooks named is looked at on each look. */
 const RECORD_WATCH_MS = 300;
-const RECORD_FIND_MS = 2000;
+const RECORD_FIND_MS = 1000;
 
 /** A record's user entry stands for a reply sent at `at` when it is no older than that (a moment's slack for the two
  *  clocks' rounding) and says the same — its first words, since a long one is cut short in the record; one that went
@@ -150,24 +157,32 @@ function confirmSent(host: TerminalHost, sessions: SessionMonitor, id: string): 
   } catch { /* unreadable just now: the next change looks again */ }
 }
 
-/** Calls `changed` with the version of the terminal's session file, now and each time the file changes. OpenCode keeps
- *  its sessions in one database, which says nothing of one session: its screens ask again on their own. Returns the
- *  stop. */
-export function watchRecord(host: TerminalHost, sessions: SessionMonitor, id: string, changed: (rev: string) => void, everyMs = RECORD_WATCH_MS): () => void {
-  let path: string | null = null, of: string | null = null, last: string | null = null, looked = 0;
+/** Calls `changed` with the version of the terminal's session file and the session it is of, now and each time the
+ *  file changes; a session the terminal goes to (a `/clear`, another one resumed) is told at once, with no version
+ *  while it has no file yet — a screen need not wait for the terminals' list to know it. OpenCode keeps its sessions
+ *  in one database, which says nothing of one session: its screens ask again on their own. Returns the stop. */
+export function watchRecord(host: TerminalHost, sessions: SessionMonitor, id: string, changed: (rev: string, session: string) => void, everyMs = RECORD_WATCH_MS): () => void {
+  let path: string | null = null, of: string | null = null, last: string | null = null, looked = 0, told = false, named: string | null = null;
   const look = () => {
     const t = host.get(id);
     const session = t?.agentSessionId;
     if (!t || !session || t.harness === "opencode") return;
-    if (of !== session) { of = session; path = null; last = null; looked = 0; }
+    if (of !== session) { of = session; path = null; last = null; looked = 0; told = false; named = null; }
     if (!path) {
-      if (Date.now() - looked < RECORD_FIND_MS) return;
+      // Where its hooks said it writes: there now, it is looked for at once (once for each file named).
+      const file = host.recordFileOf(id);
+      const there = file !== null && file !== named && existsSync(file);
+      if (!there && Date.now() - looked < RECORD_FIND_MS) return;
+      if (there) named = file;
       looked = Date.now();
       // Its own session, wherever it runs (the list leaves scratch folders out).
       path = sessions.locate(t.harness, session);
-      if (!path) return;
+      if (!path) {
+        if (!told) { told = true; changed("", session); }
+        return;
+      }
     }
-    try { const { rev } = fileRev(path); if (rev !== last) { last = rev; changed(rev); } } catch { path = null; }
+    try { const { rev } = fileRev(path); if (rev !== last) { last = rev; told = true; changed(rev, session); } } catch { path = null; }
   };
   look();
   const timer = setInterval(look, everyMs);
@@ -321,7 +336,9 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
         return c.json({ error: takes ? `effort: one of ${takes.join(", ")}` : "effort: this model takes no level (OpenCode: choose a model first)" }, 400);
       }
     }
-    const cwd = resolve(typed);   // `~/proj/` and `~/proj` are one folder
+    // `~/proj/` and `~/proj` are one folder; so are `~/proj` and `~/Proj` on a Mac's disk, which the agent then records
+    // and the list shows by the disk's own spelling.
+    const cwd = diskSpelling(resolve(typed));
 
     const resumed = resume ? (body.data as z.infer<typeof ResumeTerminal>) : null;
     const agentSessionId = resumed?.agentSessionId;
@@ -350,8 +367,17 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
     // started anywhere else it asks, in the terminal, whether to fork it there. In another folder the service asks for
     // the fork itself: a new session there with the whole history, the first one left where it is (§5, 2026-10-11).
     const forks = fork || (body.data.harness === "pi" && movedFrom !== undefined);
-    // The agent made ready (Codex: its hooks trusted, a few seconds at most); the start goes on whatever happens.
-    await t.prepare?.(body.data.harness).catch(() => undefined);
+    // The profile it starts under (docs/profiles-v0.md §3.3): the one named. Not named — a conversation goes on under
+    // the one it last ran under (the Mac's own when none is known, or that one is gone); a new terminal starts under
+    // the one last chosen for a new terminal. `Default` is the Mac's own: nothing is set for it.
+    const recorded = resumed ? deps.profiles?.sessionProfile(resumed.harness, resumed.agentSessionId) ?? DEFAULT_PROFILE : null;
+    const wanted = body.data.profile ?? recorded ?? deps.profiles?.current(body.data.harness) ?? DEFAULT_PROFILE;
+    const profileHome = wanted === DEFAULT_PROFILE ? null : deps.profiles?.homeOf(body.data.harness, wanted) ?? null;
+    // What of the Mac's own set-up came since the profile was made is linked into its folder (Codex's, §6.2).
+    if (profileHome) deps.profiles?.keepLinked(body.data.harness, wanted);
+    // The agent made ready (Codex: its hooks trusted in the folder it runs in, a few seconds at most); the start goes
+    // on whatever happens.
+    await t.prepare?.(body.data.harness, profileHome ?? undefined).catch(() => undefined);
     // Open in another program → say where, and the client may fork instead.
     if (agentSessionId && !forks) {
       const open = openHere();
@@ -363,12 +389,6 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
       const raced = openHere();
       if (raced) return c.json({ terminal: raced, existing: true });
     }
-    // The profile it starts under (docs/profiles-v0.md §3.3): the one named. Not named — a conversation goes on under
-    // the one it last ran under (the Mac's own when none is known, or that one is gone); a new terminal starts under
-    // the one last chosen for a new terminal. `Default` is the Mac's own: nothing is set for it.
-    const recorded = resumed ? deps.profiles?.sessionProfile(resumed.harness, resumed.agentSessionId) ?? DEFAULT_PROFILE : null;
-    const wanted = body.data.profile ?? recorded ?? deps.profiles?.current(body.data.harness) ?? DEFAULT_PROFILE;
-    const profileHome = wanted === DEFAULT_PROFILE ? null : deps.profiles?.homeOf(body.data.harness, wanted) ?? null;
     // One that pays by a key (§3.6): the agent is told where to send it and asks for the key itself. Codex's has no
     // folder of its own.
     const paid = wanted === DEFAULT_PROFILE ? null : deps.profiles?.apiOf(body.data.harness, wanted) ?? null;
@@ -392,9 +412,9 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
     // answer. Asked of the agent itself; when it does not say, nothing is assumed.
     // Only one that signs in with an account: one that pays by a key has nobody to sign in.
     const account = profile && deps.profiles!.kindOf(body.data.harness, wanted) === "subscription";
-    const firstInput = profile?.home && account && (await t.signedIn?.(body.data.harness, profile.home).catch(() => null)) === false ? "/login" : null;
+    const signIn = Boolean(profile?.home && account && (await t.signedIn?.(body.data.harness, profile.home).catch(() => null)) === false);
     try {
-      const info = await host.spawn({ harness: body.data.harness, cwd, ...(profile ? { profile } : {}), ...(firstInput ? { firstInput } : {}), ...(body.data.model ? { model: body.data.model } : {}), ...(body.data.effort ? { effort: body.data.effort } : {}), ...(agentSessionId ? { resume: agentSessionId, ...(forks ? { fork: forks } : {}) } : {}),
+      const info = await host.spawn({ harness: body.data.harness, cwd, ...(profile ? { profile } : {}), ...(signIn ? { signIn: true as const } : {}), ...(body.data.model ? { model: body.data.model } : {}), ...(body.data.effort ? { effort: body.data.effort } : {}), ...(agentSessionId ? { resume: agentSessionId, ...(forks ? { fork: forks } : {}) } : {}),
         ...(resumed?.title ? { name: resumed.title } : {}), ...(body.data.mode ? { mode: body.data.mode } : {}),
         allowBypass: true,
         ...(body.data.cols ? { cols: body.data.cols } : {}), ...(body.data.rows ? { rows: body.data.rows } : {}) });
@@ -442,14 +462,14 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
       let wake: (() => void) | null = null;
       let open = true;
       const unsubscribe = host.subscribe(id, record ? null : after, (ev) => {
-        if (record ? ev.type === "snapshot" || ev.type === "output" : ev.type === "activity" || ev.type === "progress" || ev.type === "sent" || ev.type === "choices" || ev.type === "notices") return;
+        if (record ? ev.type === "snapshot" || ev.type === "output" : ev.type === "activity" || ev.type === "progress" || ev.type === "sent" || ev.type === "choices" || ev.type === "notices" || ev.type === "writing") return;
         queue.push(ev);
         if (queue.length > MAX_QUEUED) open = false;
         wake?.();
       }, by);
       stream.onAbort(() => { open = false; wake?.(); });
       const heartbeat = setInterval(() => { void stream.write(": ping\n\n").catch(() => undefined); }, deps.sseHeartbeatMs ?? SSE_HEARTBEAT_MS);
-      const watch = record && deps.sessions ? watchRecord(host, deps.sessions, id, (rev) => { queue.push({ type: "record", rev }); wake?.(); confirmSent(host, deps.sessions!, id); }, deps.recordWatchMs ?? RECORD_WATCH_MS) : null;
+      const watch = record && deps.sessions ? watchRecord(host, deps.sessions, id, (rev, session) => { queue.push({ type: "record", rev, session }); wake?.(); if (rev) confirmSent(host, deps.sessions!, id); }, deps.recordWatchMs ?? RECORD_WATCH_MS) : null;
       if (record) {
         const now = host.get(id);
         if (now) {
@@ -458,13 +478,18 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
           if (now.sent.length) queue.push({ type: "sent", replies: now.sent });
           if (now.choices) queue.push({ type: "choices", choices: now.choices });
           if (now.notices.length) queue.push({ type: "notices", notices: now.notices });
+          const writing = host.writingOf(id);
+          if (writing) queue.push({ type: "writing", writing });
         }
       }
       try {
         while (open) {
           for (const ev of coalesce(queue.splice(0))) {
             // Sub-agents as the list gives them: each with what it is doing in words.
-            const said = ev.type === "activity" ? { ...ev, subagents: ev.subagents.map((a) => ({ ...a, doing: subagentDoing(a.activity, host.get(id)?.cwd ?? "") })) } : ev;
+            const said = ev.type === "activity" ? { ...ev, subagents: ev.subagents.map((a) => ({ ...a, doing: subagentDoing(a.activity, host.get(id)?.cwd ?? "") })) }
+              // What it is writing: `{text, thinking?}`, or `{done: true}` once it is not (as a task's stream says it).
+              : ev.type === "writing" ? (ev.writing ?? { done: true })
+              : ev;
             await stream.writeSSE({ event: ev.type, data: JSON.stringify(said), ...("seq" in ev ? { id: String(ev.seq) } : {}) });
             if (ev.type === "removed") open = false;
           }
@@ -553,12 +578,25 @@ export function mountTerminals(app: Hono, deps: ApiDeps): void {
     const byToken = new Map(body.data.attachments.map((a) => [a.token, a]));
     const pieces = byToken.size ? text.split(/(\[(?:Image|File) #\d{1,3}\])/) : [text];
     const used = [...new Set(pieces.filter((p) => byToken.has(p)))];
-    // A file by its place on this Mac is the Mac's own screens' to name (a phone's files are sent, never pointed at),
-    // and it has to be there (a file, or a folder: a terminal types a dragged folder's path too).
+    // A file by its place here has to be there (a file, or a folder: a terminal types a dragged folder's path too). This
+    // node's own screens may name any but AgentSwitch's own credential places; a paired device one its Files column
+    // could give it (docs/files-v0.md §7.1: the switch, its scope), and none without the Files column.
     const local = used.filter((t) => byToken.get(t)!.path !== undefined);
-    if (local.length && remoteCaller(c.env)) return c.json({ error: "attachments: a path is this Mac's own to give" }, 403);
+    if (local.length && remoteCaller(c.env) && !deps.fileAccess) return c.json({ error: "attachments: a path is this Mac's own to give" }, 403);
     const missing = local.find((t) => !existsSync(byToken.get(t)!.path!));
     if (missing) return c.json({ error: `文件不存在：${byToken.get(missing)!.path}` }, 400);
+    if (local.length && deps.fileAccess) {
+      const viewer = viewerFor(deps.fileAccess, c.env);
+      if (viewer === "files-off") return c.json({ error: "此节点不允许配对的设备读取文件。", code: "files-off" }, 403);
+      for (const t of local) {
+        const p = byToken.get(t)!.path!;
+        const why = attachable(p, viewer);
+        if (why === "locked") return c.json({ error: `此处存放 AgentSwitch 的凭据，无法交给 agent：${p}`, code: why }, 403);
+        if (why === "scope") return c.json({ error: `不在这台设备的授权范围内：${p}`, code: why }, 403);
+        if (why === "permission") return c.json({ error: `AgentSwitch 无权访问：${p}`, code: why }, 403);
+        if (why) return c.json({ error: `文件不存在：${p}` }, 400);
+      }
+    }
     const staged = used.filter((t) => byToken.get(t)!.upload !== undefined);
     let moved: { name: string; path: string; size: number }[] = [];
     if (staged.length) {

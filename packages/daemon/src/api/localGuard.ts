@@ -3,7 +3,8 @@
  *  - Host names this listener (127.0.0.1, localhost or [::1] on its own port): a DNS-rebinding page sends its own name;
  *  - Origin, when a browser sends one, is the web UI's own (http://127.0.0.1:<port> or http://localhost:<port>);
  *  - a POST/PUT/PATCH/DELETE with a body is JSON (multipart only for POST /uploads, here or on another node through
- *    `/nodes/<id>/uploads`): form and text/plain bodies are what a cross-site page can send without a CORS preflight.
+ *    `/nodes/<id>/uploads`; a file's bytes only for PUT /files/content, which a browser preflights anyway): form and
+ *    text/plain bodies are what a cross-site page can send without a CORS preflight.
  *  The CLI, the Mac app and curl send no Origin and pass. The remote listener (app-v0 §2) hands its requests to the API
  *  in process and never comes through here. */
 
@@ -24,6 +25,8 @@ const STATE_CHANGING: ReadonlySet<string> = new Set(["POST", "PUT", "PATCH", "DE
 const JSON_TYPE = "application/json";
 /** The one route that takes a multipart body (api/files.ts), and the same route of another node (api/nodes.ts). */
 const UPLOAD = { method: "POST", path: /^(?:\/nodes\/[^/]+)?\/uploads$/, type: "multipart/form-data" } as const;
+/** A file sent into a folder (docs/files-v0.md §12.8), as its bytes; here or on another node. */
+const FILE_IN = { method: "PUT", path: /^(?:\/nodes\/[^/]+)?\/files\/content$/, type: "application/octet-stream" } as const;
 
 const mediaType = (value: string | undefined): string => (value ?? "").split(";")[0]!.trim().toLowerCase();
 
@@ -38,7 +41,7 @@ export function localRefusal(req: LocalRequest, port: number | undefined): Local
   }
   if (STATE_CHANGING.has(req.method.toUpperCase()) && req.hasBody) {
     const type = mediaType(req.contentType);
-    const upload = req.method.toUpperCase() === UPLOAD.method && UPLOAD.path.test(req.path) && type === UPLOAD.type;
+    const upload = [UPLOAD, FILE_IN].some((u) => req.method.toUpperCase() === u.method && u.path.test(req.path) && type === u.type);
     if (type !== JSON_TYPE && !upload) return { status: 415, error: `request body must be ${JSON_TYPE}` };
   }
   return null;

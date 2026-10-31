@@ -81,6 +81,9 @@ public enum TerminalLinks {
         for o in open { if let link = TappedLink(address: o.address) { out.append(ScreenLink(link: link, spans: o.spans)) } }
 
         var used: [Int: [Range<Int>]] = [:]   // cells taken as a link's continuation, by row
+        // Words a path above may or may not go on into: their own link also reads as the whole path (tapping the rest of
+        // a path cut over lines finds the whole, files-v0 §12.4.2), by row.
+        var maybe: [Int: [(word: Range<Int>, readings: [TappedLink])]] = [:]
         for (r, line) in rows.enumerated() {
             for word in words(in: line) {
                 if used[r]?.contains(where: { $0.overlaps(word) }) == true || covered[r]?.contains(where: { $0.overlaps(word) }) == true { continue }
@@ -88,10 +91,19 @@ public enum TerminalLinks {
                 let free = { (pieces: [Piece]) in Array(pieces.prefix { p in covered[p.row]?.contains(where: { $0.overlaps(p.word) }) != true }) }
                 let pieces = free(chain(from: word, row: r, rows: rows, wrapped: wrapped))
                 // A path that does not go on at its row's end may go on down its own column.
-                let found = address(in: cells, pieces: pieces, rows: rows)
-                    ?? path(in: cells, pieces: pieces.isEmpty ? free(column(from: word, row: r, rows: rows, wrapped: wrapped)) : pieces, rows: rows, workdir: workdir)
-                guard let found else { continue }
+                var later: [Piece] = []
+                let found: Found? = address(in: cells, pieces: pieces, rows: rows) ?? {
+                    guard let p = path(in: cells, pieces: pieces.isEmpty ? free(column(from: word, row: r, rows: rows, wrapped: wrapped)) : pieces, rows: rows, workdir: workdir) else { return nil }
+                    later = p.maybe
+                    return (p.link, p.used)
+                }()
+                guard var found else { continue }
+                if let above = maybe[r]?.first(where: { $0.word.overlaps(word) })?.readings {
+                    let more = above.filter { $0 != found.link.link && !found.link.alternates.contains($0) }
+                    found.link = ScreenLink(link: found.link.link, spans: found.link.spans, alternates: found.link.alternates + more)
+                }
                 for p in found.used { used[p.row, default: []].append(p.word) }
+                for p in later { maybe[p.row, default: []].append((p.word, found.link.alternates)) }
                 out.append(found.link)
             }
         }
@@ -169,7 +181,7 @@ public enum TerminalLinks {
 
     /// A path of the Mac's in the word. It may go on over the next lines (`pieces`): the reading taken is the longest
     /// that is surely one word; the others are kept as alternates for the Mac to tell apart.
-    private static func path(in cells: [Cell], pieces: [Piece], rows: [[Character]], workdir: String?) -> Found? {
+    private static func path(in cells: [Cell], pieces: [Piece], rows: [[Character]], workdir: String?) -> (link: ScreenLink, used: [Piece], maybe: [Piece])? {
         guard cells.contains(where: { $0.char == "/" }) else { return nil }
         var readings: [(link: TappedLink, cells: [Cell], pieces: [Piece], sure: Bool)] = []
         var joined = cells
@@ -201,7 +213,9 @@ public enum TerminalLinks {
         // The longest sure reading; with none sure but the word itself, that.
         let primary = readings.last(where: \.sure) ?? readings[0]
         let others = readings.reversed().map(\.link).filter { $0 != primary.link }
-        return (ScreenLink(link: primary.link, spans: spans(primary.cells), alternates: others), primary.pieces)
+        // The words the longer readings go on into that the one taken does not: theirs to read as these too.
+        let maybe = readings.last.map { longest in longest.pieces.filter { p in !primary.pieces.contains { $0.row == p.row && $0.word == p.word } } } ?? []
+        return (ScreenLink(link: primary.link, spans: spans(primary.cells), alternates: others), primary.pieces, maybe)
     }
 
     private static let opening: Set<Character> = ["(", "[", "{", "<", "\"", "'", "`", "“", "‘", "「", "『", "（", "【", "《"]

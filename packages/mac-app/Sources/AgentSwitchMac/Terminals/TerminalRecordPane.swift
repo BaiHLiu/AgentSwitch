@@ -103,6 +103,8 @@ struct TerminalRecordPane: View {
                                         if let session = record.sessionId { changes = ChangesRequest(harness: record.agent, session: session, work: item.id) }
                                     }
                                 }
+                                // What it is writing now (docs/simple-view-v0.md §5.14), as its answer will read.
+                                if let writing = record.writing { RecordWriting(writing: writing) }
                                 if working, requests.isEmpty {
                                     RecordNowLine(activity: record.activity, subagents: record.subagents, since: record.activitySince, progress: record.progress)
                                 }
@@ -283,6 +285,21 @@ private struct RecordRow: View {
 
     var body: some View {
         switch item.kind {
+        case .user where item.from != nil:
+            // Another session's message (docs/talk-v0.md §10.5): not yours, so not your bubble — on the agent's side,
+            // under who sent it.
+            VStack(alignment: .leading, spacing: 3) {
+                Text("From \(item.from?.isEmpty == false ? item.from! : "Another Session") · \(TerminalListText.age(since: item.at, classic: look.isClassic))")
+                    .mono(Look.size(10.5, look)).foregroundStyle(Look.faint)
+                TypedText(text: item.text, size: Look.typed, lineSpacing: 5)
+                    .foregroundStyle(Look.ink)
+                    .padding(.leading, 11).padding(.trailing, 13).padding(.vertical, look.isClassic ? 8 : 9)
+                    .overlay(alignment: .leading) { Rectangle().fill(Color.signal).frame(width: look.isClassic ? 3 : 2) }
+                    .grounded(Look.panel, radius: look.isClassic ? 10 : 0)
+                    .framed(look.isClassic ? Color.clear : Look.line, radius: look.isClassic ? 10 : 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 4)
         case .user:
             VStack(alignment: .trailing, spacing: 3) {
                 // Typed while it worked: it has not read it yet.
@@ -555,6 +572,8 @@ private struct RecordDock: View {
             if let clash = daybreakClash(info, record) {
                 Text(clash).font(.system(size: Look.size(12, look))).foregroundStyle(Color.attention).lineLimit(2).padding(.horizontal, 4)
             }
+            // Files that may hold a password, asked about before they go in (docs/files-v0.md §4).
+            if let ask = state.asking { FilesAskCard(ask: ask, answer: state.answer).frame(maxWidth: 460, alignment: .leading) }
             VStack(alignment: .leading, spacing: 0) {
                 if !beside, let line = RecordDisplay.plan(record.plan) {
                     VStack(alignment: .leading, spacing: 5) {
@@ -878,5 +897,18 @@ struct RecordFileDiff: View {
             .padding(.horizontal, 10).padding(.vertical, 1.5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(ground)
+    }
+}
+
+/// The part of its answer it is writing now: the answer's own type, a caret at its end; what it thinks quieter.
+struct RecordWriting: View {
+    let writing: AgentWriting
+    @Environment(\.interfaceLook) private var look
+
+    var body: some View {
+        MarkdownBlocks(text: writing.text + " ▍", size: Look.prose(look).size, color: writing.thinking ? Look.ink2 : Look.ink,
+                       lineSpacing: Look.prose(look).lineSpacing, blockSpacing: Look.prose(look).blockSpacing)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityLabel(writing.thinking ? "Thinking" : "Writing")
     }
 }

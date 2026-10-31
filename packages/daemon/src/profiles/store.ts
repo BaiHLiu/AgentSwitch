@@ -1,13 +1,15 @@
 /** Profiles (docs/profiles-v0.md): several sign-ins per agent, each a home folder of its own that the agent is started
- *  with (`CLAUDE_CONFIG_DIR` …), so the Mac's own `~/.claude` is never rewritten and the agents' own apps and other
- *  terminals are untouched. Every agent has `Default` — the Mac's own, with no folder here — and a current profile that
- *  new terminals start under. Claude Code first (step 2); Codex has the ones that pay by a key (§3.6); OpenCode and
- *  pi have `Default` alone for now.
+ *  with (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), so the Mac's own `~/.claude` and `~/.codex` are never rewritten and the
+ *  agents' own apps and other terminals are untouched. Every agent has `Default` — the Mac's own, with no folder here —
+ *  and a current profile that new terminals start under. Claude Code first (step 2); Codex has the ones that pay by a
+ *  key (§3.6) and, since 2026-10-20, the ones that sign in with a ChatGPT account (§6.2); OpenCode and pi have
+ *  `Default` alone for now.
  *
- *  A profile's folder holds what is the account's and the device's (its `.claude.json` with identifiers Claude Code
- *  makes itself on first run, its credentials); what is the user's — instructions, skills, commands, settings — and the
- *  sessions are the Mac's own, linked in, so any profile continues any session and nothing is set up twice. Of the
- *  Mac's `.claude.json` only what names no account is carried over once (trusted folders, MCP servers, the theme). */
+ *  A profile's folder holds what is the account's and the device's (Claude Code's `.claude.json` with identifiers it
+ *  makes itself on first run; Codex's `auth.json`, `installation_id` and its own databases; the credentials); what is
+ *  the user's — instructions, skills, commands, settings — and the sessions are the Mac's own, linked in, so any profile
+ *  continues any session and nothing is set up twice. Of the Mac's `.claude.json` only what names no account is carried
+ *  over once (trusted folders, MCP servers, the theme); Codex keeps all of that in `config.toml`, which is linked. */
 
 import { randomBytes } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -25,9 +27,9 @@ export type ProfileProxy = { readonly server: string; readonly username?: string
 export type ProfileApi = { readonly key: string; readonly baseUrl?: string | undefined; readonly model?: string | undefined };
 /** The vendor's own address for each agent that can pay by a key: where a key goes when the profile names no other. */
 export const API_HOME: Partial<Record<ProfileAgent, string>> = { "claude-code": "https://api.anthropic.com", codex: "https://api.openai.com/v1" };
-/** The ways a profile of each agent can sign in (absent: `Default` alone). Codex's account profiles wait for a home
- *  folder of their own (step 4); one that pays by a key needs none. */
-export const PROFILE_KINDS: Partial<Record<ProfileAgent, readonly ProfileKind[]>> = { "claude-code": ["subscription", "api"], codex: ["api"] };
+/** The ways a profile of each agent can sign in (absent: `Default` alone). A Codex account profile has a home folder of
+ *  its own (§6.2); one that pays by a key needs none. */
+export const PROFILE_KINDS: Partial<Record<ProfileAgent, readonly ProfileKind[]>> = { "claude-code": ["subscription", "api"], codex: ["subscription", "api"] };
 const API_MODEL = /^[\w.:/@[\]-]{1,120}$/;
 
 /** An address a key is sent to, as kept: http(s), no account in it, no query, no trailing slash. Null: not one. */
@@ -87,6 +89,12 @@ const CLAUDE_SESSIONS = ["projects", "file-history", "todos", "plans"] as const;
 /** What of the Mac's `.claude.json` names no account or device: carried into a new profile once. */
 const CLAUDE_CARRIED = ["theme", "editorMode", "hasCompletedOnboarding", "lastOnboardingVersion", "autoUpdates", "verbose", "preferredNotifChannel", "mcpServers"] as const;
 const CLAUDE_PROJECT_CARRIED = ["hasTrustDialogAccepted", "hasCompletedProjectOnboarding", "allowedTools", "mcpServers", "enabledMcpjsonServers", "disabledMcpjsonServers"] as const;
+/** The same for Codex (docs/profiles-v0.md §6.1–6.2): the user's own set-up — `config.toml` too, which holds no account
+ *  (Codex writes through the link: the hooks' trust, a trusted folder, a model chosen land in the Mac's own) — and the
+ *  sessions, which Codex finds under a linked `sessions/` both ways. What stays the profile's own: `auth.json`,
+ *  `installation_id`, the databases, the caches, the locks. */
+const CODEX_LINKED = ["config.toml", "AGENTS.md", "AGENTS.override.md", "skills", "rules", "prompts", "plugins"] as const;
+const CODEX_SESSIONS = ["sessions", "archived_sessions"] as const;
 const MAX_PROFILES = 24;
 const DEVICE = /^[0-9a-f]{16,128}$/;
 /** How many conversations' profiles are remembered for one agent (§3.3); the oldest go first. */
@@ -174,12 +182,19 @@ export class ProfileStore {
     this.change(agent, id, (p) => { if (p.kind !== "api") throw new ProfileError("invalid", "this profile signs in with an account"); return { ...p, api: checked }; });
   }
 
-  /** The folder the agent is started with for `id`; null for `Default` (the Mac's own), for one that has none (Codex's,
-   *  which pay by a key and run in the Mac's own) and for one that is not there. */
+  /** The folder the agent is started with for `id`; null for `Default` (the Mac's own), for one that has none (Codex's
+   *  that pay by a key, which run in the Mac's own) and for one that is not there. */
   homeOf(agent: ProfileAgent, id: string): string | null {
     if (id === DEFAULT_PROFILE || !/^[a-z0-9]{6,16}$/.test(id)) return null;
     const home = join(this.dir, agent, id, "home");
     return this.read().agents?.[agent]?.profiles?.some((p) => p.id === id) && existsSync(home) ? home : null;
+  }
+
+  /** Before an agent starts under `id`: what of the Mac's own has come since the profile was made (an `AGENTS.md`, a
+   *  `config.toml`) is linked in too, unless the profile has one of its own by now. Codex's alone. */
+  keepLinked(agent: ProfileAgent, id: string): void {
+    const home = this.homeOf(agent, id);
+    if (home && agent === "codex") this.codexHome(home);
   }
 
   /** The name the screens show for `id` (null: no such profile). */
@@ -242,7 +257,7 @@ export class ProfileStore {
 
   /** The device Claude Code says it is under `id` (§3.5); null: it has not run there yet, or another agent. */
   deviceOf(agent: ProfileAgent, id: string): string | null {
-    return this.account(agent, id === DEFAULT_PROFILE ? join(this.userHome, ".claude.json") : join(this.dir, agent, id, "home", ".claude.json")).device ?? null;
+    return agent === "claude-code" ? this.account(agent, id === DEFAULT_PROFILE ? null : join(this.dir, agent, id, "home")).device ?? null : null;
   }
 
   /** Where `id`'s proxy let traffic out, as just checked (null: it did not). */
@@ -278,9 +293,10 @@ export class ProfileStore {
     const taken = new Set((file.agents?.[agent]?.profiles ?? []).map((p) => p.color));
     const color = PROFILE_COLORS.find((c) => !taken.has(c)) ?? PROFILE_COLORS[known.length % PROFILE_COLORS.length]!;
     const profile = { id: randomBytes(5).toString("hex"), name: said, kind, createdAt: this.now(), color };
-    // Claude Code's sign-in and identifiers are a folder's; Codex paying by a key runs in the Mac's own folder, the
-    // key and the address given when it starts (§3.6).
+    // Claude Code's and Codex's sign-in and identifiers are a folder's; Codex paying by a key runs in the Mac's own
+    // folder, the key and the address given when it starts (§3.6).
     if (agent === "claude-code") this.claudeHome(join(this.dir, agent, profile.id, "home"));
+    if (agent === "codex" && kind === "subscription") this.codexHome(join(this.dir, agent, profile.id, "home"));
     const stored = file.agents?.[agent] ?? {};
     this.write({ ...file, agents: { ...file.agents, [agent]: { ...stored, profiles: [...(stored.profiles ?? []), { ...profile, ...(checked ? { api: checked } : {}) }] } } });
     return { ...profile, ...(checked ? { api: told(checked) } : {}) };
@@ -311,16 +327,18 @@ export class ProfileStore {
       ...(api ? { api: told(api) } : {}),
       ...(sessionKey ? { sessionKey: true as const } : {}),
       ...(proxy ? { proxy: { server: proxy.server, ...(proxy.username ? { username: proxy.username } : {}), sealed: Boolean(proxy.password) } } : {}),
-      ...this.account(agent, join(this.dir, agent, p.id, "home", ".claude.json")) }));
-    const profiles: Profile[] = [{ id: DEFAULT_PROFILE, name: "Default", kind: "subscription", createdAt: 0, ...this.account(agent, join(this.userHome, ".claude.json")) }, ...own];
+      ...this.account(agent, join(this.dir, agent, p.id, "home")) }));
+    const profiles: Profile[] = [{ id: DEFAULT_PROFILE, name: "Default", kind: "subscription", createdAt: 0, ...this.account(agent, null) }, ...own];
     return { current: profiles.some((p) => p.id === stored.current) ? stored.current! : DEFAULT_PROFILE, profiles, creatable: Boolean(PROFILE_KINDS[agent]), kinds: PROFILE_KINDS[agent] ?? [] };
   }
 
-  /** Who Claude Code's own file says is signed in: the plan's organisation and the address, as it shows them itself. */
-  private account(agent: ProfileAgent, claudeJson: string): { account?: string; device?: string } {
+  /** Who the agent's own files in `home` (null: the Mac's own) say is signed in: Claude Code's address as it shows it
+   *  itself, Codex's from the ChatGPT sign-in it keeps (the address in its identity token; nothing else is read). */
+  private account(agent: ProfileAgent, home: string | null): { account?: string; device?: string } {
+    if (agent === "codex") return codexAccount(join(home ?? join(this.userHome, ".codex"), "auth.json"));
     if (agent !== "claude-code") return {};
     try {
-      const file = JSON.parse(readFileSync(claudeJson, "utf8")) as { oauthAccount?: { emailAddress?: unknown }; userID?: unknown };
+      const file = JSON.parse(readFileSync(home ? join(home, ".claude.json") : join(this.userHome, ".claude.json"), "utf8")) as { oauthAccount?: { emailAddress?: unknown }; userID?: unknown };
       const o = file.oauthAccount;
       return { ...(typeof o?.emailAddress === "string" && o.emailAddress ? { account: o.emailAddress.slice(0, 120) } : {}),
         // The device it reports itself as: made by Claude Code on its first run, a folder's own.
@@ -346,6 +364,19 @@ export class ProfileStore {
       seed.projects = Object.fromEntries(Object.entries(projects).map(([path, p]) => [path, Object.fromEntries(CLAUDE_PROJECT_CARRIED.filter((k) => p && k in p).map((k) => [k, p[k]]))]));
     } catch { seed = {}; }
     writeFileSync(join(home, ".claude.json"), JSON.stringify(seed, null, 2), { mode: 0o600 });
+  }
+
+  /** A Codex home for an account profile (made or kept): the links, nothing else — Codex makes the rest on its first
+   *  run there. Where the Mac's own has no such file the profile's own stands; a profile's own file is never replaced. */
+  private codexHome(home: string): void {
+    const own = join(this.userHome, ".codex");
+    mkdirSync(home, { recursive: true, mode: 0o700 });
+    for (const name of CODEX_SESSIONS) mkdirSync(join(own, name), { recursive: true });
+    for (const name of [...CODEX_LINKED, ...CODEX_SESSIONS]) {
+      const target = join(own, name);
+      if (!existsSync(target) || present(join(home, name))) continue;
+      symlinkSync(target, join(home, name));
+    }
   }
 
   private read(): File {
@@ -389,3 +420,14 @@ function checkedApi(agent: ProfileAgent, api: ProfileApi): ProfileApi {
 }
 
 const present = (path: string): boolean => { try { lstatSync(path); return true; } catch { return false; } };
+
+/** Who Codex's `auth.json` says is signed in with ChatGPT: the address in its identity token (a JWT, only its middle
+ *  part read). Nothing for a key, a file that is not there, or anything else. */
+export function codexAccount(file: string): { account?: string } {
+  try {
+    const token = (JSON.parse(readFileSync(file, "utf8")) as { tokens?: { id_token?: unknown } }).tokens?.id_token;
+    if (typeof token !== "string") return {};
+    const claims = JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8")) as { email?: unknown };
+    return typeof claims.email === "string" && claims.email ? { account: claims.email.slice(0, 120) } : {};
+  } catch { return {}; }
+}

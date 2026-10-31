@@ -62,6 +62,12 @@ final class ProxyTests: XCTestCase {
         XCTAssertTrue(templates["block"]?["rules"] is NSNull)
         XCTAssertTrue((sent["dns"] as? [String: Any])?["text"] is NSNull)
         XCTAssertEqual(sent["autoUpdateHours"] as? Int, 24)
+        // Only My Rules (§7.11): off when a Mac from before says nothing of it, sent either way.
+        XCTAssertFalse(settings.ownRules)
+        XCTAssertEqual(sent["ownRules"] as? Bool, false)
+        settings.ownRules = true
+        let again = try JSONDecoder().decode(ClashSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertTrue(again.ownRules)
     }
 
     func testClashCallsAreWhatTheServiceTakes() async throws {

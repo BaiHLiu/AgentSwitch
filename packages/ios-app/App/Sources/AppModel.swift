@@ -6,7 +6,7 @@ import UIKit
 /// The entries (docs/terminal-v0.md §1, browser-v0 §1): tasks (Dispatch, the conversation), terminals (manual), and
 /// the browser on the Mac.
 enum MainTab: Hashable {
-    case tasks, terminals, browser, settings
+    case tasks, terminals, files, browser, settings
 }
 
 enum HomeSheet: String, Identifiable {
@@ -93,6 +93,12 @@ final class AppModel {
     var openTerminalRequest: String?
     /// The Browser tab (the Mac's tabs, its local servers, the addresses typed here).
     let browser = BrowserStore()
+    /// The Files tab across its visits (docs/files-v0.md §5).
+    let files = FilesStore()
+    /// Where the Mac's files are read from: the API, or the demo screens' made-up disk.
+    var fileSource: (any MacFileSource)? { api ?? demoFiles }
+    /// The demo screens' made-up disk (`-uiDemo YES`); nil otherwise.
+    var demoFiles: (any MacFileSource)?
     /// A browser tab to open (a demo screen), or "new"; the Browser tab takes it.
     var openBrowserRequest: String?
     /// The page of a link tapped outside the Browser tab, shown over where the link was until `Done` (LinkOpener,
@@ -388,6 +394,13 @@ final class AppModel {
         sheet = nil
         tab = .tasks
         openTaskRequest = id
+    }
+
+    /// A folder on the Files tab (a terminal row's `Show in Files`).
+    func showInFiles(_ path: String) {
+        sheet = nil
+        files.openRequest = path
+        tab = .files
     }
 
     /// From a Live Activity: the terminals tab opens the terminal.
@@ -784,6 +797,7 @@ extension AppModel {
                               browsers: UserDefaults.standard.string(forKey: "uiDemoScreen") == "browserprofiles"
                                 ? [.shared, BrowserChoice(key: "claude-code.abc123def0", name: "cwork1", exit: .init(ip: "203.0.113.9", place: "Tokyo"), running: true)] : nil)
         model.routeReport = (Date().addingTimeInterval(-40), DemoData.routeReport)
+        model.demoFiles = DemoFiles(scope: screen == "filesscoped" ? DemoFiles.scopeFolder : nil)
         model.connectionProgress = ConnectionProgress().after(model.connection)
         if offline {
             let start = Date().addingTimeInterval(-150)

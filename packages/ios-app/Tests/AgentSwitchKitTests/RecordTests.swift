@@ -330,7 +330,8 @@ final class RecordTests: XCTestCase {
     }
 
     func testTheRecordStreamsOwnEvents() {
-        XCTAssertEqual(TerminalEvent.parse(event: "record", data: #"{"type":"record","rev":"k3-x9"}"#), .record(rev: "k3-x9"))
+        XCTAssertEqual(TerminalEvent.parse(event: "record", data: #"{"type":"record","rev":"k3-x9"}"#), .record(rev: "k3-x9", session: nil))
+        XCTAssertEqual(TerminalEvent.parse(event: "record", data: #"{"type":"record","rev":"","session":"b2"}"#), .record(rev: "", session: "b2"))
         XCTAssertEqual(TerminalEvent.parse(event: "activity", data: #"{"type":"activity","activity":null,"subagents":[]}"#), .activity(nil, []))
         let busy = TerminalEvent.parse(event: "activity", data: #"{"type":"activity","activity":{"tool":"Bash","target":"npm test"},"subagents":[{"id":"a1","type":"Explore","name":"找出所有用到的地方","activity":{"tool":"Grep","target":"Delete"},"since":1,"doing":"搜索 Delete"}]}"#)
         guard case .activity(let activity, let subagents)? = busy else { return XCTFail("not an activity") }

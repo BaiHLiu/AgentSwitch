@@ -53,9 +53,12 @@ public enum TappedLink: Hashable, Sendable {
         return loopback ? nil : url
     }
 
-    /// The long press's menu, the tap's own action first.
+    /// The long press's menu, the tap's own action first: a path of the Mac's opens in the Files browser (docs/files-v0.md
+    /// §12.4.2; 2026-10-18, user: 终端上有文件的绝对或相对路径时手机点击应该弹出对应的文件管理页), a web address in the
+    /// Mac's browser.
     public var actions: [LinkAction] {
-        safari == nil ? [.openInBrowser, .copy] : [.openInBrowser, .copy, .openInSafari]
+        if case .file = self { return [.showInFiles, .openInBrowser, .copy] }
+        return safari == nil ? [.openInBrowser, .copy] : [.openInBrowser, .copy, .openInSafari]
     }
 
     /// The menu's first line: the address without its scheme, a path with the home folder as `~`.
@@ -70,10 +73,13 @@ public enum TappedLink: Hashable, Sendable {
 /// What can be done with a link.
 public enum LinkAction: Hashable, Sendable {
     case openInBrowser, copy, openInSafari
+    /// A path of the Mac's, in the Files browser: its folder, or its folder with its preview on top.
+    case showInFiles
 
     /// The menu's word (docs/ui-v0.md §7.2.7: short English, title case).
     public func label(for link: TappedLink) -> String {
         switch self {
+        case .showInFiles: "Show in Files"
         case .openInBrowser: "Open in Browser"
         case .copy: if case .file = link { "Copy Path" } else { "Copy Link" }
         case .openInSafari: "Open in Safari"

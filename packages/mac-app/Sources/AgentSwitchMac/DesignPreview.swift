@@ -36,6 +36,13 @@ enum DesignPreview {
                     FileHandle.standardError.write(Data("design preview (the browsers) written to \(directory.path)\n".utf8))
                     exit(0)
                 }
+                if UserDefaults.standard.string(forKey: "designPreviewOnly") == "files" {
+                    // docs/files-v0.md: the Files column over a made-up disk, in the main window on Terminals.
+                    model.loadDemoNodes()
+                    try await FilesDesignPreview.render(model: model, into: directory)
+                    FileHandle.standardError.write(Data("design preview (files) written to \(directory.path)\n".utf8))
+                    exit(0)
+                }
                 if UserDefaults.standard.string(forKey: "designPreviewOnly") == "nodes" {
                     // docs/mesh-v0.md: Settings › Nodes with two nodes and a phone, and the link sheet with a link read back.
                     model.loadDemoNodes()
@@ -75,7 +82,17 @@ enum DesignPreview {
                     // and the sheet that changes a kept one.
                     try await renderSheet(ProfileNewSheet(agent: .claude, kinds: ["api", "subscription"]) { _ in }, model: model, appearance: dark, to: directory.appendingPathComponent("profile-new-key.png"))
                     try await renderSheet(ProfileNewSheet(agent: .claude, kinds: ["subscription", "api"]) { _ in }, model: model, appearance: dark, to: directory.appendingPathComponent("profile-new-account.png"))
-                    try await renderSheet(ProfileNewSheet(agent: .codex, kinds: ["api"]) { _ in }, model: model, appearance: dark, to: directory.appendingPathComponent("profile-new-codex.png"))
+                    try await renderSheet(ProfileNewSheet(agent: .codex, kinds: ["subscription", "api"]) { _ in }, model: model, appearance: dark, to: directory.appendingPathComponent("profile-new-codex.png"))
+                    try await renderSheet(ProfileNewSheet(agent: .codex, kinds: ["api", "subscription"]) { _ in }, model: model, appearance: dark, to: directory.appendingPathComponent("profile-new-codex-key.png"))
+                    // Codex's (§6.2): the Mac's own signed in to ChatGPT, an account profile signed in, one not yet, one by a key.
+                    let codexList = AgentProfiles(current: "default", profiles: [
+                        AgentProfile(id: "default", name: "Default", account: "me@example.com"),
+                        AgentProfile(id: "c0dex00001", name: "team", account: "team@example.com", color: "violet"),
+                        AgentProfile(id: "c0dex00002", name: "spare", color: "sand"),
+                        AgentProfile(id: "c0dex00003", name: "relay", kind: "api", color: "mint", api: ProfileApiInfo(baseUrl: "https://relay.example/v1")),
+                    ], creatable: true, kinds: ["subscription", "api"])
+                    try await renderSheet(Form { ProfilesSection(agent: .codex, profiles: codexList, error: nil, add: {}, remove: { _ in }, proxy: { _ in }, apiKey: { _ in }, color: { _, _ in }) }
+                        .formStyle(.grouped).frame(width: 640), model: model, appearance: dark, to: directory.appendingPathComponent("profiles-rows-codex.png"))
                     try await renderSheet(ProfileKeySheet(agent: .claude, profile: list.profiles[4]) { _ in }, model: model, appearance: dark, to: directory.appendingPathComponent("profile-key.png"))
                     FileHandle.standardError.write(Data("design preview (a profile's proxy) written to \(directory.path)\n".utf8))
                     exit(0)
@@ -88,6 +105,10 @@ enum DesignPreview {
                 if UserDefaults.standard.string(forKey: "designPreviewOnly") == "rail" {
                     try await MainWindowPreview.renderRail(model: model, into: directory)
                     FileHandle.standardError.write(Data("design preview (the rail put away) written to \(directory.path)\n".utf8))
+                    exit(0)
+                }
+                if UserDefaults.standard.string(forKey: "designPreviewOnly") == "room" {
+                    try await RoomPreview.run(into: directory)
                     exit(0)
                 }
                 if UserDefaults.standard.string(forKey: "designPreviewOnly") == "prose-select" {

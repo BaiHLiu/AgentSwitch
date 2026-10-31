@@ -30,6 +30,10 @@ struct TerminalPage: View {
     @State private var pickingPhotos = false
     @State private var pickingFiles = false
     @State private var takingPhoto = false
+    /// `+` › Files on Mac (docs/files-v0.md §5), the Mac's files over this page, and where: the terminal's folder, or a
+    /// path tapped on the screen (its folder, and the file).
+    /// One value, given to the sheet as its item: a flag and a place set together reached the sheet with the old place.
+    @State private var browsing: MacBrowse?
     /// Placeholders to put into the reply box where the caret is (the field puts them there: it knows the caret).
     @State private var pendingTokens: [String] = []
     /// A direct reply that looks like it holds a secret, asked about before it goes.
@@ -71,6 +75,8 @@ struct TerminalPage: View {
     private var simple: Bool { viewMode == .simple }
     /// The terminal as the list has it now (its folder, its session once the agent has said which).
     private var listed: TerminalInfo { model.terminals.terminals.first { $0.id == page.id } ?? opened }
+    /// The session whose record the page shows: as the record's stream last said, else as the list says.
+    private var recordSession: String? { page.recordSession ?? listed.agentSessionId }
     /// The program waits on something it drew itself: the keys come out on their own.
     private var prompting: Bool { page.status == .waiting && page.permissions.isEmpty }
 
@@ -143,6 +149,10 @@ struct TerminalPage: View {
                         }
                     }
                     Divider()
+                    // Its folder, over this page, where the agent works now; `Done` back (docs/files-v0.md §12.4.1): the
+                    // `+` › Files on Mac sheet, what is picked there landing in this reply box.
+                    Button("Show in Files", systemImage: "folder") { browsing = MacBrowse(start: workdir) }
+                    Divider()
                     Button("Rename", systemImage: "pencil") { newName = page.name; renaming = true }
                     Button("Close", systemImage: "xmark", role: .destructive) { if page.status == .exited && !canDeleteRecord { Task { await close() } } else { confirmClose = true } }
                 } label: { if look.isClassic { Image(systemName: "ellipsis.circle") } else { Text("⋯").mono(17) } }
@@ -150,14 +160,14 @@ struct TerminalPage: View {
             }
         }
         .sheet(isPresented: $lastTurnChanges) {
-            if let session = listed.agentSessionId { ChangesSheet(harness: listed.harness, session: session, work: nil) }
+            if let session = recordSession { ChangesSheet(harness: listed.harness, session: session, work: nil) }
         }
         // The record of the terminal's session: read when the page opens in the simple view and when the agent says
         // which session it is; again whenever the Mac says it changed, and on a timer besides (OpenCode's sessions
         // share one database, and an older Mac says nothing).
-        .task(id: "\(listed.harness)|\(listed.agentSessionId ?? "")|\(simple)") {
+        .task(id: "\(listed.harness)|\(recordSession ?? "")|\(simple)") {
             guard simple else { return }
-            record.follow(harness: listed.harness, session: listed.agentSessionId)
+            record.follow(harness: listed.harness, session: recordSession)
             await record.refresh(model.api)
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(page.recordRev == nil ? (page.status == .working ? 3 : 10) : 20))
@@ -241,8 +251,15 @@ struct TerminalPage: View {
             case "simpleeffort": DispatchQueue.main.asyncAfter(deadline: .now() + 2) { choosingEffort = true }
             case "terminalkeyboard": DispatchQueue.main.asyncAfter(deadline: .now() + 2) { replying = true }
             case "terminalclose": DispatchQueue.main.asyncAfter(deadline: .now() + 2) { confirmClose = true }
+            // `+` › Files on Mac, as the menu would open it; the Mac's files in the reply box (docs/files-v0.md §5).
+            case "filessheet": DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { browsing = MacBrowse(start: workdir) }
             // A link held, as a long press on the address in the demo's screen would open its menu.
             case "terminallink": DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { holdFirstLink() }
+            // The rest of the path cut over two lines tapped (`gn/concepts/split.html`): the Files browser over the page, at
+            // the whole path's folder with its preview on top (files-v0 §12.4.2).
+            case "terminalpath": DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                if let hit = page.screen.links(workdir: workdir).last(where: { if case .file = $0.link { true } else { false } }) { page.screen.flash(hit); run(hit.link.actions[0], on: hit) }
+            }
             default: break
             }
             #endif
@@ -273,6 +290,16 @@ struct TerminalPage: View {
             case .failure(let failure): page.error = failure.localizedDescription
             }
         }
+        .sheet(item: $browsing) { at in
+            MacFilesSheet(terminal: page.id, start: at.start, file: at.file) { picks in
+                browsing = nil
+                addMacFiles(picks)
+            }
+            .followsLook()
+        }
+        // Files picked on the Files tab for this terminal (`Add to Reply…`): into the reply box as it opens.
+        .onAppear { takeHandoff() }
+        .onChange(of: model.files.handoff) { takeHandoff() }
         .fullScreenCover(isPresented: $takingPhoto) {
             CameraPicker { data in
                 takingPhoto = false
@@ -310,7 +337,7 @@ struct TerminalPage: View {
         page.userActed()
         if let hit = page.screen.link(at: point, workdir: workdir, tap: true) {
             page.screen.flash(hit)
-            run(.openInBrowser, on: hit)
+            run(hit.link.actions[0], on: hit)
         } else if let cell = page.screen.clickCell(at: point) {
             Task { await page.click(col: cell.col, row: cell.row) }
         } else {
@@ -329,9 +356,33 @@ struct TerminalPage: View {
     /// One of a link's actions. A copy is said on the screen for a moment; a link that did not open in the Mac's
     /// browser says why in the page's line.
     private func run(_ action: LinkAction, on hit: ScreenLink) {
+        if action == .showInFiles { showInFiles(hit); return }
         Task {
             guard let words = await model.perform(action, on: hit.link, alternates: hit.alternates) else { return }
             if action == .copy { say(words) } else { page.error = words }
+        }
+    }
+
+    /// A path on the screen in the Files browser over this page (docs/files-v0.md §12.4.2): of its readings (a path may
+    /// or may not go on over the next line) the first the Mac has; a folder opens as itself, a file as its folder with
+    /// its preview on top; none there, its nearest level, saying so.
+    private func showInFiles(_ hit: ScreenLink) {
+        // `~/…` as the Mac's home, when its last listing said where that is (the Mac takes `~` too).
+        let home = model.files.home
+        let paths = ([hit.link] + hit.alternates).compactMap { link -> String? in
+            guard case .file(let p) = link else { return nil }
+            guard let home, p == "~" || p.hasPrefix("~/") else { return p }
+            return home + p.dropFirst()
+        }
+        guard let first = paths.first else { return }
+        Task {
+            var at = MacBrowse(start: first)
+            for path in paths {
+                guard let d = try? await model.fileSource?.fileDetails(path) else { continue }
+                at = d.isFolder ? MacBrowse(start: path) : MacBrowse(start: MacPath.parent(path) ?? "/", file: path)
+                break
+            }
+            browsing = at
         }
     }
 
@@ -353,6 +404,13 @@ struct TerminalPage: View {
         linkMenu = LinkMenu(hit: hit, anchor: page.screen.frame(of: hit))
     }
     #endif
+
+    /// Where `+` › Files on Mac opens (docs/files-v0.md §12.4.2): a folder, and a file to show on top of it.
+    private struct MacBrowse: Identifiable {
+        let id = UUID()
+        let start: String
+        var file: String? = nil
+    }
 
     private struct LinkMenu: Equatable {
         let hit: ScreenLink
@@ -671,6 +729,7 @@ struct TerminalPage: View {
                             .disabled(!CameraPicker.isAvailable)
                         Button("Photos", systemImage: "photo.on.rectangle") { replying = false; pickingPhotos = true }
                         Button("Files", systemImage: "folder") { replying = false; pickingFiles = true }
+                        Button("Files on Mac", systemImage: "laptopcomputer") { replying = false; browsing = MacBrowse(start: workdir) }
                         Button("Paste Image", systemImage: "doc.on.clipboard") { pasteImages() }
                         // The keys are out of the way under the record until they are wanted.
                         if simple { Button(showKeys ? "Hide Keys" : "Keys", systemImage: "keyboard") { showKeys.toggle() } }
@@ -745,6 +804,21 @@ struct TerminalPage: View {
         addFiles(images)
     }
 
+    /// The Mac's files and folders picked in Files: their placeholders put where the caret is; their paths go with the
+    /// reply.
+    private func addMacFiles(_ picks: [MacPick]) {
+        let tokens = page.addMacFiles(picks)
+        guard !tokens.isEmpty else { return }
+        pendingTokens += tokens
+        replying = true
+    }
+
+    private func takeHandoff() {
+        guard let handoff = model.files.handoff, handoff.terminal == page.id else { return }
+        model.files.handoff = nil
+        addMacFiles(handoff.picks)
+    }
+
     /// Picked files: kept for the reply, their placeholders put where the caret is; nothing is sent yet.
     private func addFiles(_ files: [UploadFile]) {
         let tokens = page.addDraftFiles(files)
@@ -765,14 +839,24 @@ struct TerminalPage: View {
                                 if let thumbnail = d.thumbnail {
                                     Image(uiImage: thumbnail).resizable().scaledToFill()
                                 } else {
-                                    Image(systemName: "doc").font(.system(size: 18)).foregroundStyle(Theme.ink.opacity(0.7))
+                                    Image(systemName: d.isFolder ? "folder" : d.macPath != nil ? FileIcon.symbol(for: d.name) : "doc").font(.system(size: 18)).foregroundStyle(Theme.ink.opacity(0.7))
                                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 }
                             }
                             .frame(width: 48, height: 48)
                             .clipped()
-                            .overlay(Rectangle().strokeBorder(Theme.line, lineWidth: 1))
-                            Text(d.isImage ? "#\(d.number)" : "#\(d.number) \(d.name)").mono(10).foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: 96, alignment: .leading)
+                            .overlay(Rectangle().strokeBorder(d.sensitive ? Theme.waiting : Theme.line, lineWidth: 1))
+                            // A file of the Mac's: `on Mac` (not sent, its path goes); one that may hold a password, the
+                            // amber mark (docs/files-v0.md §4).
+                            HStack(spacing: 3) {
+                                if d.sensitive {
+                                    LookGlyph(glyph: "!", symbol: "exclamationmark.triangle.fill", size: 10, weight: .bold, scale: 0.95).foregroundStyle(Theme.waiting)
+                                        .accessibilityLabel("可能含有密码或密钥")
+                                }
+                                Text(d.isImage ? "#\(d.number)" : "#\(d.number) \(d.name)").mono(10).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            .frame(maxWidth: 96, alignment: .leading)
+                            if d.macPath != nil { Text("on Mac").mono(9).foregroundStyle(.tertiary) }
                         }
                         Button {
                             reply = TerminalDraft.remove(d.token, from: reply)

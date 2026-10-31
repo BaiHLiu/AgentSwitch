@@ -205,6 +205,11 @@ private struct FolderLine: View {
         .onTapGesture { if !folder.found { model.toggleFolder(folder.cwd) } }
         .onHover { hovering = $0 }
         .help(TerminalTree.tilde(folder.cwd))
+        // A folder's own menu (docs/files-v0.md §0): what its `+` does, and the Files column there.
+        .contextMenu {
+            Button("New Terminal Here") { model.showCreate(folder: folder.cwd) }
+            Button("Show in Files") { model.files?.show(folder: folder.cwd) }
+        }
         .padding(.top, look.isClassic ? (folder.depth == 0 ? 6 : 0) : (folder.own || folder.depth == 0 ? 8 : 2))
     }
 
@@ -415,6 +420,7 @@ private struct TerminalRow: View {
     @ViewBuilder
     private var menu: some View {
         Button("Rename") { model.startRename(terminal.id) }
+        Button("Show in Files") { model.files?.show(folder: terminal.workdir) }
         if out {
             Button("Move Back Here") { model.onAttach(terminal.id) }
         } else {
@@ -534,6 +540,8 @@ private struct SessionRow: View {
             }
             Divider()
         }
+        Button("Show in Files") { model.files?.show(folder: session.cwd) }
+        Divider()
         Button("Delete", role: .destructive) { model.delete(session) }
     }
 }

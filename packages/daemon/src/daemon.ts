@@ -75,7 +75,10 @@ import { mountNodes } from "./api/nodes.js";
 import { NodeBook, NODES_DIR } from "./nodes/book.js";
 import { Dialer } from "./nodes/dial.js";
 import { Nodes } from "./nodes/nodes.js";
-import { loadMesh } from "./nodes/settings.js";
+import { loadMesh, scopeOf, setScope } from "./nodes/settings.js";
+import { FileAudit, type FileAccess } from "./api/browse.js";
+import { DEFAULT_SCOPE } from "./files/browse.js";
+import { Thumbnails } from "./files/thumbnails.js";
 import { vergeDir } from "./clash/verge.js";
 import { createRemoteApp } from "./remote/app.js";
 import { DEFAULT_REMOTE_PORT, macName, remoteRuntime, type RemoteRuntime } from "./remote/runtime.js";
@@ -106,7 +109,7 @@ import type { BrowserDriver } from "./browser/driver.js";
 import { gateFill } from "./browser/fill.js";
 import { exitLookup } from "./browser/exit.js";
 import { ExitPool } from "./browser/exits.js";
-import { claudeSignedIn } from "./terminals/signIn.js";
+import { claudeSignedIn, codexSignedIn } from "./terminals/signIn.js";
 import { ProfileBrowsers } from "./browser/fleet.js";
 import { exitKey, profileOfKey } from "./api/profiles.js";
 import type { BrowserHost } from "./browser/host.js";
@@ -378,11 +381,19 @@ export function buildDaemon(cfg: DaemonConfig, overrides: BuildOverrides = {}): 
   let localPort = cfg.port;
   const agentBinaries = cfg.terminals && !overrides.terminalLauncher ? terminalBinaries(targets, cfg.opencodeBinary) : {};
   // Codex terminals get AgentSwitch's hooks once the user's Codex trusts them (docs/terminal-v0.md §3): checked now and
-  // again before a Codex terminal starts.
-  const codexTrust = agentBinaries.codex
-    ? new CodexHookTrust({ binary: agentBinaries.codex, args: codexHookArgs(hookCommandOf({}), QUICK_HOOK_TIMEOUT_S, PERMISSION_HOOK_TIMEOUT_S) })
-    : undefined;
-  void codexTrust?.ensure();
+  // again before a Codex terminal starts. In each folder Codex runs in: the Mac's own, and an account profile's
+  // (docs/profiles-v0.md §6.2), where the trust is the Mac's own while its config.toml is linked in.
+  const codexTrusts = new Map<string, CodexHookTrust>();
+  const codexTrust = (home?: string): CodexHookTrust | undefined => {
+    if (!agentBinaries.codex) return undefined;
+    let trust = codexTrusts.get(home ?? "");
+    if (!trust) {
+      trust = new CodexHookTrust({ binary: agentBinaries.codex, args: codexHookArgs(hookCommandOf({}), QUICK_HOOK_TIMEOUT_S, PERMISSION_HOOK_TIMEOUT_S), ...(home ? { env: { ...process.env, CODEX_HOME: home } } : {}) });
+      codexTrusts.set(home ?? "", trust);
+    }
+    return trust;
+  };
+  void codexTrust()?.ensure();
   // docs/browser-v0.md: the shared browser; AgentSwitch's own ports are never opened in it nor listed as local servers.
   // People fill ciphertexts in through the gate; agents get it through the agent bridge (terminals below).
   const gateProxyPort = proxyEndpoint(gate?.proxy ?? process.env.SECRET_GATE_PROXY ?? "http://127.0.0.1:8080")?.port;
@@ -440,7 +451,7 @@ export function buildDaemon(cfg: DaemonConfig, overrides: BuildOverrides = {}): 
       launcher: overrides.terminalLauncher ?? agentLauncher({ binaries: agentBinaries, hookUrl: () => `http://127.0.0.1:${localPort}`, stateDir: join(cfg.home, "terminals"), protected: termProt,
         // Through `current` where the runtime has one: a terminal that outlives this runtime runs the next one's hooks.
         node: stable(process.execPath), hookScript: stable(HOOK_SCRIPT), holding: held,
-        codexHooks: () => codexTrust?.trusted ?? false, opencodeServer: true,
+        codexHooks: (home) => codexTrust(home)?.trusted ?? false, opencodeServer: true,
         // Codex on its own, as its command line starts it (2026-10-08, user: 你直接改回命令行吧). Through an app-server of
         // the terminal's own a screen could set its model and effort (codexTerminal.ts), but a session made that way is
         // marked as an app's, not the command line's (`codex app-server` says so itself, with no option), and Codex's
@@ -476,11 +487,12 @@ export function buildDaemon(cfg: DaemonConfig, overrides: BuildOverrides = {}): 
     host: terminalHost,
     audit: new TerminalAudit(join(cfg.home, "terminals", "audit.jsonl")),
     agents: overrides.terminalLauncher ? [...TERMINAL_HARNESSES] : TERMINAL_HARNESSES.filter((h) => agentBinaries[h]),
-    // Claude Code says itself whether it is signed in, in a profile's folder (terminals/signIn.ts).
-    ...(agentBinaries["claude-code"] ? { signedIn: (harness: TerminalHarness, home: string) => (harness === "claude-code" ? claudeSignedIn(agentBinaries["claude-code"]!, home) : Promise.resolve(null)) } : {}),
+    // Claude Code and Codex say themselves whether they are signed in, in a profile's folder (terminals/signIn.ts).
+    signedIn: (harness: TerminalHarness, home: string) => (harness === "claude-code" && agentBinaries["claude-code"] ? claudeSignedIn(agentBinaries["claude-code"], home)
+      : harness === "codex" && agentBinaries.codex ? codexSignedIn(agentBinaries.codex, home) : Promise.resolve(null)),
     style: () => (style ??= readTerminalStyle()),
     elsewhere: overrides.terminalElsewhere ?? (overrides.terminalLauncher ? async () => null : elsewhereCheck()),
-    ...(codexTrust ? { prepare: async (harness: string) => { if (harness === "codex") await withTimeout(codexTrust.ensure({ fresh: true }), 8000); } } : {}),
+    ...(agentBinaries.codex ? { prepare: async (harness: string, home?: string) => { if (harness === "codex") await withTimeout(codexTrust(home)!.ensure({ fresh: true }), 8000); } } : {}),
     ...(overrides.modelOffers ? { offers: () => overrides.modelOffers!.current(), variants: () => overrides.modelOffers!.variants(), daybreakTurned: (on: boolean) => overrides.modelOffers!.noteCodexDaybreak(on) } : {}),
   } : undefined;
   // Deleting an OpenCode session goes through the user's own opencode (docs/terminal-v0.md §5, threads-v0 删除): the
@@ -506,7 +518,15 @@ export function buildDaemon(cfg: DaemonConfig, overrides: BuildOverrides = {}): 
     proxyPorts: () => new Map(Object.values(profiles.all()).flatMap((a) => a.profiles).flatMap((p) => { const place = p.proxy ? proxyPlace(p.proxy.server) : null; return place ? [[place.host.toLowerCase(), place.port] as const] : []; })) });
   // The nodes are made after the API (they need the remote listener): what they heard is asked through this.
   let nodesMade: Nodes | null = null;
-  const apiDeps: ApiDeps = { liveElsewhere: () => nodesMade?.lives() ?? [], remoteKeyboard: () => loadMesh(cfg.home).keyboard, exits, profiles, sessionKeys, apiKeys, ...(profileBrowsers ? { profileBrowsers } : {}), clash, ...(browser ? { browser } : {}), ...(engineKit ? { engineKit } : {}), ...(taskFolderRoot ? { taskFolderRoot } : {}), ...(sessions ? { sessions } : {}), ...(terminals ? { terminals } : {}), ...(sealer ? { sealer } : {}), store, bus, engine, targets, quota, routingLog, routeDeps, contextPath, memoryPath, platformMemoryPath, policyPath, workRoot, cwdRules: defaultCwdRules(process.env, cfg.home), home: cfg.home, ...(cfg.appBundle ? { appBundle: cfg.appBundle } : {}), uploads, artifactsDir, extensions, version: VERSION, models: { path: modelsPath, base: baseTargets }, ...(overrides.sseHeartbeatMs ? { sseHeartbeatMs: overrides.sseHeartbeatMs } : {}) };
+  // The Files column (docs/files-v0.md §7): what of this node's disk its screens and its paired devices may read.
+  const thumbnails = new Thumbnails();
+  const fileAccess: FileAccess = {
+    home: process.env.HOME ?? homedir(), denied: prot, thumbnails, audit: new FileAudit(join(cfg.home, "files", "audit.jsonl")),
+    remote: () => { const m = loadMesh(cfg.home); return { on: m.files, changes: m.changes, scopeOf: (id: string) => m.scopes[id] ?? DEFAULT_SCOPE }; },
+    // A folder a terminal runs in is asked about before it is renamed or moved (docs/files-v0.md §12.2).
+    running: () => (terminalHost?.list() ?? []).filter((t) => t.status !== "exited").map((t) => ({ id: t.id, name: t.name, workdir: t.workdir })),
+  };
+  const apiDeps: ApiDeps = { liveElsewhere: () => nodesMade?.lives() ?? [], remoteKeyboard: () => loadMesh(cfg.home).keyboard, fileAccess, exits, profiles, sessionKeys, apiKeys, ...(profileBrowsers ? { profileBrowsers } : {}), clash, ...(browser ? { browser } : {}), ...(engineKit ? { engineKit } : {}), ...(taskFolderRoot ? { taskFolderRoot } : {}), ...(sessions ? { sessions } : {}), ...(terminals ? { terminals } : {}), ...(sealer ? { sealer } : {}), store, bus, engine, targets, quota, routingLog, routeDeps, contextPath, memoryPath, platformMemoryPath, policyPath, workRoot, cwdRules: defaultCwdRules(process.env, cfg.home), home: cfg.home, ...(cfg.appBundle ? { appBundle: cfg.appBundle } : {}), uploads, artifactsDir, extensions, version: VERSION, models: { path: modelsPath, base: baseTargets }, ...(overrides.sseHeartbeatMs ? { sseHeartbeatMs: overrides.sseHeartbeatMs } : {}) };
   // assistant-v0 §1.1: the router as the user's assistant, on the router model (a text-only agent); echo mode has none
   // and every message becomes a task. Task creation is POST /tasks's second half (admitSealed).
   const assistantRouter = overrides.assistant ?? (summarizer ? oracle("assistant") : undefined);
@@ -524,14 +544,15 @@ export function buildDaemon(cfg: DaemonConfig, overrides: BuildOverrides = {}): 
     info: () => ({
       name: remote?.name ?? macName(), kind: process.platform === "darwin" ? "mac" : "linux", version: VERSION, home: process.env.HOME ?? homedir(),
       has: ["dispatch", ...(terminalHost ? ["terminals", "profiles"] : []), ...(browser ? ["browser"] : []), ...(process.platform === "darwin" && existsSync(vergeDir()) ? ["clash"] : []),
-        ...(cfg.appBundle ? ["update"] : []), ...(loadMesh(cfg.home).keyboard ? ["keyboard"] : [])],
+        ...(cfg.appBundle ? ["update"] : []), ...(loadMesh(cfg.home).keyboard ? ["keyboard"] : []), "files"],
     }),
   });
   nodesMade = nodes;
-  const app = mountNodes(mountRemoteAdmin(new Hono().route("/", api), { store, remote, onRevoke: (id) => nodes.inboundGone(id) }), { nodes, home: cfg.home });
+  const fileScopes = { get: (id: string) => scopeOf(cfg.home, id), set: (id: string, scope: Parameters<typeof setScope>[2]) => setScope(cfg.home, id, scope) };
+  const app = mountNodes(mountRemoteAdmin(new Hono().route("/", api), { store, remote, onRevoke: (id) => nodes.inboundGone(id), fileScopes }), { nodes, home: cfg.home });
   return { app, api, remote, nodes, engine, store, quota, targets, clash, terminals: terminalHost, sessions: sessions ?? null, browser: browser?.host ?? null, setLocalPort: (port) => { localPort = port; },
     stopBrowser: async () => { await profileBrowsers?.stop(); await browser?.agents.shutdown(); await browser?.host.shutdown(); await browser?.stop(); },
-    close: () => { nodes.close(); terminalHost?.closeAll(); void profileBrowsers?.stop(); void exits.stop(); void browser?.agents.shutdown(); void browser?.host.shutdown(); reporter.stop(); store.close(); routingLog.close(); conversation.close(); } };
+    close: () => { nodes.close(); thumbnails.close(); terminalHost?.closeAll(); void profileBrowsers?.stop(); void exits.stop(); void browser?.agents.shutdown(); void browser?.host.shutdown(); reporter.stop(); store.close(); routingLog.close(); conversation.close(); } };
 }
 
 /** The planner as a text-only Router (loop-v0 §6): the router's pick when it named a usable one, else targets.yaml

@@ -14,6 +14,8 @@ final class TaskPageModel {
     private(set) var files: [DispatchTaskFile] = []
     /// The stream is open (`⠙ Live` beside `// Process`).
     private(set) var live = false
+    /// What its run is writing now (docs/simple-view-v0.md §5.14), under its process; gone once the part is in its events.
+    private(set) var writing: AgentWriting?
     /// Waiting for the summarizer's spoken summary after the end.
     private(set) var awaitingSummary = false
     @ObservationIgnored private var stream: Task<Void, Never>?
@@ -33,13 +35,14 @@ final class TaskPageModel {
     func start(_ model: DispatchModel) {
         guard stream == nil, let service = model.service else { return }
         let id = taskId, after = events.last?.seq ?? 0
+        let writes: @Sendable (AgentWriting?) -> Void = { [weak self] w in Task { @MainActor in if self?.writing != w { self?.writing = w } } }
         stream = Task { [weak self] in
             await self?.reload(model)
             // Stopped while it loaded: `stop` has said it is not live.
             guard !Task.isCancelled else { return }
             self?.live = true
             do {
-                for try await event in service.taskEvents(taskId: id, after: after) {
+                for try await event in service.taskEvents(taskId: id, after: after, writing: writes) {
                     guard let self, !Task.isCancelled else { return }
                     self.events.append(event)
                     if event.touchesTask { await self.reload(model) }
@@ -50,6 +53,7 @@ final class TaskPageModel {
             }
             guard !Task.isCancelled else { return }
             self?.live = false
+            self?.writing = nil
             await model.refreshTasks()
             await self?.awaitSummary(model)
             self?.stream = nil
@@ -60,6 +64,7 @@ final class TaskPageModel {
         stream?.cancel()
         stream = nil
         live = false
+        writing = nil
     }
 
     func reload(_ model: DispatchModel) async {
