@@ -23,7 +23,7 @@ const native = IN_MAC_APP ? window.webkit?.messageHandlers?.agentswitch : null;
 const HOST = native ? null : window.agentswitchHost ?? null;
 if (HOST) document.documentElement.classList.add("linux-app");
 /** A key as the page says it (`⌘⇧D`), as this window has it: the same on a Mac and in a browser, Linux's in its window. */
-const LINUX_KEYS = [["⌘⇧↩", "Ctrl+Shift+Z"], ["⌘⇧V", "Ctrl+Shift+S"], ["⌘⇧D", "Ctrl+Shift+O"], ["⌘D", "Ctrl+Shift+E"], ["⌘↩", "Ctrl+Shift+↩"],
+const LINUX_KEYS = [["⌘⇧↩", "Ctrl+Shift+Z"], ["⌘⇧V", "Ctrl+Shift+S"], ["⌘⇧D", "Ctrl+Shift+B"], ["⌘B", "Ctrl+Shift+L"], ["⌘↩", "Ctrl+Shift+↩"],
   ["⌘⌫", "Ctrl+Shift+⌫"], ["⌘ Click", "Ctrl Click"], ["⌘1–9", "Alt+1–9"]];
 function keyName(text) {
   if (!HOST || !text) return text;
@@ -38,7 +38,8 @@ function hostKey(e) {
   if (e.ctrlKey && e.altKey && !e.shiftKey && e.key.startsWith("Arrow")) return as(e.key, false, true);
   if (!e.ctrlKey || !e.shiftKey || e.altKey) return null;
   const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-  return { t: as("t"), w: as("w"), b: as("b"), f: as("f"), e: as("d"), o: as("d", true), s: as("v", true), z: as("Enter", true),
+  // catop, 2026-10-31: Ctrl+Shift+D beside, Ctrl+Shift+B below; the list then has L.
+  return { t: as("t"), w: as("w"), l: as("b"), f: as("f"), d: as("d"), b: as("d", true), s: as("v", true), z: as("Enter", true),
     Enter: as("Enter"), Backspace: as("Backspace"), c: "copy" }[key] ?? null;
 }
 /** The Mac window's toolbar (native) shows what the page tells it: each kind of report sent only when it changes. */

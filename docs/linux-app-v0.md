@@ -60,12 +60,13 @@ packages/linux-app/            Electron 主进程与预加载脚本，纯 JavaSc
 
 ## 7. 要定的
 
-1. 快捷键：网页里写的是 ⌘（Mac 的），Linux 上 Super 键归 GNOME；终端里 Ctrl+字母是给程序的（Ctrl+C、Ctrl+D、Ctrl+B……），不能被窗口拿走。第 1 步照 GNOME Terminal 与 Terminator 先这样做了（提议，等确认）：
+1. 快捷键：网页里写的是 ⌘（Mac 的），Linux 上 Super 键归 GNOME；终端里 Ctrl+字母是给程序的（Ctrl+C、Ctrl+D、Ctrl+B……），不能被窗口拿走。第 1 步照 GNOME Terminal 先这样做了；分屏的键是 catop 定的（2026-10-31：ctrl+shift+d 左右分屏，+b则上下分屏。其他的可以）：
 
    | Mac | Linux 窗口 | |
    |---|---|---|
-   | ⌘T ⌘W ⌘B ⌘F | Ctrl+Shift+T W B F | 新终端、关闭、列表、搜索 |
-   | ⌘D ⌘⇧D | Ctrl+Shift+E、Ctrl+Shift+O | 向右、向下分屏（Terminator 的键） |
+   | ⌘T ⌘W ⌘F | Ctrl+Shift+T W F | 新终端、关闭、搜索 |
+   | ⌘B | Ctrl+Shift+L | 列表（B 给了分屏） |
+   | ⌘D ⌘⇧D | Ctrl+Shift+D、Ctrl+Shift+B | 左右、上下分屏（已定） |
    | ⌘⇧↩ | Ctrl+Shift+Z | 这一块单独占满 |
    | ⌘⌥ 方向键 | Ctrl+Alt+方向键 | 到相邻的一块 |
    | ⌘1–9 | Alt+1–9 | 切终端（GNOME Terminal 切标签页的键） |
