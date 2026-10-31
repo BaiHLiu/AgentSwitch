@@ -92,6 +92,12 @@ build_daemon() {
   cp "$REPO/packages/secret-gate/AGENTS.md" "$OUT/secret-gate/AGENTS.md"
 }
 
+# The desktop window (docs/linux-app-v0.md): plain JavaScript run by the system's Electron, so only copied. install.sh
+# puts it in the desktop's menu when asked (--with-window).
+copy_window() {
+  rsync -a --delete --exclude test "$REPO/packages/linux-app/" "$OUT/linux-app/"
+}
+
 build_python() {
   log "python $PYTHON_VERSION (python-build-standalone $PBS_RELEASE) + secret-gate"
   fetch "$PYTHON_URL" "$PYTHON_TARBALL" "$PYTHON_SHA256"
@@ -169,6 +175,7 @@ smoke_runtime() {
 
 build_node
 build_daemon
+copy_window
 build_python
 write_versions
 smoke_runtime

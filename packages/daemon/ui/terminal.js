@@ -18,6 +18,30 @@ import { GAP, MAX_PANES, MIN_H, MIN_W, close as closeIn, drop as dropIn, neighbo
 const $ = (id) => document.getElementById(id);
 const IN_MAC_APP = /AgentSwitchMac/.test(navigator.userAgent);
 const native = IN_MAC_APP ? window.webkit?.messageHandlers?.agentswitch : null;
+// The Linux window (docs/linux-app-v0.md): its preload gives the page `agentswitchHost` — signing in again, links,
+// folders. Its keys are a Linux terminal's (§7.1): Ctrl+letter is the program's, so the page's ⌘ is Ctrl+Shift there.
+const HOST = native ? null : window.agentswitchHost ?? null;
+if (HOST) document.documentElement.classList.add("linux-app");
+/** A key as the page says it (`⌘⇧D`), as this window has it: the same on a Mac and in a browser, Linux's in its window. */
+const LINUX_KEYS = [["⌘⇧↩", "Ctrl+Shift+Z"], ["⌘⇧V", "Ctrl+Shift+S"], ["⌘⇧D", "Ctrl+Shift+B"], ["⌘B", "Ctrl+Shift+L"], ["⌘↩", "Ctrl+Shift+↩"],
+  ["⌘⌫", "Ctrl+Shift+⌫"], ["⌘ Click", "Ctrl Click"], ["⌘1–9", "Alt+1–9"]];
+function keyName(text) {
+  if (!HOST || !text) return text;
+  for (const [mac, linux] of LINUX_KEYS) text = text.replaceAll(mac, linux);
+  return text.replace(/⌘([1-9])/g, "Alt+$1").replace(/⌘([A-Z])/g, "Ctrl+Shift+$1");
+}
+/** A key pressed in the Linux window as the page's own shortcut takes it (the ⌘ form), "copy", or null. */
+function hostKey(e) {
+  if (e.metaKey) return null;
+  const as = (key, shift = false, alt = false) => ({ metaKey: true, shiftKey: shift, altKey: alt, key });
+  if (e.altKey && !e.ctrlKey && !e.shiftKey && /^[1-9]$/.test(e.key)) return as(e.key);
+  if (e.ctrlKey && e.altKey && !e.shiftKey && e.key.startsWith("Arrow")) return as(e.key, false, true);
+  if (!e.ctrlKey || !e.shiftKey || e.altKey) return null;
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  // catop, 2026-10-31: Ctrl+Shift+D beside, Ctrl+Shift+B below; the list then has L.
+  return { t: as("t"), w: as("w"), l: as("b"), f: as("f"), d: as("d"), b: as("d", true), s: as("v", true), z: as("Enter", true),
+    Enter: as("Enter"), Backspace: as("Backspace"), c: "copy" }[key] ?? null;
+}
 /** The Mac window's toolbar (native) shows what the page tells it: each kind of report sent only when it changes. */
 const tellWindow = (() => {
   const last = {};
@@ -100,6 +124,7 @@ function signedOut() {
   if (signOutShown) return;
   signOutShown = true;
   if (native) native.postMessage({ type: "signIn" });
+  else if (HOST) HOST.signIn();
   else notify("登录已失效。请从 AgentSwitch 重新打开此页面。");
 }
 
@@ -139,10 +164,10 @@ document.documentElement.classList.toggle("classic", look === "classic");
 const classic = () => look === "classic";
 /** A short word, a tooltip and a group's label as the look writes them (lib/look.js). */
 const W = (text) => wordIn(text, look);
-const tip = (text) => helpIn(text, look);
+const tip = (text) => helpIn(keyName(text), look);
 const label = (text) => labelIn(text, look);
 /** A button's words: `[ Allow ⌘↩ ]`, or the word and its key in the classic look. */
-const buttonWords = (text, key = null) => (classic()
+const buttonWords = (text, key = null) => (key = keyName(key), classic()
   ? [bracket(text, look), ...(key ? [h("kbd", {}, key)] : [])]
   : [`[ ${text}${key ? " " : ""}`, ...(key ? [h("kbd", {}, key)] : []), " ]"]);
 /** A pixel sprite, or the line icon that stands for it in the classic look. */
@@ -288,8 +313,9 @@ if (firstFont) await document.fonts.load(`${style.fontSize}px "${firstFont}"`).c
 /** A link in the terminal, opened as iTerm does: ⌘-click (a plain click selects text). The Mac app opens web links
  *  in the browser and shows file links in Finder, never running them; a browser opens web links only. */
 function openLink(event, uri) {
-  if (!event.metaKey && !narrow.matches) return;
+  if (!(HOST ? event.ctrlKey : event.metaKey) && !narrow.matches) return;
   if (native) native.postMessage({ type: "openURL", url: uri });
+  else if (HOST) HOST.openURL(uri);
   else if (/^https?:\/\//i.test(uri)) window.open(uri, "_blank", "noopener");
 }
 
@@ -297,7 +323,7 @@ function openLink(event, uri) {
 function showLinkTarget(uri) {
   let shown = uri;
   if (/^file:\/\//i.test(uri)) { try { shown = tilde(decodeURIComponent(new URL(uri).pathname)); } catch { /* as it is */ } }
-  $("linkHint").textContent = narrow.matches ? shown : `⌘ Click · ${shown}`;
+  $("linkHint").textContent = narrow.matches ? shown : `${keyName("⌘ Click")} · ${shown}`;
   $("linkHint").hidden = false;
 }
 const hideLinkTarget = () => { $("linkHint").hidden = true; };
@@ -830,7 +856,7 @@ function renderPanes() {
         making ? h("span", { class: "nm" }, "New Terminal") : t ? h("span", { class: "nm" }, t.name) : h("span", { class: "at" }, "Empty"),
         t && !making ? h("span", { class: "at" }, where) : null,
         h("span", { class: "grow" }),
-        zoomed ? h("span", { class: "at" }, `Pane ${n} of ${all.length} · ⌘⇧↩`) : null,
+        zoomed ? h("span", { class: "at" }, `Pane ${n} of ${all.length} · ${keyName("⌘⇧↩")}`) : null,
         // A request waiting in a pane out of focus: its card shows once the pane has the focus.
         t && id !== focusPane && t.permissions?.length ? h("span", { class: "w" }, W("[!] Approval")) : null,
         t && !making ? programMark(t) : null,
@@ -962,7 +988,7 @@ function splitFocused(side) {
   if (panesOf(layout).length >= MAX_PANES) { notify(`最多 ${MAX_PANES} 个分屏。`); return false; }
   const r = placedPanes().panes.find((p) => p.id === focusPane)?.r;
   const across = side === "left" || side === "right";
-  if (zoomed || !r || (across ? r.w < 2 * MIN_W + GAP : r.h < 2 * MIN_H + GAP)) { notify(zoomed ? "先按 ⌘⇧↩ 还原，再分屏。" : "这一块太小，无法再分。"); return false; }
+  if (zoomed || !r || (across ? r.w < 2 * MIN_W + GAP : r.h < 2 * MIN_H + GAP)) { notify(zoomed ? `先按 ${keyName("⌘⇧↩")} 还原，再分屏。` : "这一块太小，无法再分。"); return false; }
   const made = splitIn(layout, focusPane, side);
   if (!made) return false;
   layout = made.root;
@@ -1306,7 +1332,7 @@ function terminalRow(t, tr, depth, name = t.name) {
   const meta = t.status === "waiting" ? h("span", { class: classic() ? "w pill" : "w" }, W("Waiting"))
     : t.status === "exited" ? (t.exitCode ? h("span", { class: "x" }, `Exit ${t.exitCode}`) : W("Exited"))
     : programMark(t);
-  return h("div", { class: `row term ${t.status} ${current?.id === t.id && !creating ? "sel" : ""}`, "data-id": t.id, title: `${AGENT[t.harness] ?? t.harness}${numbered ? ` · ⌘${index + 1}` : ""}`,
+  return h("div", { class: `row term ${t.status} ${current?.id === t.id && !creating ? "sel" : ""}`, "data-id": t.id, title: `${AGENT[t.harness] ?? t.harness}${numbered ? ` · ${keyName(`⌘${index + 1}`)}` : ""}`,
     onclick: (e) => rowClick(e, { term: t.id }), onpointerdown: (e) => startRowDrag(e, { term: t.id }),
     ondblclick: () => startRename(t.id), oncontextmenu: (e) => { e.preventDefault(); showMenu(e, t); } },
     h("span", { class: "ix" }, numbered ? String(index + 1).padStart(2, "0") : ""),
@@ -1354,7 +1380,7 @@ function sessionRow(s, tr, depth, name = s.title || "(Untitled)") {
 /** Right-click on a terminal, with the shortcuts that do the same. */
 function showMenu(e, t) {
   const item = (label, key, run, opts = {}) => h("button", { class: opts.danger ? "danger" : "", disabled: opts.disabled, onclick: () => { $("menu").hidden = true; run(); } },
-    h("span", {}, label), key ? h("kbd", {}, key) : null);
+    h("span", {}, label), key ? h("kbd", {}, keyName(key)) : null);
   // In the Mac app: out to a window of its own, or back from it. Its sealed reply is then that window's (its lock).
   const out = !here(t.id);
   const move = !WINDOWS ? null : out
@@ -1851,6 +1877,12 @@ async function sendComposer() {
 // ---------- keyboard ----------
 /** The page's own shortcut for a key, to run, or null: only asks, so the terminal's key handler can too. */
 function shortcut(e) {
+  if (HOST) {
+    const mapped = hostKey(e);
+    if (mapped === "copy") return term.hasSelection() ? () => navigator.clipboard.writeText(term.getSelection()).catch(() => undefined) : null;
+    if (!mapped) return null;
+    e = mapped;
+  }
   if (!e.metaKey) return null;
   const key = e.key.toLowerCase();
   const asking = $("toasts").childElementCount > 0 && current;
@@ -1957,6 +1989,28 @@ $("keys").addEventListener("click", (e) => {
 const dock = () => { $("composer").hidden = !narrow.matches; renderSeal(); };
 narrow.addEventListener("change", () => { dock(); renderSideBtn(); });
 
+/** A folder picked with the window's own dialog: for the folder line of the box open now (a session whose folder is
+ *  gone), else for the new terminal. */
+function folderChosen(path) {
+  if (sheetDone && !$("sheetField").hidden) {
+    $("sheetInput").value = path;
+    $("sheetInput").dispatchEvent(new Event("input"));
+    $("sheetConfirm").focus();
+    return;
+  }
+  $("cwd").value = tilde(path);
+  $("createStart").focus();
+}
+// The Linux window picks folders with the system's dialog, and its keys are named its way.
+if (HOST) {
+  const choose = async (path) => { const chosen = await HOST.chooseFolder(path).catch(() => null); if (chosen) folderChosen(chosen); };
+  $("chooseFolder").hidden = false;
+  $("chooseFolder").addEventListener("click", () => choose($("cwd").value));
+  $("sheetChoose").hidden = false;
+  $("sheetChoose").addEventListener("click", () => choose($("sheetInput").value));
+  for (const el of document.querySelectorAll("kbd")) el.textContent = keyName(el.textContent);
+  for (const el of document.querySelectorAll("[title]")) el.title = keyName(el.title);
+}
 // The Mac app picks folders with its own open panel.
 if (native) {
   // The window's drag strip lies over the top bar: it leaves the bar's controls to the page.
@@ -1970,17 +2024,7 @@ if (native) {
     addEventListener("resize", tellOverlays);
   }
   window.agentswitch = {
-    folderChosen: (path) => {
-      // For the folder line of the box open now (a session whose folder is gone), else for the new terminal.
-      if (sheetDone && !$("sheetField").hidden) {
-        $("sheetInput").value = path;
-        $("sheetInput").dispatchEvent(new Event("input"));
-        $("sheetConfirm").focus();
-        return;
-      }
-      $("cwd").value = tilde(path);
-      $("createStart").focus();
-    },
+    folderChosen,
     // ⌘W, ⌘T, ⌘B, ⌘1–9, ⌘⇧V, ⌘↩ / ⌘⌫ on a request, as the window hands them over (a menu would take them first).
     shortcut: (key, shift = false, alt = false) => { const run = shortcut({ metaKey: true, shiftKey: shift, altKey: alt, key }); run?.(); return !!run; },
     // The grid a native screen fits at its size (a pane's: the one in focus is where a new terminal starts).

@@ -1,0 +1,13 @@
+{
+  "name": "agentswitch-linux-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AgentSwitch's window on a Linux desktop: the node's own web pages in Electron, a tray and notifications (docs/linux-app-v0.md)",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "scripts/run.sh",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": { "node": ">=20" }
+}
