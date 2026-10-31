@@ -117,6 +117,7 @@
 - 配置的 API key（profiles-v0 §3.6，2026-10-13；daemon `src/profiles/apiKeys.ts`）：只以密文进 daemon（Mac 应用用本机网关封好再发，站点是它要发往的地址的站点；接口拒绝明文、拒绝配对设备），以密文存在 `profiles/profiles.json`（0600），任何接口都不回显。**明文会交给终端里的 agent**：Claude Code 的 `apiKeyHelper` / Codex 供应商的 `auth` 命令是终端自己的 hook 程序，凭终端的 hook 令牌向本机口 `POST /terminals/key` 要（本机令牌检查对它放行、不在远程名单上、令牌不对即拒），daemon 向网关要值仍走 `fill-value` 那条路、只对那一个站点。终端不在网关后面（profiles-v0 §8），这把 key 是 agent 自己要用的凭据，它运行同一条命令也能看到——网关在这里保证的只有两件：落盘是密文、只为那一个地址解开。key 不写进 agent 的参数、环境变量和设置文件；daemon 的日志只记“没给出”的原因，不记值。
 - Claude Code 的设备标识（profiles-v0 §3.5，2026-10-11）：daemon 只读各配置目录里 `.claude.json` 的 `userID`（一串随机十六进制数，不是凭据），随 `GET /profiles` 与终端信息给屏幕；不写、不改、不替换。
 - 配置是否已登录（profiles-v0 §3.1，2026-10-09）：开终端前 daemon 在这个配置的目录里跑一次 agent 自己的 `claude auth status`（`src/terminals/signIn.ts`）。它的回答里除了“是否登录”还有账号邮箱、组织名；daemon **只取 `loggedIn` 一个布尔值**，其余不存、不记日志、不给任何屏幕。daemon 自己不读钥匙串、不碰登录凭据；没登录时只是在启动命令末尾多带一个 `/login`，登录仍由 agent 自己完成。
+- Codex 的账号配置（profiles-v0 §6.2，2026-10-20）：登录由 Codex 自己完成（`codex login --device-auth`，在终端里），凭据由 Codex 写成配置目录里的 `auth.json`（`$AGENTSWITCH_HOME/profiles/codex/<id>/home/`，启动时都带 `-c cli_auth_credentials_store="file"`，不进钥匙串）——与 `~/.codex/auth.json` 同一种明文文件，不是密文。daemon 读它只为一件事：解开身份令牌的中间一段取 `email`，随 `GET /profiles` 给屏幕（`Default` 读 `~/.codex/auth.json`，同样只取这一项）；令牌本身不存、不记日志、不给任何屏幕。是否已登录跑 Codex 自己的 `codex login status`，只取退出码（它也只说“已登录 / 没登录”）。整个 `profiles/` 在执行器的禁读名单里（`protected.ts` 的 `readDenied`），所以 Files 栏里它也锁着；Codex 执行器没有按路径的读限制这一条照旧。**终端里的 agent 读得到**任何配置的 `auth.json`，与它读得到 `~/.codex/auth.json` 一样（同一 uid，终端只关网关与节点，terminal-v0 §3）。
 - 配置的浏览器与共用浏览器同一个引擎选择（装了 Camoufox 就是 Camoufox，各有自己的指纹，按配置出口的时区启动；否则 Chrome），由 daemon 带自动化接口启动、有窗口；人在里面登录时输入的内容，daemon 进程在技术上够得着（与共用浏览器一样）。
 
 ## 凭据网关服务（gate-service-v0）
@@ -177,6 +178,21 @@
 - 去别的节点的连接只在证书指纹与配对时一致之后才交给 HTTP：令牌不会发到别的证书后面。调用方自己出示的 `Authorization`（本机令牌）不转给对方，对方收到的是这个节点的设备令牌。
 - `/nodes/…` 只在本机接口上，远程路由表里没有：配对进来的设备不能借这个节点去用第三个节点。没有跨节点调度，密文不跨节点（每个节点自己的网关和密钥对）。
 - **风险是对称的**：互通的两个节点，一个上面的 agent 越过了上面的底线，就能在另一个上面开终端。只留一个方向、或移除，随时可以在任一边做；移除时会请对方吊销自己这台设备。
+
+## 文件栏（daemon `src/files/browse.ts`、`src/api/browse.ts`、`src/remote/admin.ts`，files-v0 §7；2026-10-16）
+
+- 文件内容第一次经服务到了配对的设备上：`GET /files`（一层）、`/files/stat`、`/files/preview`（文字的前 64 KB）、`/files/thumbnail`（图片的小图）、`/files/content`（原样的字节，给配对设备的一次至多 25 MB）。都只读，没有写的接口。
+- AgentSwitch 自己存凭据的地方（与执行器的禁读名单同一张表：网关目录与 socket、浏览器会话槽位与共用浏览器的状态目录、远程 TLS、`local-token`、`nodes/`）：列出时只有名字和锁，没有大小、时间；进不去、读不到、不能作为 `{path}` 附件交给 agent——本机的屏幕也一样。按真实位置与文件身份比较（`src/core/paths.ts`）：符号链接按目标、指向它们的硬链接按身份、经它们里面的链接出去的路径也拒。路径只收绝对、写法干净的（不收 `..`、`.`、双斜杠）。
+- 可能含凭据的文件（`~/.ssh/` 的私钥、`.env`、`~/.aws/credentials`、各 agent 的登录文件、`*.pem` 等，只按路径和名字判断）**不锁**（用户定：看就行）：能列、能预览，手机上也能；交给 agent 前界面问一次（`/files/stat` 的 `sensitive`）。服务不拦：这是提醒，不是边界。
+- 配对的设备读文件受两样管，都只在这个节点自己身上设（本机接口，不在远程名单）：节点自己的开关（`PUT /settings/mesh {files}`，默认开；关了 `/files…` 与它的 `{path}` 附件一律 403）和每个设备的范围（`PUT /devices/:id/files`：家目录（默认）、全部、几个文件夹、无；存在 `mesh.json`，设备吊销时一并删掉）。范围之上的几层只列通往授权文件夹的那几项。范围外的回 403。
+- 配对的设备每读一次文件内容（预览、小图、字节）在 `$AGENTSWITCH_HOME/files/audit.jsonl` 记一行：设备、路径、字节数，不记内容。列目录不记。
+- **范围不是沙箱**：配对的设备照样能开终端，让 agent 读范围外、甚至可能含凭据的文件（配对的设备本来就等于能以用户身份跑命令，见上一节）。范围管的只是文件栏和附件能看到、能交出去的。
+- **文件栏能改文件了**（files-v0 §12，daemon `src/files/change.ts`、`src/api/fileChanges.ts`；2026-10-18）：`POST /files/{folder,file,rename,trash,restore}` 与 `PUT /files/content`（手机传进来的文件，原样字节，一个至多 200 MB，边收边写进同一个文件夹里的临时文件，收完才改成真名；配对设备取文件的上限也随之放到 200 MB，为了在手机上分享/存下）。
+  - 不动的：AgentSwitch 自己存凭据的地方、**装着它们的文件夹**（家目录、`~/.agentswitch` 一串：移走或改名就把凭据一起搬走了）、`/` 和它下面一层；指进禁区的链接按禁区算。新建、传进来的东西也不能落进禁区。
+  - 删除一律是移到废纸篓（Mac：系统的 `NSFileManager.trashItem`，经 `osascript` 的脚本桥；Linux：freedesktop 的废纸篓）；只有废纸篓不收、并且再次明确要求时才永久删除。`restore` 只从废纸篓里往外搬，不能当成一般的移动。
+  - 配对的设备改文件另受一个开关管（`PUT /settings/mesh {changes}`，默认开，本机接口），并且只能改它读得到的地方（同一个范围）。有终端在里面运行的文件夹，移走或改名前先问（409 `in-use`）。
+  - 每次改动（本机和远程）在 `files/audit.jsonl` 记一行：设备、动作、路径（改名多一个新路径，传文件多字节数），不记内容。
+  - 本机网页的防跨站规则只多放行 `PUT /files/content` 的 `application/octet-stream`（浏览器对它本来就要先预检）。
 
 ## Linux 节点（`packages/linux`、daemon `src/keeper/`，mesh-v0 §4；2026-10-13）
 

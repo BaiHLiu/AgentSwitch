@@ -109,12 +109,15 @@ public struct ClashSettings: Codable, Equatable, Sendable {
     /// The subscription's default group is called `Manual` in what Clash Verge is handed.
     public var renameDefault: Bool
     public var dns: ClashDNSSetting
+    /// What Clash Verge is handed keeps the subscription's nodes alone: AgentSwitch's groups and rules are all there is,
+    /// and the domestic template is on while this is (docs/clash-v0.md §7.11).
+    public var ownRules: Bool
 
     /// The intervals offered (the service takes no other).
     public static let updateHours = [0, 1, 6, 12, 24]
 
     public init(claude: ClashServiceNodes = .init(), openai: ClashServiceNodes = .init(), direct: [String] = [], autoUpdateHours: Int = 24,
-                templates: ClashTemplates = .init(), renameDefault: Bool = false, dns: ClashDNSSetting = .init()) {
+                templates: ClashTemplates = .init(), renameDefault: Bool = false, dns: ClashDNSSetting = .init(), ownRules: Bool = false) {
         self.claude = claude
         self.openai = openai
         self.direct = direct
@@ -122,6 +125,18 @@ public struct ClashSettings: Codable, Equatable, Sendable {
         self.templates = templates
         self.renameDefault = renameDefault
         self.dns = dns
+        self.ownRules = ownRules
+    }
+
+    private enum CodingKeys: String, CodingKey { case claude, openai, direct, autoUpdateHours, templates, renameDefault, dns, ownRules }
+
+    /// A service from before §7.11 (another node not yet updated) says nothing of `ownRules`: off.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(claude: try c.decode(ClashServiceNodes.self, forKey: .claude), openai: try c.decode(ClashServiceNodes.self, forKey: .openai),
+                  direct: try c.decode([String].self, forKey: .direct), autoUpdateHours: try c.decode(Int.self, forKey: .autoUpdateHours),
+                  templates: try c.decode(ClashTemplates.self, forKey: .templates), renameDefault: try c.decode(Bool.self, forKey: .renameDefault),
+                  dns: try c.decode(ClashDNSSetting.self, forKey: .dns), ownRules: try c.decodeIfPresent(Bool.self, forKey: .ownRules) ?? false)
     }
 
     public subscript(service: ClashService) -> ClashServiceNodes {

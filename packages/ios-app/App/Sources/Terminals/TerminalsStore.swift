@@ -105,13 +105,4 @@ final class TerminalsStore {
     #endif
 }
 
-/// `~/x` for a path under the user's home on the Mac (the Mac's home, as the paths carry it).
-enum MacPath {
-    static func tilde(_ path: String) -> String {
-        // `/Users/Shared` is no one's home.
-        guard path.hasPrefix("/Users/"), path != "/Users/Shared", !path.hasPrefix("/Users/Shared/") else { return path }
-        let rest = path.dropFirst("/Users/".count)
-        guard let slash = rest.firstIndex(of: "/") else { return "~" }
-        return "~" + rest[slash...]
-    }
-}
+// `MacPath.tilde` (`~/x` for a path under a home on the Mac) is in AgentSwitchKit with the rest of `MacPath`.

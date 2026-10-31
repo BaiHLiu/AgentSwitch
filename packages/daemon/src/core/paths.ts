@@ -10,7 +10,7 @@
  *  which no other alias (a mount of the same volume elsewhere, a spelling not thought of here) changes. Hard links to a
  *  file have one identity per name only as far as their folder goes; folders cannot be hard-linked on APFS. */
 
-import { realpathSync, statSync } from "node:fs";
+import { readdirSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 
 /** Where macOS mounts the data volume; its top folders (`Users`, `private`, `Applications`, …) are firmlinked to `/`. */
@@ -95,4 +95,40 @@ export function isWithin(path: string, root: string, chain: readonly string[] = 
   // A root that does not exist (yet): by spelling, the canonical one too (`/tmp/x` is `/private/tmp/x`).
   const canonical = canonicalPath(root);
   return canonical !== root && startsWithFolder(path, canonical);
+}
+
+/** `path` with each of its folders and its last part spelled as the disk spells them, where the disk takes another
+ *  case or Unicode form for the same name (a Mac's disk ignores both): `~/Worktop/pi` → `~/Worktop/Pi`. Symbolic links
+ *  are left as they are (unlike `realpath`); a part that is not there, or that is another file by that spelling (a disk
+ *  that tells case apart), and all after it, as given. An absolute path. */
+export function diskSpelling(path: string): string {
+  const parts = resolve(path).split(sep).filter(Boolean);
+  let out: string = sep;
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i]!;
+    let names: string[];
+    try { names = readdirSync(out); } catch { return join(out, ...parts.slice(i)); }
+    if (names.includes(part)) { out = join(out, part); continue; }
+    const key = part.normalize("NFC").toLowerCase();
+    const found = names.find((n) => n.normalize("NFC").toLowerCase() === key);
+    // Only the same file by another spelling: on a disk that tells case apart, `pi` beside `Pi` is another folder.
+    const same = found !== undefined && fileId(join(out, part)) !== null && fileId(join(out, part)) === fileId(join(out, found));
+    if (!same) return join(out, ...parts.slice(i));
+    out = join(out, found!);
+  }
+  return out;
+}
+
+/** `diskSpelling` for lists asked for again and again (a folder per terminal and per session, every few seconds): kept
+ *  for a while by the path asked. */
+const SPELLING_KEPT_MS = 60_000;
+const spellings = new Map<string, { readonly spelled: string; readonly at: number }>();
+export function keptDiskSpelling(path: string, now: number = Date.now()): string {
+  if (!path) return path;
+  const have = spellings.get(path);
+  if (have && now - have.at < SPELLING_KEPT_MS) return have.spelled;
+  const spelled = diskSpelling(path);
+  if (spellings.size > 2000) spellings.clear();
+  spellings.set(path, { spelled, at: now });
+  return spelled;
 }

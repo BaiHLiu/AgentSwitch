@@ -16,6 +16,7 @@ import { withoutCredentialRepair, type GateOptions } from "./gate.js";
 import { stripProxy } from "../util/env.js";
 import { opencodeExecConfig } from "./opencodeShared.js";
 import { basicAuth, startStdioServe, stopStdioServe } from "../harness/opencodeStdio.js";
+import { followEventStream } from "../harness/opencodeEvents.js";
 import { canonicalPath, type ProtectedPaths } from "./protected.js";
 
 export type Json = Record<string, unknown>;
@@ -120,6 +121,12 @@ export class OpenCodeExecServer {
     });
     this.child = child; this.url = url; this.password = password;
     this.log(`OpenCode executor server ready on ${url}`);
+  }
+
+  /** Its event stream (`GET /api/event`, 2.0): each event as it comes, until `signal` or the stream ends. */
+  async events(onEvent: (event: Json) => void, signal: AbortSignal): Promise<void> {
+    if (!this.url) return;
+    await followEventStream(`${this.url}/api/event`, basicAuth(this.password), onEvent, signal, this.fetchImpl);
   }
 
   async call<T = Json>(method: string, path: string, body?: unknown, opts: CallOptions = {}): Promise<T> {

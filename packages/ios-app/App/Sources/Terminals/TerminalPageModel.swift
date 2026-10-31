@@ -80,6 +80,24 @@ final class TerminalPageModel {
     private(set) var activitySince: Date?
     /// How far the turn has come, as the agent's own screen counts it (nil: it says nothing).
     private(set) var progress: TurnProgress?
+    /// What it is writing now (docs/simple-view-v0.md §5.14), drawn at the record's end. Once the service says the part
+    /// is done it stays a moment (`writingKeep`): the record has it by then, and nothing goes blank between the two.
+    private(set) var writing: AgentWriting?
+    @ObservationIgnored private var writingTimer: Task<Void, Never>?
+    static let writingKeep: Duration = .milliseconds(1500)
+
+    /// What it is writing now; nil: the part is done, kept a moment.
+    private func writes(_ now: AgentWriting?) {
+        writingTimer?.cancel()
+        writingTimer = nil
+        if let now { if writing != now { writing = now }; return }
+        guard writing != nil else { return }
+        writingTimer = Task { [weak self] in
+            try? await Task.sleep(for: Self.writingKeep)
+            guard !Task.isCancelled else { return }
+            self?.writing = nil
+        }
+    }
     /// Replies sent that the record does not hold yet: shown at its end meanwhile.
     private(set) var sent: [SentReply] = []
     /// The list the agent's own screen shows to choose from (nil: none).
@@ -88,6 +106,9 @@ final class TerminalPageModel {
     private(set) var notices: [ScreenNotice] = []
     /// Changes when the session's record does: the page reads it again.
     private(set) var recordRev: String?
+    /// The session the record's stream last named (a `/clear` or another one resumed says so at once); nil until it has,
+    /// and from an older Mac. The terminals' list, read every few seconds, may still name the one before.
+    private(set) var recordSession: String?
     /// The model the agent says it is on now (Claude Code), as the stream last said; nil until it has.
     private(set) var modelNow: String?
     /// Codex's Daybreak switch as the stream said last (nil: nothing said — the list's word stands).
@@ -253,6 +274,8 @@ final class TerminalPageModel {
                 if status == .working, s == .idle { effortAsked = nil }
             }
             status = s
+        case .writing(let now):
+            writes(now)
         case .activity(let now, let agents):
             activityKnown = true
             if now != activity { activity = now; activitySince = Date() }
@@ -265,8 +288,9 @@ final class TerminalPageModel {
             choices = now
         case .notices(let now):
             notices = now
-        case .record(let rev):
+        case .record(let rev, let session):
             recordRev = rev
+            if let session, session != recordSession { recordSession = session }
         case .model(let model):
             modelNow = model
         case .daybreak(let on):
@@ -319,6 +343,7 @@ final class TerminalPageModel {
             activity = nil
             subagents = []
             progress = nil
+            writingTimer?.cancel(); writingTimer = nil; writing = nil
             sent = []
             choices = nil
             if !showsScreen { return }
@@ -406,10 +431,12 @@ final class TerminalPageModel {
         userActed()
         let files = draftFiles.filter { text.contains($0.token) }
         do {
-            var refs: [TerminalAttachmentRef] = []
-            if !files.isEmpty {
-                let staged = try await api.upload(files.map(\.file))
-                refs = zip(files, staged).map { TerminalAttachmentRef(token: $0.token, upload: $1.id) }
+            // The phone's own files are sent first; the Mac's are named by where they are (docs/files-v0.md §5).
+            var refs: [TerminalAttachmentRef] = files.compactMap { f in f.macPath.map { TerminalAttachmentRef(token: f.token, path: $0) } }
+            let sent = files.filter { $0.file != nil }
+            if !sent.isEmpty {
+                let staged = try await api.upload(sent.compactMap(\.file))
+                refs += zip(sent, staged).map { TerminalAttachmentRef(token: $0.token, upload: $1.id) }
             }
             let result = try await api.sendTerminalInput(id, text: text, sealed: sealed, attachments: refs)
             draftFiles = []
@@ -478,7 +505,8 @@ final class TerminalPageModel {
     // MARK: files in the reply
 
     /// A picture or file for the next reply (docs/terminal-v0.md §4): it stands in the reply box as its placeholder,
-    /// where the user put it, and goes there when the reply is sent — as Claude Code shows `[Image #1]`.
+    /// where the user put it, and goes there when the reply is sent — as Claude Code shows `[Image #1]`. One from the
+    /// phone is sent with the reply (`file`); one of the Mac's, picked in Files, is named by where it is (`macPath`).
     struct DraftFile: Identifiable, Equatable {
         let id = UUID()
         let token: String
@@ -486,7 +514,11 @@ final class TerminalPageModel {
         let isImage: Bool
         let name: String
         let thumbnail: UIImage?
-        let file: UploadFile
+        var file: UploadFile? = nil
+        var macPath: String? = nil
+        var isFolder = false
+        /// The Mac thinks it may hold a password: its chip is marked.
+        var sensitive = false
     }
 
     /// The files of the reply being written, in the order they were added.
@@ -503,6 +535,19 @@ final class TerminalPageModel {
             let token = TerminalDraft.token(image: image, number: number)
             let thumbnail = image ? UIImage(data: prepared.data)?.preparingThumbnail(of: CGSize(width: 96, height: 96)) : nil
             draftFiles.append(DraftFile(token: token, number: number, isImage: image, name: prepared.name, thumbnail: thumbnail, file: prepared))
+            tokens.append(token)
+        }
+        return tokens
+    }
+
+    /// Files and folders of the Mac's, picked in Files (docs/files-v0.md §5): not copied, their paths go to the agent;
+    /// their placeholders, to put in the box. One already in the reply is not added twice.
+    func addMacFiles(_ picks: [MacPick]) -> [String] {
+        var tokens: [String] = []
+        for pick in picks where !draftFiles.contains(where: { $0.macPath == pick.path }) {
+            let number = (draftFiles.map(\.number).max() ?? 0) + 1
+            let token = TerminalDraft.token(image: false, number: number)
+            draftFiles.append(DraftFile(token: token, number: number, isImage: false, name: pick.name, thumbnail: nil, macPath: pick.path, isFolder: pick.isFolder, sensitive: pick.sensitive))
             tokens.append(token)
         }
         return tokens

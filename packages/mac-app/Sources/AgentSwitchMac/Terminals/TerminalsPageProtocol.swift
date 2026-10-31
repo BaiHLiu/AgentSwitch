@@ -43,6 +43,14 @@ protocol TerminalsPage: AnyObject {
     func stop()
     func setDetached(_ ids: Set<String>)
     func detachShown()
+    /// The window's Files column (docs/files-v0.md): the list's `Show in Files` and the panes' icons reach it.
+    var files: FilesColumn? { get set }
+    /// The folder the agent of the pane in focus works in now.
+    var paneFolder: String? { get }
+    /// Where `Add to Reply` lands on this page: the pane in focus (nil: none to give to).
+    func filesTarget() -> FilesTarget?
+    /// The new-terminal panel, in `folder`.
+    func newTerminal(in folder: String)
 
     #if DEBUG
     var probeScreen: TerminalScreenController? { get }

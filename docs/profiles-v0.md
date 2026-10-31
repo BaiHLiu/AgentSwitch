@@ -187,7 +187,7 @@ Codex
 - **没查实、没做的**：
   - 真的 key 对着真的接口跑一轮（没有用任何账号）；在装好的应用里点一遍新建。
   - 你的 `settings.json` 里若已经写着别家的 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY`（cc switch 的写法），它和这里的 `apiKeyHelper` 谁先谁后没有测（§2 说的“要逐个盖掉”仍未做）。
-  - Codex 需要认供应商的 `auth` 命令的版本（0.163 认）；更早的版本没有试，ChatGPT.app 自带的那一份也没有试。
+  - Codex 需要认供应商的 `auth` 命令的版本（0.163 认）。ChatGPT.app 自带的那一份（0.162.0-alpha.17.2，用户的服务开 Codex 终端用的就是它）2026-10-20 补测：也认——在一次性的家目录里用 `exec` 对本机替身发一轮，替身收到的是 `auth` 命令给出的 key（`Authorization: Bearer`），0.163 同样。更早的版本没有试。
   - 续接一段在别的供应商下开始的 Codex 会话认不认，没有试。
   - 中转的地址须支持各家自己的接口（Anthropic Messages；OpenAI Responses），界面只说明、不探测。
   - 按配置分开的用量；调度任务用配置（第 6 步）。
@@ -206,6 +206,7 @@ Codex
 
 - 出口属于身份：配置自己的身份有自己的出口；用这台 Mac 的配置，出口就是这台 Mac 的。
 - 身份有上游代理时，服务为它开一个**本机转发口**（浏览器已经在用的那个转发层，browser-v0 §7.3，一个身份一个）；用这个身份的 agent 进程拿到的是 `HTTPS_PROXY` / `HTTP_PROXY = http://127.0.0.1:<口>`，`NO_PROXY=127.0.0.1,localhost`。没有上游代理的身份什么都不设，直连。
+- **转发口不换**（2026-10-18）：同一个身份的代理改了、或重新保存（密码重新封成密文，密文就不一样了），转发口的端口和它自己的密码都不变，只换它后面接的代理；已经在跑的 agent 下一次请求就走新代理。原来是关掉旧转发口、在新端口开一个，已经在跑的终端拿着的还是旧端口，于是什么都连不出去（用户遇到时 Claude Code 正停在登录页）。代理被删掉时转发口照旧关掉，不改走直连。
 - 这样做而不是把上游代理直接写进环境变量，有三个原因：
   - **代理的密码不进 agent 的环境**（模型能读自己的环境变量）。进程只看得到本机的口。
   - **换上游不用重开终端**，浏览器和 agent 同时换。
@@ -215,7 +216,7 @@ Codex
 - **管得到的范围**：agent 自己的流量四家都认（agents-v0 §11）。它跑的命令（`git`、`curl`、`npm`）和它起的 MCP 服务器继承同一组变量，认环境变量的就走出口，**不认的会直连**——环境变量是约定，不是强制。要强制得按进程拦网络，macOS 上只能套一层沙箱，而那会和 Codex、Claude Code 自己的沙箱打架，不做。
 - 出口除了进程的环境，还要写进启动时叠的那层设置（§2）：你的 `settings.json` 里若有 `HTTPS_PROXY`，会把环境里的盖掉。
 - Codex 的进程本身现在不带代理变量（只给它跑的命令），有出口时要给它自己也设上。
-- 转发层不拆 HTTPS（只转隧道），终端里不需要装任何证书。
+- 转发层不拆 HTTPS（只转隧道），终端里不需要装任何证书。（2026-10-16 提议，未做：简略视图要 Claude Code 的逐字时，这个转发口对 Claude Code 主进程自己去 `api.anthropic.com` 的那条连接例外——打开、原样转发、读出文字，经同一个上游；它跑的命令的连接仍只转隧道。见 simple-view-v0 §5.14。）
 - `Check Exit`：经这个出口查一次对外的地址与地点（浏览器的身份已经有这一项），配置那一行和浏览器那一组都显示。
 - **一处行为会变**：这台 Mac 的身份现在可以设代理，但只管浏览器；按上面的规则，之后用这台 Mac 身份的终端也会走它（§10 的 6）。
 
@@ -230,7 +231,7 @@ Codex
 - **在这个配置名下开终端之前再查一次**，查到了才开。查不到：不开，说出原因，不退回直连。
 - 查到的出口记在这个终端上，**写在底栏**配置名后面：`claude · cwork1 · Tokyo 203.0.113.9`。
 - agent 进程拿到的是转发口（`HTTPS_PROXY` 等，大小写两种写法都设；`NO_PROXY` 是这台 Mac 自己），Claude Code 另在启动时叠的那层设置里也写一份，免得用户 `settings.json` 里的 `env` 盖掉。
-- 代理服务器的主机自动加进 Clash 页的 `Go Direct`（clash-v0 §3）：开着 TUN 时去代理的这一段不再绕别的节点。拿掉代理时不自动删这一条（别处可能也在用），在 `Go Direct` 里手动删。
+- ~~代理服务器的主机自动加进 Clash 页的 `Go Direct`~~：2026-10-18 去掉（clash-v0 §3）。去代理的这一段照 Clash 的规则走（开着 TUN 时多半经 `Manual` 的节点）；要它直连，自己加进 `Go Direct`。
 
 **做了的**：服务（`src/browser/exits.ts` 出口池：一个配置一个转发口，复用浏览器的转发层与出口查询；`profiles/store.ts` 存代理与上次查到的出口；`PUT /profiles/<agent>/<id>/proxy`、`POST …/check`；开终端前的检查在 `api/profiles.ts` 的 `exitFor`）、Mac（`Proxy…` 弹窗；列表右边原来写 `This Mac` 的地方改写出口；底栏）。
 
@@ -419,16 +420,56 @@ Codex
 | agent | 订阅登录 | API 供应商 | 同一个 agent 的配置之间会话能共用吗 | 浏览器工具 |
 |---|---|---|---|---|
 | Claude Code | 另一个家目录，`/login` | 另一个家目录；地址与模型名在启动那层设置里，密钥经它自己的 `apiKeyHelper` 取 | 能（链接） | 有 |
-| Codex | 另一个 `CODEX_HOME`，`codex login` | 另一个 `CODEX_HOME`；供应商用启动时的 `-c` 给 | 要实测（它除了文件还有自己的库） | 有 |
+| Codex | 另一个 `CODEX_HOME`，`codex login --device-auth`（§6.2，已做） | 不另开目录，在这台 Mac 原有的里运行；供应商用启动时的 `-c` 给（§3.6，已做） | 能：`sessions/` 整个链接过去（§6.2） | 有 |
 | OpenCode | 另一套数据目录 | 不必另开目录：AgentSwitch 本来就给每个终端一份它的配置文件，供应商写在那里 | 供应商类能；订阅类不能（会话和登录在同一个目录里） | 有 |
 | pi | 另一个目录 | 同左 | 要实测 | 没有，只跟出口 |
 
 - Codex 另有三处：服务对自己 hook 的信任记在 `CODEX_HOME` 的 `config.toml` 里，每个配置的家目录要各做一次；Daybreak 的默认值每个家目录各一份；它的后台服务也是每个家目录各一个。
 - 用量那几行（各家的额度）之后按配置分开显示。
 
+### 6.1 Codex 的订阅配置：实测（2026-10-19）
+
+用户：（问 ChatGPT 的配置切换做了没有，答还没做、先要实测几件事后）测试一下。
+
+Codex 0.163.0-alpha.5（服务管的那一份）；每项都在一次性的 `CODEX_HOME` 里、干净的环境下跑；模型是本机一个替身（只回一句话的 Responses 接口），没碰任何模型和账号，测完目录都删了。
+
+- **凭据**：存文件。全新的家目录里 `codex login status` 是 `Not logged in`，所以不和这台 Mac 的登录共用钥匙串；这台 Mac 原有的登录在 `~/.codex/auth.json`（只看了它在不在）。它支持 `cli_auth_credentials_store = file | keyring | auto | ephemeral`，配置的家目录应写明 `file`，免得落进钥匙串、和别的账号混在一起。`installation_id` 各家目录各一个随机值。
+- **登录开什么浏览器**：`codex login` 在 `127.0.0.1:1455` 起一个回调，不认 `BROWSER`，也不走 `PATH` 里的 `open`，直接让系统开默认浏览器（测时多开了一页，告诉了用户）。回调端口固定，两个配置不能同时这样登录；走代理的浏览器还得放过本机地址。
+- **不开浏览器的登录**：`codex login --device-auth` 只打出一个固定网址 `https://auth.openai.com/codex/device` 和一次性码，不开任何东西、不要本机回调。**提议配置一律用这一种**：服务读出码，在这个配置自己的浏览器（走它的出口）里打开那一页，人在那里登录、填码。ChatGPT 那边要不要先在安全设置里开“设备码登录”，没有试（需要真账号）。
+- **续接别处的会话**：
+  - 按会话号在另一个家目录里续接：不行（`no rollout found for thread id`）。
+  - `codex exec resume <文件路径>`：不认，悄悄开了一段新会话、没带历史。app-server 的 `thread/resume` 带 `path`：要声明 `experimentalApi`，声明了仍是同一个错误。
+  - **把会话文件复制进去**：能，按会话号续接，历史完整。但之后两边各一份。
+  - **链接进去**（`sessions/年/月/日/` 下放一个指向原文件的链接）：能，历史完整，新的一轮写回原文件；原来的家目录再续接，看得到这一轮。所以 Codex 也能像 Claude Code 那样“会话共用、账号分开”，做法是链接单个会话文件，而不是整个 `sessions/`（整个目录链接没有试；次日试了，也行，见 §6.2）。
+  - 同一段会话不要在两个家目录里同时开着：写入锁（`thread-writer-locks/`）各家目录各一把，挡不住对方。
+- **不经 app-server**（用户 2026-10-19：就是别用那个codex app server就行）：配置下的 Codex 终端和今天的一样，照它的命令行原样运行（2026-10-08 起的默认，`daemon.ts` 的 `codexServer`），会话记为 `cli`。经 app-server 开的会话记为 `vscode`（app-server 自己定的，没有选项），ChatGPT App 不再把它列在项目下。登录也用命令行（`codex login --device-auth`）。服务对 hook 的信任照旧经一次 app-server 写进那个家目录的 `config.toml`，只调 `hooks/list` 与 `config/batchWrite`，不开会话。
+- 还没试：别的家目录里的会话出不出现在列表里（`codex resume` 的选择页、app-server 的 `thread/list`）；ChatGPT App 的列表（它读 `~/.codex`；别的配置的会话看不到是预期的，用户只要 `Default` 同步，§7）；服务的 hook 信任与 Daybreak 默认值写进新家目录（照 `~/.codex` 的做法，没有新东西要测）。
+
+### 6.2 Codex 的订阅配置：第一版（2026-10-20）
+
+用户（看过 §6.1 与 hook 信任的做法）：那就照这套做吧。
+
+**家目录**（`$AGENTSWITCH_HOME/profiles/codex/<id>/home`，在它名下的 Codex 以 `CODEX_HOME` 指向这里）：
+
+| 放什么 | 怎么放 |
+|---|---|
+| 你自己的：`config.toml`、`AGENTS.md`、`AGENTS.override.md`、`skills/`、`rules/`、`prompts/`、`plugins/` | 链接到 `~/.codex` 里的同名项。这台 Mac 上没有的不造；之后有了，下一次在这个配置名下开终端前补上链接；配置自己已经有一份的不替换 |
+| 会话：`sessions/`、`archived_sessions/` | 整个目录链接到 `~/.codex`（这台 Mac 上没有就先建）。补测（2026-10-20，真的 Codex 0.163、一次性目录、本机替身模型）：配置里新开的会话写进原来的目录，两边按会话号互相续接，历史完整。所以 AgentSwitch 的会话列表照旧只读 `~/.codex/sessions`，任何配置都能续接任何会话，同 Claude Code |
+| 账号与设备的：`auth.json`、`installation_id`、各个库（`state_5.sqlite` 等）、缓存、锁 | 配置自己的，Codex 第一次在这里运行时自己建 |
+
+- `config.toml` 链接过去之后，Codex 写它是顺着链接写回原文件（补测：`config/batchWrite` 之后链接还在，原文件多了那一项）。所以 hook 的信任、信任过的文件夹、`/model` 记下的模型，各配置和这台 Mac 是同一份；用户的 `config.toml` 顶层只有 `notify`、`model`、`model_reasoning_effort`、`service_tier`、`daybreak`，没有认账号的东西（只看了键名）。
+- **启动**：`CODEX_HOME` 换成配置的目录，另加 `-c cli_auth_credentials_store="file"`（登录存成那个目录里的文件，不进钥匙串）和 `-c model_provider="openai"`（`config.toml` 里将来若写了别家的供应商，订阅配置也照样用 OpenAI 的）。其余与 `Default` 的 Codex 终端相同：命令行原样运行，不经 app-server（§6.1）。
+- **没登录的配置从登录开始**（同 §3.1）：开终端前问 Codex 自己（`codex login status`，在那个目录里）；说没登录，终端先跑 `codex login --device-auth`，登录成功后在同一个进程里接着启动 Codex（`exec`）。配置有自己的浏览器时，登录页 `https://auth.openai.com/codex/device` 由服务开在那个浏览器里（经终端的 `BROWSER`，§5.1），从配置的出口出去；一次性码在终端屏幕上，填进那一页。登录没成功，终端结束并说明，不落到 Codex 自己的首屏——那里的 `Sign in with ChatGPT` 会开系统的浏览器（§6.1）。
+- **hook 的信任按目录各查一次**：服务对每个 Codex 运行的目录各有一份检查（这台 Mac 的、每个订阅配置的），开终端前查。`config.toml` 链接着时它就是这台 Mac 的那一份，查到已信任，什么也不写。
+- **谁登录着**：从目录里 `auth.json` 的身份令牌读出邮箱（只解它中间那一段，别的不读不存）。`Default` 也这样读 `~/.codex/auth.json`，所以设置里 Codex 的 `Default` 那一行现在写的是这台 Mac 上登录的 ChatGPT 账号。
+- **登录放在哪、谁读得到**：`auth.json` 是 Codex 自己写的明文文件，同 `~/.codex/auth.json`。整个 `$AGENTSWITCH_HOME/profiles/` 加进了调度执行器的禁读名单（Files 栏里它因此也锁着）；终端里的 agent 读得到，和它读得到 `~/.codex/auth.json` 一样（终端只关网关与节点）。见 `packages/secret-gate/BOUNDARY.md`。
+- **Mac**：新建 Codex 配置时 `Sign In With` 多了 `Account`（默认），说明换成设备码登录的那一段；配置那一节下面的说明与代理页里不再写 `/login`。手机上不能新建配置（同前），新建终端、恢复对话时照样能选它。
+- **查过的**：服务的测试（目录与链接、补链接不替换、删配置不动会话、读账号、启动参数、登录在前且是同一进程、登录失败不进 Codex、`login status` 的三种回答、开终端时问的是哪个目录、hook 信任查的是哪个目录）；真的 Codex 在一次性服务里（干净环境、临时的家目录与 `$AGENTSWITCH_HOME`、没有浏览器）：建配置、开终端，屏幕是设备码登录（网址与一次性码），结束终端后没有留下进程。Mac 的新建页与配置列表看了样图。
+- **没有查实的**（要真账号）：用 ChatGPT 账号真的登录一次——设备码登录可能要先在 ChatGPT 的安全设置里打开；OpenAI 的登录页在 Camoufox 里过不过得去（Claude 的在 beta.39 上过得去，真服务现在还是 beta.36）；配置的账号能用的模型与 Daybreak 和 `Default` 的不同时，新建终端里的列表仍按 `Default` 的；会话的名字（Codex 记在各目录自己的库里）和输入历史（`history.jsonl`）各配置各一份。
+
 ## 7. 官方 App 与调度
 
-- **官方 App 不受影响**（已定）：它们用的就是 `Default` 的那一份。代价是反过来的：在别的配置下开的 Codex 会话，ChatGPT App 的会话列表里未必看得到（取决于 §6 那一项实测）；Claude Code 的会话是共用的，官方那边看得到，在那边续接用的是 `Default` 的账号。
+- **官方 App 不受影响**（已定）：它们用的就是 `Default` 的那一份。代价是反过来的：在别的配置下开的 Codex 会话，ChatGPT App 的会话列表里看不到（§6.1：它们在另一个家目录里）。用户（2026-10-19）：chatgpt app我只关心能不能同步我的默认配置，其他添加的账号它不能同步到chatgptapp是预期之中的事情。`Default` 就是 `~/.codex`，和 App 同一份：查过（只数了来源，没看内容），服务今天开的三个 Codex 终端的会话都在 `~/.codex` 的会话索引里，来源记为 `cli`、客户端 `codex-tui`，没有归档；App 自己开的记为 `vscode`、`Codex Desktop`。App 的列表显示不显示 `cli` 来源的，由用户在 App 里看一眼为准。Claude Code 的会话是共用的，官方那边看得到，在那边续接用的是 `Default` 的账号。
 - 给 `Default` 配置开了自己的身份（§1）之后要知道：官方 App 用同一个账号仍从这台 Mac 原来的地址出去，那个账号会从两个地址出现。
 - 要让官方 App 跟着换，只能像 cc switch 那样改写默认目录——订阅登录的还要换钥匙串里的条目，App 开着时两边都会坏。不做；以后若做，只对 API 供应商类的配置提供一个明确的 `Apply to This Mac`。
 - **调度任务**：先不变，仍用各 agent 的 `Default` 配置与这台 Mac 的身份，全程在网关后面（§8）。之后每个 agent 的任务用它的当前配置；那时凭据网关要接在身份的出口前面（任务 → 网关 → 身份的转发口 → 上游），待设计。
@@ -496,8 +537,8 @@ Codex
 1. Claude Code 在一个全新的家目录下向外发了哪些认设备的东西（尤其是硬件 UUID 有没有随默认遥测发出去）。
 2. Claude Code：家目录里链接过去的目录和文件（`projects/`、`skills/`、`settings.json`）它是顺着链接写，还是把链接换成普通文件；启动那层设置能不能把你 `settings.json` 里的地址与代理盖干净。
 3. Claude Code：换一个账号、换一家供应商续接同一段会话，带签名的思考内容认不认；`file-history/` 跟不跟得上。
-4. Claude Code、Codex：登录页认不认 `BROWSER`；有没有不开浏览器的登录办法。
-5. Codex：另一个 `CODEX_HOME` 下能不能续接别处的会话；凭据存在文件还是钥匙串、按什么区分。
+4. Claude Code、Codex：登录页认不认 `BROWSER`；有没有不开浏览器的登录办法。（Codex：不认；有，`--device-auth`，§6.1。）
+5. Codex：另一个 `CODEX_HOME` 下能不能续接别处的会话；凭据存在文件还是钥匙串、按什么区分。（已测，§6.1：链接会话文件能续接；凭据在文件里，按家目录分开。）
 6. OpenCode：登录文件能不能单独指到别处（能的话订阅类也能共用会话）；pi 的会话目录。
 7. Camoufox：同一份引擎同时跑几个配置目录；每个占多少内存；工具栏上写名字的办法。
 8. 各家 agent 有没有不认环境变量代理的连接（更新检查、远程 MCP、WebSocket）。
@@ -510,7 +551,7 @@ Codex
 1. 网关从终端里拿掉（§8）。**已做（2026-10-08）**：服务（启动环境、Claude Code 的网关工具、Codex 给命令的那份环境、回复的加密、浏览器工具直连 agent 桥并用真 Chrome 验证过）；Mac 与 iPhone 去掉了 `Encrypt & Send`、锁和“像密码时先问”的入口（里面的旧代码还在，不再打得开）。
 2. Claude Code 的配置。**已做一部分（2026-10-08）**：服务（`src/profiles/store.ts`：每个配置一个家目录——你的设置与会话链接到这台 Mac 的那份，`.claude.json` 里只带不认人的部分；当前配置；`GET/POST/DELETE /profiles`；新终端按当前配置带 `CLAUDE_CONFIG_DIR` 启动）、Mac（设置 › Agents 里每个 agent 一段 Profiles：切换、新建、删除；状态栏写配置名）。真的 Claude Code 2.1.293 在这样一个目录下启动：显示未登录、不走引导、自己生成新的标识，链接仍是链接。**还没做**：真的登录一次并续接会话、新建终端面板里选配置、`Continue As`、手机上显示、API 供应商类的地址与密钥。原定：家目录、启动、登录、列表与当前配置、新建终端里选、终端上标名字、`Continue As`。只在终端里，身份都用这台 Mac 的——这一步不需要 Camoufox。
 3. 配置自己的身份：每个一个转发口与一个浏览器；agent 进程的出口；状态栏的浏览器图标；`Browser` 页分组。**已做一部分（2026-10-08，§4.1；2026-10-09，§5.1）**：配置的代理、转发口、开终端前查出口、底栏标出口；配置自己的浏览器（agent 的浏览器工具与 `/login` 的页面都在里面，走同一个出口）。Mac 与 iPhone 的 Browser 页都能切到这些浏览器（§5.2、§5.4），启动前查代理、登录页窗口到前面、底栏标是谁的浏览器（§5.3）。没登录的配置开终端就从登录开始（§3.1）；配置有颜色，它名下运行的终端带同色的亮点（§3.2）。没有代理的配置也有自己的浏览器，登录页开在里面（§5.5）。配置在新建终端、恢复对话的地方选，恢复默认回到对话原来的配置（§3.3）。配置的代理手机上也能设（§4.2）。
-4. Codex 的配置。**API key 这一种已做（2026-10-13，§3.6；Claude Code 的同做）**，不另开家目录；订阅登录的（另一个 `CODEX_HOME`）还没做。
+4. Codex 的配置。**API key 这一种已做（2026-10-13，§3.6；Claude Code 的同做）**，不另开家目录；**订阅登录的已做第一版（2026-10-20，§6.2）**：另一个 `CODEX_HOME`，设备码登录，会话与设置链接共用；还没用真账号登录过。
 5. OpenCode、pi。
 6. 调度任务用配置。
 7. （可选）`Apply to This Mac`、从 cc switch 导入、文件夹钉配置。

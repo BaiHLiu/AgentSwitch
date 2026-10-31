@@ -86,7 +86,8 @@ final class SessionRecordTests: XCTestCase {
     }
 
     func testTheRecordStreamsEventsAndThePagesKey() {
-        XCTAssertEqual(TerminalRecordEvent.decode(event: "record", data: #"{"type":"record","rev":"k3-x9"}"#), .record(rev: "k3-x9"))
+        XCTAssertEqual(TerminalRecordEvent.decode(event: "record", data: #"{"type":"record","rev":"k3-x9"}"#), .record(rev: "k3-x9", session: nil))
+        XCTAssertEqual(TerminalRecordEvent.decode(event: "record", data: #"{"type":"record","rev":"","session":"b2"}"#), .record(rev: "", session: "b2"))
         XCTAssertEqual(TerminalRecordEvent.decode(event: "model", data: #"{"type":"model","model":"claude-sonnet-5-5"}"#), .model("claude-sonnet-5-5"))
         XCTAssertEqual(TerminalRecordEvent.decode(event: "activity", data: #"{"type":"activity","activity":null,"subagents":[]}"#), .activity(nil, []))
         let busy = TerminalRecordEvent.decode(event: "activity", data: #"{"activity":{"tool":"Bash","target":"npm test"},"subagents":[{"id":"a1","type":"Explore","name":"找","activity":null,"since":1,"doing":"搜索 Delete"}]}"#)

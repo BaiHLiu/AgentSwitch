@@ -49,6 +49,8 @@ public protocol DispatchService: Sendable {
     /// `GET /tasks/:id/events?after=` (SSE): replays what came after `after`, then follows; reconnects from the last
     /// event it delivered; ends after done, partial, blocked, failed or cancelled, or at once for an ended task.
     func taskEvents(taskId: String, after: Int64) -> AsyncThrowingStream<DispatchTaskEvent, Error>
+    /// The same, and what its run is writing as it comes (docs/simple-view-v0.md §5.14); nil once nothing is.
+    func taskEvents(taskId: String, after: Int64, writing: @escaping @Sendable (AgentWriting?) -> Void) -> AsyncThrowingStream<DispatchTaskEvent, Error>
 
     // MARK: topics (threads-v0)
 
@@ -136,6 +138,10 @@ extension DispatchService {
     public func routingLog() async throws -> [DispatchRoutingLogEntry] { try await routingLog(limit: DispatchDefaults.routingLogLimit) }
     public func search(query: String) async throws -> [DispatchSearchResult] { try await search(query: query, limit: DispatchDefaults.searchLimit) }
     public func taskEvents(taskId: String) -> AsyncThrowingStream<DispatchTaskEvent, Error> { taskEvents(taskId: taskId, after: 0) }
+    /// A service that does not say what is being written (a demo, a test): its events alone.
+    public func taskEvents(taskId: String, after: Int64, writing: @escaping @Sendable (AgentWriting?) -> Void) -> AsyncThrowingStream<DispatchTaskEvent, Error> {
+        taskEvents(taskId: taskId, after: after)
+    }
 }
 
 extension DispatchTask {

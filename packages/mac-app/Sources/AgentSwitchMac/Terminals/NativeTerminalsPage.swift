@@ -90,6 +90,14 @@ final class NativeTerminalsPage: NSObject, TerminalsPage {
     func setDetached(_ ids: Set<String>) { model.setDetached(ids) }
     func detachShown() { if let id = model.current?.id { onDetach(id) } }
 
+    var files: FilesColumn? {
+        get { model.files }
+        set { model.files = newValue }
+    }
+    var paneFolder: String? { model.focused?.session?.info?.workdir }
+    func filesTarget() -> FilesTarget? { model.filesTarget() }
+    func newTerminal(in folder: String) { model.showCreate(folder: folder) }
+
     /// ⌘1–9 from another page.
     func shortcut(_ key: String) {
         if let number = Int(key) { _ = model.perform(.select(number)) }
@@ -172,6 +180,7 @@ final class NativeTerminalsPage: NSObject, TerminalsPage {
         if head.git != git { head.git = git }
         if head.help != help { head.help = help }
         if head.status != terminal?.status { head.status = terminal?.status }
+        if head.folder != terminal?.workdir { head.folder = terminal?.workdir }
         let mark = TerminalListText.mark(model.terminals)
         let state = PixelArt.MarkState(page: mark.state)
         if head.mark != state { head.mark = state }

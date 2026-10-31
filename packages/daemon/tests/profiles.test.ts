@@ -19,8 +19,10 @@ import { ApiKeyError, ApiKeys } from "../src/profiles/apiKeys.js";
 import { mountSessions } from "../src/api/sessions.js";
 import { mountTerminals } from "../src/api/terminals.js";
 import { TerminalHost, type LaunchRequest } from "../src/terminals/host.js";
-import { agentLauncher, proxyEnv } from "../src/terminals/launch.js";
-import { claudeSignedIn } from "../src/terminals/signIn.js";
+import { agentLauncher, CODEX_DEVICE_PAGE, proxyEnv } from "../src/terminals/launch.js";
+import { claudeSignedIn, codexSignedIn } from "../src/terminals/signIn.js";
+import { codexAccount } from "../src/profiles/store.js";
+import { spawnSync } from "node:child_process";
 import { chmodSync } from "node:fs";
 
 const closers: (() => unknown)[] = [];
@@ -66,8 +68,8 @@ describe("the profile store", () => {
   it("has Default for every agent, the Mac's own; a new Claude Code profile is a folder with links and no account", () => {
     const { userHome, home, store } = world();
     expect(store.all()["claude-code"]).toEqual({ current: DEFAULT_PROFILE, creatable: true, kinds: ["subscription", "api"], profiles: [{ id: "default", name: "Default", kind: "subscription", createdAt: 0, account: "me@example.com" }] });
-    // Codex has the ones that pay by a key; OpenCode and pi `Default` alone.
-    expect(store.all().codex).toMatchObject({ current: "default", creatable: true, kinds: ["api"], profiles: [{ id: "default" }] });
+    // Codex has account profiles and ones that pay by a key; OpenCode and pi `Default` alone.
+    expect(store.all().codex).toMatchObject({ current: "default", creatable: true, kinds: ["subscription", "api"], profiles: [{ id: "default" }] });
     expect(store.all().pi).toMatchObject({ creatable: false, kinds: [] });
     expect(store.homeOf("claude-code", "default")).toBeNull();
 
@@ -106,7 +108,7 @@ describe("the profile store", () => {
     expect(() => store.setCurrent("claude-code", "nope12")).toThrow(ProfileError);
     expect(() => store.create("claude-code", "work", "subscription")).toThrow(/already/);
     expect(() => store.create("claude-code", "  ", "subscription")).toThrow(/name/);
-    expect(() => store.create("codex", "Team", "subscription")).toThrow(/cannot sign in that way/);
+    expect(() => store.create("opencode", "Team", "subscription")).toThrow(/Default/);
     expect(() => store.remove("claude-code", "default")).toThrow(ProfileError);
     const relay = store.create("claude-code", "Relay", "api", { key: "enc:v1:" + "A".repeat(40) });
     expect(store.othersOf("claude-code", work.id)).toEqual([join(dir, "..", "..", relay.id)].map((p) => join(p)));
@@ -169,6 +171,31 @@ describe("a profile's own proxy", () => {
     await expect(exits.address("k", { server: far.server, username: "me", password: "hunter2" })).rejects.toThrow(/密文/);
     await expect(exits.address("k", { server: far.server, password: "enc:v1:abcdefghijklmnopqrstuvwx" })).rejects.toThrow(/用户名/);
     await expect(pool().address("k", sealed)).rejects.toThrow(/凭据网关不可用/);
+  });
+
+  it("keeps its forwarder when the proxy is changed or saved again: what already runs under it goes the new way, not nowhere", async () => {
+    // 2026-10-18 (user: 去掉直连之后终端里的Claudecode就连接不上了): the proxy saved again with its password typed anew
+    // (a new ciphertext) made a new forwarder on another port, and the terminal already running was left with a port
+    // nobody listened on.
+    const first = await upstream(), second = await upstream();
+    const exits = pool(async () => ({ value: "pw", label: "proxy" }));
+    const via = await exits.address("claude-code.keep00000", { server: first.server, username: "me", password: "enc:v1:abcdefghijklmnopqrstuvwx" });
+    // The same proxy, its password sealed again: the same forwarder, its own password and all.
+    expect(await exits.address("claude-code.keep00000", { server: first.server, username: "me", password: "enc:v1:zyxwvutsrqponmlkjihgfedc" })).toEqual(via);
+    // Another proxy: still the same forwarder; what goes through it now reaches the other one.
+    expect(await exits.address("claude-code.keep00000", { server: second.server })).toEqual(via);
+    const at = new URL(via.server);
+    const status = await new Promise<number>((ok, fail) => {
+      const req = request({ host: at.hostname, port: Number(at.port), path: "http://lookup.test/json", headers: { host: "lookup.test", "proxy-authorization": `Basic ${Buffer.from(`${via.username}:${via.password}`).toString("base64")}` } },
+        (res) => { res.resume(); ok(res.statusCode ?? 0); });
+      req.on("error", fail); req.end();
+    });
+    expect(status).toBe(200);
+    expect(second.seen).toEqual([{ url: "http://lookup.test/json", auth: null }]);
+    expect(first.seen).toEqual([]);
+    // Its proxy taken away: it stops, and nothing it is asked leaves straight.
+    await exits.drop("claude-code.keep00000");
+    await expect(new Promise((ok, fail) => { const req = request({ host: at.hostname, port: Number(at.port), path: "http://lookup.test/json" }, ok); req.on("error", fail); req.end(); })).rejects.toThrow();
   });
 
   it("is not held to be down because a lookup will not say where it lets traffic out", async () => {
@@ -238,7 +265,7 @@ describe("a profile's own proxy", () => {
     expect(await through(`http://127.0.0.1:${site}/page`)).toEqual({ status: 200, body: "here" });
     expect((await through(`http://127.0.0.1:${own}/local-token`)).status).not.toBe(200);
     expect(seen).toEqual(["/page"]);
-    // The same forwarder as long as nothing changes; a proxy set later takes its place.
+    // The same forwarder as long as nothing changes (a proxy set later keeps it too: the test above).
     expect(await exits.address("claude-code.plain00000", null)).toEqual(via);
   });
 
@@ -262,24 +289,23 @@ describe("profiles over HTTP", () => {
   function served() {
     const w = world();
     const app = new Hono();
-    const exits = pool(), direct: string[] = [];
-    mountProfiles(app, { profiles: w.store, exits, clash: { addDirect: async (address: string) => { direct.push(address); } } } as unknown as ApiDeps);
+    const exits = pool();
+    mountProfiles(app, { profiles: w.store, exits } as unknown as ApiDeps);
     const call = async (method: string, path: string, body?: unknown, env: object = {}) => {
       const res = await app.request(path, { method, ...(body ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}) }, env);
       return { status: res.status, json: (await res.json()) as Record<string, any> };
     };
-    return { ...w, call, direct };
+    return { ...w, call };
   }
 
-  it("sets a profile's proxy on the Mac, checks it at once, and has Clash send its host direct", async () => {
-    const { call, direct, store } = served();
+  it("sets a profile's proxy on the Mac and checks it at once", async () => {
+    const { call, store } = served();
     const far = await upstream();
     const id = (await call("POST", "/profiles", { agent: "claude-code", name: "Work" })).json.profile.id as string;
     const set = await call("PUT", `/profiles/claude-code/${id}/proxy`, { server: far.server });
     expect(set.status).toBe(200);
     expect(set.json.agents["claude-code"].profiles[1]).toMatchObject({ proxy: { server: far.server, sealed: false }, exit: { ip: "203.0.113.9", place: "Tokyo" } });
     expect(set.json.problem).toBeUndefined();
-    expect(direct).toEqual(["127.0.0.1"]);
     // Asked again from any screen; a paired device checks and sets as the Mac does (§4.2) — a password still only
     // as a ciphertext.
     const phone = markRemote({}, { deviceId: "phone" });
@@ -312,7 +338,7 @@ describe("profiles over HTTP", () => {
     expect(made.status).toBe(201);
     const id = made.json.profile.id as string;
     expect((await call("POST", "/profiles", { agent: "claude-code", name: "Work" })).status).toBe(409);
-    expect((await call("POST", "/profiles", { agent: "codex", name: "Team" })).status).toBe(400);
+    expect((await call("POST", "/profiles", { agent: "opencode", name: "Team" })).status).toBe(400);
     const phone = markRemote({}, { deviceId: "phone" });
     expect((await call("POST", "/profiles", { agent: "claude-code", name: "Other" }, phone)).status).toBe(403);
     expect((await call("DELETE", `/profiles/claude-code/${id}`, undefined, phone)).status).toBe(403);
@@ -336,10 +362,10 @@ describe("a terminal under a profile", () => {
     expect(launch({ id: "x1", harness: "codex", cwd: "/tmp", mode: "manual", hookToken: "tok", configHome: "/x" }).env.CLAUDE_CONFIG_DIR).toBeUndefined();
   });
 
-  it("is given its first input as Claude Code's last argument, after everything else", () => {
+  it("starts Claude Code at `/login` where nobody is signed in: its last argument, after everything else", () => {
     const stateDir = mkdtempSync(join(tmpdir(), "agentswitch-profile-first-"));
     const launch = agentLauncher({ binaries: { "claude-code": "/bin/claude" }, hookUrl: () => "http://127.0.0.1:4711", stateDir, env: { PATH: "/usr/bin", HOME: "/Users/u" } });
-    const args = launch({ id: "c1", harness: "claude-code", cwd: "/tmp", mode: "manual", hookToken: "tok", configHome: "/as/p/home", resume: "s-1", firstInput: "/login" }).args;
+    const args = launch({ id: "c1", harness: "claude-code", cwd: "/tmp", mode: "manual", hookToken: "tok", configHome: "/as/p/home", resume: "s-1", signIn: true }).args;
     expect(args.slice(-3)).toEqual(["--resume", "s-1", "/login"]);
     expect(launch({ id: "c2", harness: "claude-code", cwd: "/tmp", mode: "manual", hookToken: "tok" }).args).not.toContain("/login");
   });
@@ -388,14 +414,16 @@ esac
     closers.push(() => host.closeAll());
     const app = new Hono();
     const questions: string[] = [];
-    mountTerminals(app, { profiles: w.store, terminals: { host, audit: { record() { /* not looked at */ } }, agents: ["claude-code"], style: () => ({}), elsewhere: async () => null,
+    const prepared: [string, string | null][] = [];
+    mountTerminals(app, { profiles: w.store, terminals: { host, audit: { record() { /* not looked at */ } }, agents: ["claude-code", "codex"], style: () => ({}), elsewhere: async () => null,
+      prepare: async (harness: string, home?: string) => { prepared.push([harness, home ?? null]); },
       signedIn: (harness: string, home: string) => { questions.push(home); return signedIn(harness, home); } } } as unknown as ApiDeps);
     mountProfiles(app, { profiles: w.store, terminals: { host } } as unknown as ApiDeps);
     const call = async (method: string, path: string, body?: unknown, env: object = {}) => {
       const res = await app.request(path, { method, ...(body ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}) }, env);
       return { status: res.status, json: (await res.json()) as Record<string, any> };
     };
-    return { ...w, host, asked, questions, call };
+    return { ...w, host, asked, questions, prepared, call };
   }
 
   it("starts at its sign-in; one that is signed in, the Mac's own, and one that pays by a key start at the prompt", async () => {
@@ -406,16 +434,42 @@ esac
     said.set(store.homeOf("claude-code", fresh.id)!, false).set(store.homeOf("claude-code", work.id)!, true).set(store.homeOf("claude-code", key.id)!, false);
     const start = async (profile?: string) => (await call("POST", "/terminals", { harness: "claude-code", cwd: root, ...(profile ? { profile } : {}) })).status;
     expect(await start(fresh.id)).toBe(201);
-    expect(asked.at(-1)).toMatchObject({ configHome: store.homeOf("claude-code", fresh.id), firstInput: "/login" });
+    expect(asked.at(-1)).toMatchObject({ configHome: store.homeOf("claude-code", fresh.id), signIn: true });
     for (const id of [work.id, unsure.id, key.id, "default"]) {
       expect(await start(id)).toBe(201);
-      expect(asked.at(-1)!.firstInput).toBeUndefined();
+      expect(asked.at(-1)!.signIn).toBeUndefined();
     }
     // Asked of those that sign in with an account, each in its own folder; never of the Mac's own or of one with a key.
     expect(questions).toEqual([fresh.id, work.id, unsure.id].map((id) => store.homeOf("claude-code", id)));
     // A session continued under it starts at the sign-in too: it could not go on otherwise.
     expect((await call("POST", "/terminals/resume", { harness: "claude-code", cwd: root, agentSessionId: "0f8fad5b-d9cb-469f-a165-70867728950e", profile: fresh.id })).status).toBe(201);
-    expect(asked.at(-1)).toMatchObject({ resume: "0f8fad5b-d9cb-469f-a165-70867728950e", firstInput: "/login" });
+    expect(asked.at(-1)).toMatchObject({ resume: "0f8fad5b-d9cb-469f-a165-70867728950e", signIn: true });
+  });
+
+  it("is Codex's too: asked in its folder, started at the sign-in, its folder linked and its hooks made ready first", async () => {
+    const said = new Map<string, boolean | null>();
+    const { store, userHome, asked, questions, prepared, call, root } = served(async (_h, home) => said.get(home) ?? null);
+    const team = store.create("codex", "Team", "subscription"), key = store.create("codex", "Key", "api", { key: "enc:v1:" + "A".repeat(40) });
+    const home = store.homeOf("codex", team.id)!;
+    said.set(home, false);
+    // Instructions written on the Mac after the profile was made are there for its next terminal.
+    writeFileSync(join(userHome, ".codex", "AGENTS.md"), "be brief\n");
+    const start = async (profile: string) => (await call("POST", "/terminals", { harness: "codex", cwd: root, profile })).status;
+    expect(await start(team.id)).toBe(201);
+    expect(asked.at(-1)).toMatchObject({ harness: "codex", configHome: home, signIn: true });
+    expect(prepared.at(-1)).toEqual(["codex", home]);
+    expect(readlinkSync(join(home, "AGENTS.md"))).toBe(join(userHome, ".codex", "AGENTS.md"));
+    said.set(home, true);
+    expect(await start(team.id)).toBe(201);
+    expect(asked.at(-1)!.signIn).toBeUndefined();
+    // One that pays by a key and the Mac's own: the Mac's own folder, nobody to sign in, its hooks the Mac's.
+    for (const id of [key.id, "default"]) {
+      expect(await start(id)).toBe(201);
+      expect(asked.at(-1)!.configHome).toBeUndefined();
+      expect(asked.at(-1)!.signIn).toBeUndefined();
+      expect(prepared.at(-1)).toEqual(["codex", null]);
+    }
+    expect(questions).toEqual([home, home]);
   });
 
   it("is chosen where a terminal is made: a new one under the one named, a conversation under the one it last ran under", async () => {
@@ -584,14 +638,13 @@ describe("a profile that pays by a key (§3.6)", () => {
     expect(() => store.create("claude-code", "NoKey", "api")).toThrow(ProfileError);
   });
 
-  it("is Codex's too, with no folder of its own; an account profile of Codex's cannot be made yet", async () => {
+  it("is Codex's too, with no folder of its own", async () => {
     const { store, home } = world();
     const keys = new ApiKeys({ store, resolve: gate({ [SEALED]: { site: "https://api.openai.com/", value: "sk-proj-made-up" } }) });
     const own = await keys.create("codex", "Key", { key: SEALED });
     expect(store.homeOf("codex", own.id)).toBeNull();
     expect(store.has("codex", own.id)).toBe(true);
     expect(existsSync(join(home, "profiles", "codex"))).toBe(false);
-    expect(() => store.create("codex", "Team", "subscription")).toThrow(ProfileError);
     expect(() => store.create("pi", "Key", "api", { key: SEALED })).toThrow(ProfileError);
     // Without the gate no key is handed over.
     await expect(new ApiKeys({ store }).plain("codex", own.id)).rejects.toThrow(/网关/);
@@ -644,5 +697,171 @@ describe("a profile that pays by a key (§3.6)", () => {
     // A terminal on the Mac's own has no key to ask for.
     const plain = await post("/terminals", { harness: "codex", cwd: tmpdir(), profile: "default" });
     expect((await post("/terminals/key", {}, { "x-agentswitch-terminal": plain.json.terminal.id, authorization: `Bearer ${asked[1]!.hookToken}` })).status).toBe(409);
+  });
+});
+
+/** A ChatGPT sign-in as Codex keeps it in `auth.json`: an identity token (a JWT; only its middle part is read) and the
+ *  rest, made up. */
+const codexAuth = (email: string) => JSON.stringify({ auth_mode: "chatgpt", OPENAI_API_KEY: null, last_refresh: "2026-10-20T00:00:00Z",
+  tokens: { id_token: `e30.${Buffer.from(JSON.stringify({ email, "https://api.openai.com/auth": { chatgpt_plan_type: "pro" } })).toString("base64url")}.c2ln`, access_token: "made-up", refresh_token: "made-up", account_id: "acct" } });
+
+describe("a Codex profile that signs in with a ChatGPT account (§6.2)", () => {
+  /** The Mac's own Codex folder as the user has it: settings, instructions, a skill, a session, a sign-in. */
+  function codexWorld() {
+    const w = world();
+    const own = join(w.userHome, ".codex");
+    mkdirSync(join(own, "skills", "mine"), { recursive: true });
+    mkdirSync(join(own, "sessions", "2026", "10", "19"), { recursive: true });
+    writeFileSync(join(own, "sessions", "2026", "10", "19", "rollout-2026-10-19T10-00-00-0199-a.jsonl"), "{}\n");
+    writeFileSync(join(own, "config.toml"), 'model = "gpt-5.5"\n[projects."/w/app"]\ntrust_level = "trusted"\n');
+    writeFileSync(join(own, "AGENTS.md"), "be brief\n");
+    writeFileSync(join(own, "auth.json"), codexAuth("me@example.com"));
+    return { ...w, own };
+  }
+
+  it("is a folder with the user's set-up and the sessions linked and nothing of the account; who is signed in is its own file's", () => {
+    const { own, home, store } = codexWorld();
+    // The Mac's own says who is signed in there.
+    expect(store.all().codex.profiles[0]).toMatchObject({ id: "default", account: "me@example.com" });
+    const team = store.create("codex", "Team", "subscription");
+    const dir = store.homeOf("codex", team.id)!;
+    expect(dir).toBe(join(home, "profiles", "codex", team.id, "home"));
+    for (const name of ["config.toml", "AGENTS.md", "skills", "sessions", "archived_sessions"]) {
+      expect(lstatSync(join(dir, name)).isSymbolicLink(), name).toBe(true);
+      expect(readlinkSync(join(dir, name))).toBe(join(own, name));
+    }
+    // What the Mac does not have is not invented, but the session folders are made there so both write to one place.
+    for (const name of ["rules", "prompts", "plugins", "auth.json", "installation_id"]) expect(existsSync(join(dir, name)), name).toBe(false);
+    expect(existsSync(join(own, "archived_sessions"))).toBe(true);
+    expect(store.all().codex.profiles.map((p) => [p.name, p.account ?? null])).toEqual([["Default", "me@example.com"], ["Team", null]]);
+    writeFileSync(join(dir, "auth.json"), codexAuth("team@example.com"));
+    expect(store.all().codex.profiles[1]!.account).toBe("team@example.com");
+    // The Mac's own file is as it was.
+    expect(codexAccount(join(own, "auth.json"))).toEqual({ account: "me@example.com" });
+  });
+
+  it("is kept linked: what the Mac's own has since is linked before a start, a file of the profile's own is never replaced", () => {
+    const { own, store } = codexWorld();
+    const team = store.create("codex", "Team", "subscription");
+    const dir = store.homeOf("codex", team.id)!;
+    mkdirSync(join(own, "rules"));
+    mkdirSync(join(dir, "prompts"));
+    mkdirSync(join(own, "prompts"));
+    store.keepLinked("codex", team.id);
+    expect(readlinkSync(join(dir, "rules"))).toBe(join(own, "rules"));
+    expect(lstatSync(join(dir, "prompts")).isSymbolicLink()).toBe(false);
+    // Nothing for one that pays by a key (it has no folder), nor for Default.
+    const key = store.create("codex", "Key", "api", { key: "enc:v1:" + "A".repeat(40) });
+    store.keepLinked("codex", key.id);
+    store.keepLinked("codex", "default");
+    expect(store.homeOf("codex", key.id)).toBeNull();
+  });
+
+  it("goes with its folder, the sessions staying where they are", () => {
+    const { own, store } = codexWorld();
+    const team = store.create("codex", "Team", "subscription");
+    const dir = store.homeOf("codex", team.id)!;
+    writeFileSync(join(dir, "auth.json"), codexAuth("team@example.com"));
+    store.remove("codex", team.id);
+    expect(existsSync(dir)).toBe(false);
+    expect(existsSync(join(own, "sessions", "2026", "10", "19", "rollout-2026-10-19T10-00-00-0199-a.jsonl"))).toBe(true);
+    expect(readFileSync(join(own, "config.toml"), "utf8")).toContain("gpt-5.5");
+    expect(codexAccount(join(own, "auth.json"))).toEqual({ account: "me@example.com" });
+  });
+
+  it("reads nobody out of a sign-in by a key, a token that says no address, or no file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentswitch-codex-auth-"));
+    const file = (text: string) => { const f = join(dir, `${Math.random()}.json`); writeFileSync(f, text); return f; };
+    expect(codexAccount(file(JSON.stringify({ auth_mode: "apikey", OPENAI_API_KEY: "sk-made-up", tokens: null })))).toEqual({});
+    expect(codexAccount(file(JSON.stringify({ tokens: { id_token: `e30.${Buffer.from("{}").toString("base64url")}.x` } })))).toEqual({});
+    expect(codexAccount(file(JSON.stringify({ tokens: { id_token: "not a token" } })))).toEqual({});
+    expect(codexAccount(file("not json"))).toEqual({});
+    expect(codexAccount(join(dir, "missing.json"))).toEqual({});
+  });
+
+  it("starts Codex in its folder, its sign-in kept in a file there, on OpenAI's own provider; the hooks asked of that folder", () => {
+    const stateDir = mkdtempSync(join(tmpdir(), "agentswitch-codex-profile-launch-"));
+    const homes: (string | undefined)[] = [];
+    const launch = agentLauncher({ binaries: { codex: "/bin/codex" }, hookUrl: () => "http://127.0.0.1:4711", stateDir, env: { PATH: "/usr/bin", HOME: "/Users/u" },
+      codexHooks: (home) => { homes.push(home); return true; } });
+    const own = launch({ id: "x1", harness: "codex", cwd: "/tmp", mode: "manual", hookToken: "tok", configHome: "/as/profiles/codex/abc123/home" });
+    expect(own.env.CODEX_HOME).toBe("/as/profiles/codex/abc123/home");
+    expect(own.args.slice(0, 4)).toEqual(["-c", 'cli_auth_credentials_store="file"', "-c", 'model_provider="openai"']);
+    expect(own.file).toBe("/bin/codex");
+    // The Mac's own: nothing of the kind.
+    const plain = launch({ id: "x2", harness: "codex", cwd: "/tmp", mode: "manual", hookToken: "tok" });
+    expect(plain.env.CODEX_HOME).toBeUndefined();
+    expect(plain.args.join(" ")).not.toMatch(/cli_auth_credentials_store|model_provider/);
+    // One that pays by a key runs in the Mac's own folder, on a provider of its own.
+    const keyed = launch({ id: "x3", harness: "codex", cwd: "/tmp", mode: "manual", hookToken: "tok", api: { name: "Key" } });
+    expect(keyed.env.CODEX_HOME).toBeUndefined();
+    expect(keyed.args.join(" ")).not.toMatch(/cli_auth_credentials_store|model_provider="openai"/);
+    expect(homes).toEqual(["/as/profiles/codex/abc123/home", undefined, undefined]);
+    // Resumed, the conversation's id still comes first.
+    expect(launch({ id: "x4", harness: "codex", cwd: "/w", mode: "manual", hookToken: "tok", configHome: "/as/h", resume: "0199-a" }).args.slice(0, 4)).toEqual(["resume", "-C", "/w", "0199-a"]);
+  });
+
+  /** A stand-in for Codex: writes down how it was started (its arguments and folder); `login` answers as told. */
+  function fakeCodex(dir: string) {
+    const file = join(dir, "codex"), seen = join(dir, "seen"), opened = join(dir, "opened");
+    writeFileSync(file, `#!/bin/sh
+printf '%s|%s\\n' "$*" "$CODEX_HOME" >> "${seen}"
+case " $* " in
+  *" login status "*) case "$(cat "$CODEX_HOME/state" 2>/dev/null)" in in) echo "Logged in using ChatGPT" >&2; exit 0 ;; out) echo "Not logged in" >&2; exit 1 ;; *) echo "Error loading configuration: x" >&2; exit 1 ;; esac ;;
+  *" login --device-auth "*) [ "$FAKE_LOGIN" = "fail" ] && { echo "device code request failed with status 403" >&2; exit 1; }; echo "Successfully logged in"; exit 0 ;;
+esac
+echo "codex itself"
+`);
+    chmodSync(file, 0o755);
+    const browser = join(dir, "browser");
+    writeFileSync(browser, `#!/bin/sh\nprintf '%s\\n' "$*" >> "${opened}"\n`);
+    chmodSync(browser, 0o755);
+    return { file, seen, opened, browser };
+  }
+
+  it("starts at Codex's device sign-in where nobody is signed in: its page in the profile's browser, then Codex in the same process", () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentswitch-codex-signin-"));
+    const { file, seen, opened, browser } = fakeCodex(dir);
+    const launch = agentLauncher({ binaries: { codex: file }, hookUrl: () => "http://127.0.0.1:4711", stateDir: join(dir, "state"), env: { PATH: "/usr/bin:/bin", HOME: "/Users/u" } });
+    const home = join(dir, "home");
+    const plan = launch({ id: "s1", harness: "codex", cwd: dir, mode: "manual", hookToken: "tok", configHome: home, signIn: true, browserKey: "codex.abc123" });
+    expect(plan.file).toBe("/bin/sh");
+    // The terminal's `BROWSER` is the program that asks the service to open a page in the profile's browser; here a
+    // stand-in that writes the page down.
+    const run = (env: Record<string, string>) => spawnSync(plan.file, plan.args, { env: { ...plan.env, ...env, BROWSER: browser }, encoding: "utf8", timeout: 10_000 });
+    const ok = run({});
+    expect(ok.status).toBe(0);
+    expect(ok.stdout).toContain("Successfully logged in");
+    expect(ok.stdout).toContain("codex itself");
+    const lines = readFileSync(seen, "utf8").trim().split("\n");
+    expect(lines[0]).toBe(`-c cli_auth_credentials_store="file" login --device-auth|${home}`);
+    expect(lines[1]).toMatch(new RegExp(`^-c cli_auth_credentials_store="file" -c model_provider="openai" -c notify=.*\\|${home}$`));
+    // The page is opened in the background: given a moment.
+    for (let i = 0; i < 50 && !existsSync(opened); i++) spawnSync("/bin/sleep", ["0.1"]);
+    expect(readFileSync(opened, "utf8").trim()).toBe(CODEX_DEVICE_PAGE);
+    // A sign-in that does not finish ends the terminal, saying so; Codex itself is not started (its own first screen
+    // would offer the system's browser).
+    writeFileSync(seen, "");
+    const failed = run({ FAKE_LOGIN: "fail" });
+    expect(failed.status).toBe(1);
+    expect(failed.stderr).toContain("没有登录上");
+    expect(failed.stdout).not.toContain("codex itself");
+    expect(readFileSync(seen, "utf8").trim().split("\n")).toHaveLength(1);
+    // A profile without a browser of its own: the page is not opened anywhere; the screen says where to go.
+    const bare = launch({ id: "s2", harness: "codex", cwd: dir, mode: "manual", hookToken: "tok", configHome: home, signIn: true });
+    expect(bare.env.AGENTSWITCH_SIGN_IN_PAGE).toBeUndefined();
+    expect(plan.env.AGENTSWITCH_SIGN_IN_PAGE).toBe(CODEX_DEVICE_PAGE);
+  });
+
+  it("is told apart by asking Codex itself, in that folder; when it does not say, nothing is assumed", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentswitch-codex-status-"));
+    const { file, seen } = fakeCodex(dir);
+    const folder = (state: string) => { const d = mkdtempSync(join(dir, "home-")); writeFileSync(join(d, "state"), state); return d; };
+    const out = folder("out");
+    expect(await codexSignedIn(file, folder("in"))).toBe(true);
+    expect(await codexSignedIn(file, out)).toBe(false);
+    expect(await codexSignedIn(file, folder("broken"))).toBeNull();
+    expect(await codexSignedIn(join(dir, "nothing-here"), out)).toBeNull();
+    expect(readFileSync(seen, "utf8").split("\n")[1]).toBe(`-c cli_auth_credentials_store="file" login status|${out}`);
   });
 });

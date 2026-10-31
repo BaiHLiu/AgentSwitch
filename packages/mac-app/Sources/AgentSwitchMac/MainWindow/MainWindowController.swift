@@ -45,6 +45,8 @@ final class MainWindowController: NSObject {
     private var browser: BrowserPageModel?
     private var container: PageContainer?
     private var dispatchHost: NSView?
+    /// The window's Files column (docs/files-v0.md), the node's the window is on.
+    private var files: FilesColumn?
     private var observers: [NSObjectProtocol] = []
     private var responderObservation: NSKeyValueObservation?
     private var keyMonitor: Any?
@@ -68,6 +70,9 @@ final class MainWindowController: NSObject {
     func probeSeal() { barActions.seal() }
     /// The node menu's `Use AgentSwitch On`, as its item calls it.
     func probeUseNode(_ node: NodeStatus?) { barActions.useNode(node) }
+    /// The window's Files column, and the bar's icon as its button calls it.
+    var probeFiles: FilesColumn? { files }
+    func probeToggleFiles() { barActions.toggleFiles() }
     #endif
 
     static let contentSize = NSSize(width: 1280, height: 820)
@@ -173,6 +178,8 @@ final class MainWindowController: NSObject {
         browser = nil
         container = nil
         dispatchHost = nil
+        files?.stop()
+        files = nil
         state.use(node: node)
         watchNode()
         guard let window else { return }
@@ -319,8 +326,20 @@ final class MainWindowController: NSObject {
         }
         let container = PageContainer(pages: [.dispatch: dispatch, .terminals: terminals.pageView, .browser: BrowserPage.host(browser),
                                               .clash: NSHostingView(rootView: ClashPage(state: state).environment(model))])
+        // The Files column (docs/files-v0.md): the node's own files, remembered by node.
+        let files = FilesColumn(node: node, nodeName: state.node?.name ?? "这台 Mac", client: { [model] in model.client(on: node) }, defaults: Self.filesDefaults)
+        files.target = { [weak self] in self?.filesTarget() }
+        files.paneFolder = { [weak self] in self?.terminals?.paneFolder }
+        files.newTerminal = { [weak self] folder in
+            self?.switchPage(to: .terminals)
+            self?.terminals?.newTerminal(in: folder)
+        }
+        files.focusPage = { [weak self] in self?.focusPage() }
+        terminals.files = files
+        self.files?.stop()
+        self.files = files
         let host = NSHostingController(rootView: MainWindowRoot(state: state, head: terminals.head, model: model,
-                                                                content: container, actions: barActions, browser: browser))
+                                                                content: container, actions: barActions, browser: browser, files: files))
         host.sizingOptions = []
         window.contentViewController = host
         self.terminals = terminals
@@ -403,6 +422,44 @@ final class MainWindowController: NSObject {
         state.windowChanged(key: window.isKeyWindow, visible: visible)
         terminals?.windowVisible(state.windowVisible)
         browser?.setActive(shown: state.page == .browser, visible: state.windowVisible)
+        files?.setActive(state.windowVisible)
+    }
+
+    // MARK: the Files column
+
+    /// What the column remembers is the user's; a probe's remembers nothing.
+    private static var filesDefaults: UserDefaults? {
+        #if DEBUG
+        if probing { return nil }
+        #endif
+        return .standard
+    }
+
+    /// The bar's folder icon, ⇧⌘F: the column at the folder of the pane in focus on Terminals (where it was on the
+    /// other pages), or closed when it shows that already.
+    private func toggleFiles() {
+        files?.toggle(at: state.page == .terminals ? terminals?.paneFolder : nil)
+    }
+
+    /// Where `Add to Reply` lands (docs/files-v0.md §4): the pane in focus on Terminals; Dispatch's input (its files are
+    /// read from this Mac's disk: this Mac's own pages only, and no folder); nothing on Browser and Clash.
+    private func filesTarget() -> FilesTarget? {
+        switch state.page {
+        case .terminals:
+            return terminals?.filesTarget()
+        case .dispatch:
+            guard state.node == nil else { return nil }
+            return FilesTarget(name: "Dispatch") { [weak self] picks in
+                self?.state.give(files: picks.filter { !$0.folder }.map { URL(fileURLWithPath: $0.path) })
+            }
+        case .browser, .clash:
+            return nil
+        }
+    }
+
+    /// esc in the column beside the page: the keyboard back to the page.
+    private func focusPage() {
+        if state.page == .terminals { terminals?.focus() } else { window?.makeFirstResponder(nil) }
     }
 
     /// Mission Control and the Window menu: the terminal on screen on Terminals (the page names it), the tab on screen
@@ -421,6 +478,8 @@ final class MainWindowController: NSObject {
     /// Next time the window opens afresh (the daemon may have restarted and forgotten the terminal page's session).
     private func closed() {
         container?.refresh.cancel()
+        files?.stop()
+        files = nil
         state.windowClosed()
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
         observers = []
@@ -536,7 +595,8 @@ final class MainWindowController: NSObject {
                 self.use(node: node)
             },
             openWindow: { [weak self] node in self?.openWindow(node) },
-            openNodes: { [weak self] in self?.openNodes() })
+            openNodes: { [weak self] in self?.openNodes() },
+            toggleFiles: { [weak self] in self?.toggleFiles() })
     }
 
     // MARK: keys
@@ -592,6 +652,8 @@ final class MainWindowController: NSObject {
             openSettings()
         case .toggleRail:
             state.toggleRail()
+        case .files:
+            toggleFiles()
         case .browser(let key):
             guard let browser else { return }
             switch key {

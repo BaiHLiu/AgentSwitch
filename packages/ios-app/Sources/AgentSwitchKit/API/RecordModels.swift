@@ -178,7 +178,8 @@ public struct SentReply: Decodable, Hashable, Sendable, Identifiable {
     /// for it the time decides.
     public static func appended(to items: [RecordItem], sent: [SentReply], working: Bool) -> [RecordItem] {
         guard !sent.isEmpty else { return items }
-        let recent = items.suffix(12).filter { $0.kind == .user }
+        // Another session's message is not one of yours, whenever it came.
+        let recent = items.suffix(12).filter { $0.kind == .user && $0.from == nil }
         let words = { (text: String) -> String in String(text.split(whereSeparator: \.isWhitespace).joined(separator: " ").prefix(24)) }
         let waiting = sent.filter { reply in
             !recent.contains { $0.at >= reply.at - 3000 && (reply.files > 0 || words($0.text) == words(reply.text)) }
@@ -203,6 +204,8 @@ public struct RecordItem: Decodable, Sendable, Hashable, Identifiable {
     public let images: Int
     /// Typed while the agent worked, and not read by it yet.
     public let queued: Bool
+    /// Sent by another session, not typed by you: the name it gave ("" when it gave none); nil for yours.
+    public let from: String?
     /// The Mac cut a very long text.
     public let clipped: Bool
     /// An answer that is what the agent thought on the way (where it wrote that down), not what it has to say to you.
@@ -216,7 +219,8 @@ public struct RecordItem: Decodable, Sendable, Hashable, Identifiable {
     public var date: Date { Date(timeIntervalSince1970: TimeInterval(at) / 1000) }
 
     public init(id: String, kind: Kind, at: Int64 = 0, text: String = "", images: Int = 0, queued: Bool = false, clipped: Bool = false,
-                thinking: Bool = false, seconds: Int = 0, steps: [RecordStep] = [], questions: [RecordQuestion] = []) {
+                thinking: Bool = false, seconds: Int = 0, steps: [RecordStep] = [], questions: [RecordQuestion] = [], from: String? = nil) {
+        self.from = from
         self.questions = questions
         self.thinking = thinking
         self.id = id
@@ -230,7 +234,7 @@ public struct RecordItem: Decodable, Sendable, Hashable, Identifiable {
         self.steps = steps
     }
 
-    private enum CodingKeys: String, CodingKey { case id, type, ts, text, images, queued, clipped, thinking, secs, steps, questions }
+    private enum CodingKeys: String, CodingKey { case id, type, ts, text, images, queued, clipped, thinking, secs, steps, questions, from }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -244,6 +248,7 @@ public struct RecordItem: Decodable, Sendable, Hashable, Identifiable {
         text = (try? c.decodeIfPresent(String.self, forKey: .text)) ?? ""
         images = (try? c.decodeIfPresent(Int.self, forKey: .images)) ?? 0
         queued = (try? c.decodeIfPresent(Bool.self, forKey: .queued)) ?? false
+        from = try? c.decodeIfPresent(String.self, forKey: .from)
         clipped = (try? c.decodeIfPresent(Bool.self, forKey: .clipped)) ?? false
         thinking = (try? c.decodeIfPresent(Bool.self, forKey: .thinking)) ?? false
         seconds = (try? c.decodeIfPresent(Int.self, forKey: .secs)) ?? 0

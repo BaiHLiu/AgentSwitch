@@ -1,0 +1,2104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentSwitch Files</title>
+<style id="gcss"></style>
+<style>
+/* Files (2026-10-16, user: 我想要给agentswitch加一个简单的文件管理功能，加到右边的侧边栏 …). A demo for review with
+   docs/files-v0.md, not a spec: the main window with the Files column on its right, reached from the list on the left,
+   from the bar and from a pane's title bar; the preview, Quick Look, files given to an agent; and the phone. Two looks
+   (ui-v0 §7 Pixel: a tree drawn in characters; §8 Classic: folders, one level at a time). The paths are made up. */
+:root {
+  --bg: #000; --panel: #0b0b0b; --raise: #151515; --hover: #121212; --card: #0b0b0b;
+  --ink: #e9e6df; --ink2: #8d8a84; --ink3: #4d4b48; --ink4: #262524;
+  --signal: #ff2e88; --cyan: #2ee6ff; --green: #9be22d; --amber: #ffb000; --red: #ff4a3d; --accent: #ff2e88;
+  --mono: "MesloLGS NF", "SF Mono", ui-monospace, Menlo, "PingFang SC", monospace;
+  --ui: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+  --code: "MesloLGS NF", "SF Mono", ui-monospace, Menlo, "PingFang SC", monospace;
+  --short: var(--mono);
+  color-scheme: dark;
+}
+.light {
+  --bg: #f4f1ea; --panel: #ece8df; --raise: #e4dfd4; --hover: #e9e5dc; --card: #ece8df;
+  --ink: #16140f; --ink2: #6b675f; --ink3: #a6a196; --ink4: #d6d1c6;
+  --signal: #e0106f; --cyan: #0096b3; --green: #3d8a00; --amber: #b87400; --red: #c9281b; --accent: #e0106f;
+  color-scheme: light;
+}
+/* the classic look (ui-v0 §8): the system's type, round shapes, line icons, dots, the system's blue; the main window
+   one black surface, what floats a step lighter */
+.classic { --short: var(--ui); --accent: #0a84ff; --signal: var(--accent); --cyan: #0a84ff; --amber: #ff9f0a; --green: #30d158; --red: #ff453a;
+  --bg: #000; --panel: #000; --raise: #232326; --hover: #18181b; --card: #141416;
+  --ink: #ededf0; --ink2: #a2a2a8; --ink3: #6c6c72; --ink4: #2a2a2d; }
+.classic.light { --accent: #007aff; --signal: #007aff; --cyan: #007aff; --amber: #d98200; --green: #1f9d3f; --red: #e0352b;
+  --bg: #ffffff; --panel: #f7f7f9; --raise: #ececf0; --hover: #f2f2f5; --card: #f4f4f7;
+  --ink: #1c1c1e; --ink2: #6e6e73; --ink3: #aeaeb2; --ink4: #e3e3e8; }
+
+* { box-sizing: border-box; }
+html, body { overflow-x: hidden; }
+body { margin: 0; background: #1b1b1d; color: #d8d4cc; font: 13px var(--ui); }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+button:focus { outline: none; }
+button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #0a84ff; outline-offset: -2px; }
+.top { max-width: 1240px; margin: 0 auto; padding: 18px 16px 4px; }
+h1 { font: 700 15px var(--mono); margin: 0 0 8px; color: #e9e6df; }
+.lede { color: #a9a6a0; font-size: 12.5px; line-height: 1.75; margin: 0 0 10px; max-width: 112ch; }
+.lede code, .cap code, .docs code { font: 12px var(--mono); color: #d8d4cc; }
+.lede b, .cap b, .docs b { color: #e9e6df; font-weight: 600; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; font: 12px var(--mono); color: #8f8b84; }
+.tools > span { display: inline-flex; gap: 8px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid #3a3a3e; }
+.seg button { color: #b5b1aa; font: 12px var(--mono); padding: 4px 10px; }
+.seg button.on { background: #e9e6df; color: #111; }
+.sec { max-width: 1240px; margin: 34px auto 12px; padding: 0 16px; font: 11px var(--mono); letter-spacing: .14em; color: #77746e; }
+.stage { max-width: 1240px; margin: 0 auto; padding: 0 16px; }
+.cap { max-width: 1240px; margin: 10px auto 0; padding: 0 16px; color: #8f8b84; font-size: 12.5px; line-height: 1.75; }
+.ctl { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
+.ctl button { border: 1px solid #3a3a3e; color: #b5b1aa; font: 12px var(--mono); padding: 3px 10px; }
+.ctl button.on { background: #e9e6df; color: #111; }
+/* the window is drawn at its real size and scaled down to fit a narrow page (no sideways scrolling) */
+.fit { position: relative; width: 100%; overflow: hidden; }
+.fit > .scaled { transform-origin: 0 0; position: absolute; left: 0; top: 0; }
+
+.px { display: block; image-rendering: pixelated; }
+.li { display: block; flex: none; }
+.sq { width: 8px; height: 8px; display: inline-block; flex: none; }
+.classic .sq { border-radius: 50%; }
+.spin { color: var(--cyan); }
+.cspin { width: 11px; height: 11px; border-radius: 50%; display: inline-block; flex: none; vertical-align: -1px;
+  border: 1.6px solid color-mix(in srgb, var(--ink2) 30%, transparent); border-top-color: var(--ink2); animation: rot .9s linear infinite; }
+@keyframes rot { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cspin { animation: none; } }
+.cag { font: 600 12px var(--ui); display: inline-block; min-width: 13px; text-align: center; color: var(--ink2); flex: none; }
+.btn { font: 12px var(--mono); color: var(--ink); white-space: nowrap; }
+.btn:hover { background: var(--ink); color: var(--bg); }
+.btn.pri { background: var(--ink); color: var(--bg); padding: 0 2px; }
+.btn.pri:hover { background: var(--signal); color: #000; }
+.btn:disabled { color: var(--ink3); background: none; cursor: default; }
+.cbtn { font: 600 12px var(--ui); padding: 3px 10px; border-radius: 7px; background: var(--raise); color: var(--ink); white-space: nowrap; }
+.cbtn.pri { background: var(--accent); color: #fff; }
+.cbtn:disabled { opacity: .45; cursor: default; }
+code.c { font: 12px var(--code); background: color-mix(in srgb, var(--ink) 8%, transparent); padding: 0 3px; }
+
+/* ---------- the window ---------- */
+.win { width: 1200px; height: 660px; background: var(--bg); color: var(--ink); display: grid; grid-template-rows: 32px minmax(0, 1fr) 24px;
+  font: 13px var(--mono); border-radius: 10px; overflow: hidden; position: relative; box-shadow: 0 0 0 .5px rgba(255,255,255,.2), 0 26px 70px rgba(0,0,0,.6); }
+.win.narrow { width: 900px; }
+.classic.win { border-radius: 12px; }
+.bar { position: relative; display: flex; align-items: center; gap: 4px; padding: 0 10px 0 20px; border-bottom: 1px solid var(--ink4); }
+.lights { display: flex; gap: 8px; margin-right: 14px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.lights i:nth-child(1) { background: #ff5f57; } .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+.bar .ttl { position: absolute; left: 50%; transform: translateX(-50%); font: 600 13px var(--ui); display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; pointer-events: none; }
+.bar .ttl small { font: 11.5px var(--mono); color: var(--ink2); font-weight: 400; }
+.bar .end { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.tb { width: 26px; height: 22px; display: grid; place-items: center; color: var(--ink2); position: relative; }
+.tb:hover { color: var(--ink); }
+.tb.on { background: var(--ink); color: var(--bg); }
+.classic .tb { border-radius: 6px; }
+.classic .tb.on { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+.tb .tip { display: none; position: absolute; top: 26px; right: 0; white-space: nowrap; background: var(--ink); color: var(--bg); font: 11px var(--mono); padding: 2px 6px; z-index: 9; pointer-events: none; }
+.classic .tb .tip { font-family: var(--ui); border-radius: 5px; }
+.tb:hover .tip { display: block; }
+.body { display: grid; grid-template-columns: 44px 214px minmax(0, 1fr) var(--fw, 0px); min-height: 0; position: relative; }
+.rail { border-right: 1px solid var(--ink4); display: flex; flex-direction: column; align-items: center; gap: 18px; padding-top: 14px; color: var(--ink2); }
+.rail .ic { position: relative; padding: 2px; }
+.rail .ic.on { color: var(--ink); }
+.rail .ic.on::before { content: ""; position: absolute; left: -15px; top: 0; bottom: 0; width: 2px; background: var(--signal); }
+.rail .gap { flex: 1; }
+.classic .rail { gap: 12px; padding-top: 10px; }
+.classic .rail .ic { padding: 5px; border-radius: 8px; }
+.classic .rail .ic.on { background: var(--raise); color: var(--accent); }
+.classic .rail .ic.on::before { display: none; }
+.status { border-top: 1px solid var(--ink4); display: flex; align-items: center; gap: 14px; padding: 0 12px; font: 11.5px var(--mono); color: var(--ink2); }
+.classic .status { font-family: var(--ui); }
+.status .sp { flex: 1; }
+
+/* the terminals' list (docs/terminal-v0.md §1, implemented/terminal.html) */
+.list { border-right: 1px solid var(--ink4); padding: 8px 0; overflow: hidden; font: 12.5px var(--mono); position: relative; }
+.list .hd { display: flex; align-items: center; padding: 2px 12px 8px; color: var(--ink3); font-size: 11px; letter-spacing: .06em; }
+.ldir { display: grid; grid-template-columns: 2ch minmax(0, 1fr) auto; align-items: center; padding: 3px 12px 3px 10px; margin-top: 8px; cursor: default; }
+.ldir:hover, .ldir.ctx { background: var(--hover); }
+.ldir .chev { color: var(--ink3); }
+.ldir .name { color: var(--ink); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ldir .count { color: var(--ink3); font-size: 11px; }
+.row { position: relative; display: grid; grid-template-columns: 2ch 3ch 14px minmax(0, 1fr) auto; align-items: center; padding: 3px 12px 3px 10px; white-space: nowrap; cursor: default; }
+.row:hover, .row.ctx { background: var(--hover); }
+.row .ix { color: var(--ink3); font-size: 11px; }
+.row .tr { color: var(--ink3); }
+.row .nm { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.row.session .nm { color: var(--ink2); }
+.row .mt { color: var(--ink3); font-size: 11px; display: flex; gap: 6px; align-items: center; padding-left: 8px; }
+.row.sel { background: var(--raise); }
+.row.sel::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--signal); }
+.row.sel .ix { color: var(--signal); }
+.classic .list { font-family: var(--ui); font-size: 13px; }
+.classic .list .hd { letter-spacing: 0; font-weight: 600; }
+.classic .ldir { grid-template-columns: 16px 18px minmax(0, 1fr) auto; gap: 4px; margin: 6px 6px 0; border-radius: 7px; padding: 3px 8px; }
+.classic .ldir .name { font-weight: 600; }
+.classic .row { grid-template-columns: 22px 14px minmax(0, 1fr) auto; margin: 1px 6px; border-radius: 7px; padding: 4px 8px 4px 22px; }
+.classic .row.sel { background: var(--raise); }
+.classic .row.sel::before { display: none; }
+
+/* a pane, and its title bar while there are two (docs/terminal-v0.md §1 分屏) */
+.center { min-height: 0; display: grid; grid-template-columns: repeat(var(--panes, 1), minmax(0, 1fr)); position: relative; }
+.pane { min-height: 0; min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+.pane + .pane { border-left: 1px solid var(--ink4); }
+.sph { height: 28px; display: flex; align-items: center; gap: 7px; padding: 0 6px 0 10px; border-bottom: 1px solid var(--ink4); font: 11.5px var(--mono); color: var(--ink2); white-space: nowrap; overflow: hidden; }
+.pane.focus .sph { box-shadow: inset 0 -2px 0 var(--signal); }
+.sph b { color: var(--ink); font: 600 12px var(--ui); overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 5em; }
+.sph .pth { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 0 3 auto; }
+.sph .end { margin-left: auto; display: flex; gap: 2px; align-items: center; }
+.sph .tb { width: 22px; height: 20px; }
+.sph .tb .tip { top: 22px; }
+.classic .sph { font-family: var(--ui); }
+.classic .pane.focus .sph { box-shadow: inset 0 -2px 0 var(--accent); }
+.rec { overflow: hidden; padding: 16px 26px 8px; display: flex; flex-direction: column; gap: 12px; font: 13.5px/1.65 var(--ui); max-width: 760px; width: 100%; justify-self: center; }
+.ub { align-self: flex-end; max-width: 82%; background: var(--raise); border: 1px solid var(--ink4); padding: 6px 12px; }
+.classic .ub { border: 0; border-radius: 16px; background: color-mix(in srgb, var(--ink) 9%, transparent); }
+.md p { margin: 0 0 6px; } .md ul { margin: 0; padding-left: 1.2em; }
+.work { font: 12px var(--mono); color: var(--ink2); display: flex; gap: 10px; }
+.classic .work { font-family: var(--ui); }
+.work .d { margin-left: auto; color: var(--green); } .work .d i { color: var(--red); font-style: normal; }
+.now { font: 12px var(--mono); color: var(--ink2); display: flex; gap: 8px; align-items: center; }
+.classic .now { font-family: var(--ui); }
+.now code { font-family: var(--code); color: var(--ink); }
+.now .t { margin-left: auto; color: var(--ink3); }
+.reply { padding: 8px 26px 14px; max-width: 812px; width: 100%; justify-self: center; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.fchip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--ink3); padding: 1px 4px 1px 6px; font: 11.5px var(--mono); color: var(--ink); }
+.fchip i { font-style: normal; color: var(--ink3); }
+.fchip button { color: var(--ink2); padding: 0 3px; }
+.fchip button:hover { background: var(--ink); color: var(--bg); }
+.classic .fchip { border: 0; background: var(--raise); border-radius: 7px; font-family: var(--ui); padding: 2px 4px 2px 7px; }
+.box { border: 1px solid var(--ink3); min-height: 40px; display: flex; align-items: center; padding: 6px 10px; color: var(--ink3); font: 13px var(--ui); gap: 8px; }
+.box .tx { flex: 1; color: var(--ink); }
+.box .tx.ph { color: var(--ink3); }
+.box .tx b { font: 12px var(--mono); color: var(--signal); font-weight: 400; }
+.box .caret { display: inline-block; width: 1.5px; height: 15px; background: var(--ink); vertical-align: -3px; animation: blink 1.1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.classic .box { border-radius: 17px; border-color: var(--ink4); background: var(--card); }
+.classic .box .tx b { color: var(--accent); font: 600 12.5px var(--ui); }
+.tty { background: #0b0b0b; color: #d6d3cc; padding: 12px 14px; font: 12px/1.55 var(--code); white-space: pre; overflow: hidden; margin: 0; }
+.tty .u { color: #fff; } .tty .d { color: #8a877f; } .tty .g { color: #9be22d; } .tty .k { color: #6d9bff; }
+
+/* ---------- Files: the window's column on the right ---------- */
+.files { min-height: 0; border-left: 1px solid var(--ink4); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; background: var(--bg); font: 12.5px var(--mono); position: relative; }
+.files.float { position: absolute; right: 0; top: 0; bottom: 0; width: 300px; z-index: 6; border: 1px solid var(--ink); }
+.files.float::after { content: ""; position: absolute; left: -7px; top: 6px; right: 6px; bottom: -7px; z-index: -1; background: repeating-conic-gradient(var(--ink3) 0 25%, transparent 0 50%) 0 0 / 2px 2px; }
+/* its own stacking context: the shadow under it would show through the parts, so each part has the ground */
+.files.float > :not(.drag) { background: var(--bg); }
+.classic .files.float { border: 1px solid var(--ink4); border-radius: 12px 0 0 12px; box-shadow: -14px 0 40px rgba(0,0,0,.45); overflow: hidden; }
+.classic .files.float::after { display: none; }
+.files .drag { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 2; }
+.fhd { display: flex; align-items: center; gap: 6px; padding: 7px 8px 4px 12px; }
+.fhd .lb { color: var(--ink3); font-size: 11px; letter-spacing: .06em; }
+.fhd .node { color: var(--signal); font-size: 11px; }
+.fhd .acts { margin-left: auto; display: flex; gap: 2px; }
+.ib { min-width: 22px; height: 22px; padding: 0 3px; display: grid; place-items: center; color: var(--ink2); font: 13px var(--mono); position: relative; }
+.ib:hover, .ib.on { background: var(--ink); color: var(--bg); }
+.crumbs { display: flex; align-items: center; gap: 0; padding: 0 12px 7px; border-bottom: 1px solid var(--ink4); white-space: nowrap; overflow: hidden; font: 12px var(--mono); }
+.crumbs .seg2 { color: var(--ink2); padding: 0 1px; flex: 0 1 auto; min-width: 1.6em; overflow: hidden; text-overflow: ellipsis; }
+.crumbs .seg2.cur { flex-shrink: 0; }
+.crumbs .sl, .crumbs .nav { flex: none; }
+.crumbs .seg2:hover { background: var(--ink); color: var(--bg); }
+.crumbs .seg2.cur { color: var(--ink); font-weight: 700; }
+.crumbs .sl { color: var(--ink3); padding: 0 3px; }
+.crumbs .nav { color: var(--ink3); margin-right: 6px; display: none; }
+.fl { overflow: auto; padding: 3px 0 8px; scrollbar-width: thin; }
+.fl:focus { outline: none; }
+.fr { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; height: 22px; padding: 0 10px 0 12px; white-space: nowrap; cursor: default; user-select: none; }
+.fr:hover { background: var(--hover); }
+.fr .tr { color: var(--ink3); white-space: pre; }
+.fr .tw { color: var(--ink2); cursor: pointer; }
+.fr .tw:hover { color: var(--ink); background: var(--raise); }
+.fr .nm { overflow: hidden; text-overflow: ellipsis; padding-left: 1ch; }
+.fr.dir .nm { color: var(--ink); font-weight: 700; }
+.fr.file .nm { color: var(--ink); }
+.fr.dim .nm, .fr.dim .tr { color: var(--ink3); font-weight: 400; }
+.fr.locked .nm { color: var(--ink3); font-weight: 400; }
+.fr .lk { color: var(--ink3); margin-left: 5px; font-weight: 400; }
+.fr .to { color: var(--ink3); font-weight: 400; }
+.fr .mt { color: var(--ink3); font-size: 11px; padding-left: 10px; display: flex; gap: 8px; }
+.fr .mt .sz { min-width: 4ch; text-align: right; }
+.fr.sel { background: var(--raise); }
+.fr.sel.dim .nm, .fr.sel.dim .tr { color: var(--ink2); }
+.fr.sel::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--signal); }
+.fr.up .nm { color: var(--ink2); font-weight: 400; padding-left: 0; }
+.fr .go { color: var(--ink3); padding-left: 8px; }
+.ffoot { border-top: 1px solid var(--ink4); padding: 6px 12px; color: var(--ink3); font-size: 11px; display: flex; gap: 10px; }
+.note { padding: 10px 12px; color: var(--ink2); font: 12px/1.6 var(--ui); }
+
+/* the preview: the lower part of the column, the selected file as Quick Look draws it */
+.pv { border-top: 1px solid var(--ink4); min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 300px; }
+.pv .h { padding: 8px 12px 6px; }
+.pv .h b { display: block; font: 600 12.5px var(--mono); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv .h span { font-size: 11px; color: var(--ink3); }
+.pv .cnt { min-height: 0; overflow: hidden; margin: 0 12px; border: 1px solid var(--ink4); background: var(--panel); position: relative; }
+.pv .acts { display: flex; gap: 12px; padding: 8px 12px 10px; flex-wrap: wrap; }
+.code { margin: 0; padding: 6px 8px; font: 11px/1.5 var(--code); color: var(--ink); white-space: pre; overflow: hidden; }
+.code .ln { color: var(--ink3); display: inline-block; width: 2.4ch; text-align: right; margin-right: 1.2ch; user-select: none; }
+.code.big { font-size: 12.5px; line-height: 1.6; padding: 12px 16px; }
+.nopv { height: 100%; display: grid; place-items: center; text-align: center; color: var(--ink2); font: 12px/1.7 var(--ui); padding: 12px; }
+.nopv .big { font: 28px var(--mono); color: var(--ink3); }
+.pic { display: grid; place-items: center; height: 100%; padding: 8px; }
+.pic svg { max-width: 100%; max-height: 100%; }
+.trunc { position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 8px; font: 11px var(--ui); color: var(--ink2); background: linear-gradient(transparent, var(--panel) 40%); }
+
+/* Quick Look (space) */
+.ql { position: absolute; inset: 22px 30px 26px; z-index: 8; background: var(--bg); border: 1px solid var(--ink); display: grid; grid-template-rows: 26px minmax(0, 1fr); }
+.ql::after { content: ""; position: absolute; left: 6px; top: 6px; right: -7px; bottom: -7px; z-index: -1; background: repeating-conic-gradient(var(--ink3) 0 25%, transparent 0 50%) 0 0 / 2px 2px; }
+.ql .h { background: var(--ink); color: var(--bg); display: flex; align-items: center; gap: 10px; padding: 0 10px; font: 12px var(--mono); }
+.ql .h .sp { flex: 1; }
+.ql .h button { color: var(--bg); }
+.ql .h button:hover { background: var(--bg); color: var(--ink); }
+.ql .bd { min-height: 0; overflow: hidden; background: var(--panel); }
+.classic .ql { border: 1px solid var(--ink4); border-radius: 12px; overflow: hidden; box-shadow: 0 22px 60px rgba(0,0,0,.55); background: var(--card); }
+.classic .ql::after { display: none; }
+.classic .ql .h { background: var(--raise); color: var(--ink); font: 600 12.5px var(--ui); justify-content: center; position: relative; }
+.classic .ql .h .x { position: absolute; left: 10px; }
+.classic .ql .h .op { position: absolute; right: 8px; }
+.classic .ql .h button { color: var(--ink); }
+
+/* a system menu (the native list's right click is the system's; the ⋯ menu too) */
+.menu { position: absolute; z-index: 9; min-width: 210px; padding: 5px; border-radius: 8px; background: rgba(38,38,40,.97); color: #f2f2f4; font: 13px var(--ui);
+  box-shadow: 0 0 0 .5px rgba(255,255,255,.18), 0 12px 32px rgba(0,0,0,.55); }
+.light .menu { background: rgba(246,246,248,.98); color: #1c1c1e; box-shadow: 0 0 0 .5px rgba(0,0,0,.18), 0 12px 32px rgba(0,0,0,.2); }
+.menu .it { display: flex; align-items: center; gap: 8px; padding: 3px 10px 3px 22px; border-radius: 5px; position: relative; white-space: nowrap; cursor: default; }
+.menu .it.chk::before { content: "✓"; position: absolute; left: 7px; font-size: 11px; }
+.menu .it .k { margin-left: auto; padding-left: 24px; opacity: .55; }
+.menu .it:hover, .menu .it.hi { background: #0a84ff; color: #fff; }
+.menu .it.off { opacity: .4; }
+.menu .it.off:hover { background: none; color: inherit; }
+.menu .it .new { font: 600 10px var(--ui); color: #0a84ff; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; margin-left: 8px; }
+.menu .it.hi .new, .menu .it:hover .new { color: #fff; }
+.menu hr { border: 0; border-top: 1px solid rgba(255,255,255,.14); margin: 4px 8px; }
+.light .menu hr { border-top-color: rgba(0,0,0,.12); }
+
+/* Files, the classic look: Finder's folders, one level at a time */
+.classic .files { font-family: var(--ui); }
+.classic .fhd { padding: 8px 8px 6px 14px; }
+.classic .fhd .lb { font: 600 13px var(--ui); letter-spacing: 0; color: var(--ink); }
+.classic .ib { border-radius: 6px; color: var(--ink2); }
+.classic .ib:hover { background: var(--raise); color: var(--ink); }
+.classic .ib.on { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+.classic .crumbs { font: 12px var(--ui); padding: 0 10px 8px; gap: 1px; }
+.classic .crumbs .nav { display: inline-flex; gap: 0; color: var(--ink2); }
+.classic .crumbs .nav button { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 5px; }
+.classic .crumbs .nav button:hover { background: var(--raise); }
+.classic .crumbs .nav button:disabled { opacity: .35; }
+.classic .crumbs .seg2 { display: inline-flex; align-items: center; gap: 3px; padding: 1px 4px; border-radius: 5px; color: var(--ink2); min-width: 2.4em; }
+.classic .crumbs .seg2 .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.classic .crumbs .seg2:hover { background: var(--raise); color: var(--ink); }
+.classic .crumbs .seg2.cur { color: var(--ink); font-weight: 600; }
+.classic .crumbs .seg2 svg { color: var(--accent); }
+.classic .crumbs .sl { padding: 0; color: var(--ink3); display: inline-flex; }
+.cr { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto 12px; gap: 8px; align-items: center; height: 30px; margin: 0 6px; padding: 0 8px; border-radius: 7px; font: 13px var(--ui); cursor: default; user-select: none; }
+.cr:hover { background: var(--hover); }
+.cr .ic { color: var(--ink2); display: grid; place-items: center; }
+.cr.dir .ic { color: var(--accent); }
+.cr .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cr .mt { font-size: 11.5px; color: var(--ink2); white-space: nowrap; }
+.cr .go { color: var(--ink3); display: grid; place-items: center; }
+.cr.dim .nm, .cr.locked .nm, .cr.dim .ic, .cr.locked .ic { color: var(--ink3); }
+.cr.sel { background: var(--accent); color: #fff; }
+.cr.sel .mt, .cr.sel .go, .cr.sel .ic { color: rgba(255,255,255,.85); }
+.cr.sel.dim .nm, .cr.sel.dim .ic, .ct.sel.dim .nm, .ct.sel.dim .ic { color: #fff; }
+.cr .to { color: var(--ink3); font-size: 11.5px; }
+.cr.sel .to { color: rgba(255,255,255,.75); }
+/* classic as a tree (⋯ › As Tree): disclosure chevrons and indents */
+.ct { display: grid; grid-template-columns: 14px 18px minmax(0, 1fr) auto; gap: 5px; align-items: center; height: 26px; margin: 0 6px; padding: 0 8px; border-radius: 6px; font: 13px var(--ui); cursor: default; user-select: none; }
+.ct:hover { background: var(--hover); }
+.ct .tw { color: var(--ink2); display: grid; place-items: center; cursor: pointer; }
+.ct .ic { color: var(--ink2); display: grid; place-items: center; }
+.ct.dir .ic { color: var(--accent); }
+.ct .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ct .mt { font-size: 11.5px; color: var(--ink2); }
+.ct.dim .nm, .ct.locked .nm { color: var(--ink3); }
+.ct.sel { background: var(--accent); color: #fff; }
+.ct.sel .mt, .ct.sel .ic, .ct.sel .tw { color: rgba(255,255,255,.85); }
+.classic .ffoot { font: 11.5px var(--ui); }
+.classic .pv .h b { font: 600 13px var(--ui); }
+.classic .pv .h span { font: 11.5px var(--ui); }
+.classic .pv .cnt { border-radius: 8px; border-color: var(--ink4); background: var(--card); }
+.classic .note { font-family: var(--ui); }
+
+/* ---------- the phone ---------- */
+.phones { display: flex; flex-wrap: wrap; gap: 28px 44px; align-items: flex-start; }
+.phonebox { display: flex; flex-direction: column; gap: 8px; }
+.phonebox .lbl { font: 11px var(--mono); letter-spacing: .1em; color: #77746e; }
+.phone { width: 320px; height: 660px; border-radius: 44px; background: var(--bg); color: var(--ink); box-shadow: 0 0 0 9px #222, 0 0 0 10px #444, 0 26px 60px rgba(0,0,0,.6);
+  overflow: hidden; margin: 10px; position: relative; display: grid; grid-template-rows: 44px minmax(0, 1fr); font: 14px var(--ui); }
+.phone .sbar { display: flex; justify-content: space-between; padding: 15px 28px 0; font: 600 13px var(--ui); }
+.pscr { min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; position: relative; }
+.pnav { display: flex; align-items: center; gap: 6px; padding: 4px 12px 8px; border-bottom: 1px solid var(--ink4); }
+.pnav .t { flex: 1; text-align: center; min-width: 0; }
+.pnav .t b { display: block; font: 600 15px var(--ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pnav .t span { font: 11px var(--short); color: var(--ink2); }
+.pnav .nb { min-width: 44px; font: 14px var(--short); color: var(--ink); text-align: left; }
+.pnav .nb.r { text-align: right; }
+.classic .pnav .nb { color: var(--accent); font: 15px var(--ui); }
+.pbody { min-height: 0; overflow: hidden; padding: 10px 14px; display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; line-height: 1.6; }
+.pfoot { padding: 8px 12px 24px; border-top: 1px solid var(--ink4); }
+.pbox { border: 1px solid var(--ink3); min-height: 38px; display: flex; align-items: center; gap: 8px; padding: 4px 8px; font: 13.5px var(--ui); }
+.pbox .plus { width: 30px; height: 30px; border: 1px solid var(--ink3); display: grid; place-items: center; font: 18px var(--mono); color: var(--ink2); flex: none; }
+.pbox .tx { flex: 1; color: var(--ink); min-width: 0; }
+.pbox .tx.ph { color: var(--ink3); }
+.pbox .tx b { font: 12px var(--mono); color: var(--signal); font-weight: 400; }
+.classic .pbox { border-radius: 19px; border-color: var(--ink4); background: var(--card); }
+.classic .pbox .plus { border: 0; font: 24px var(--ui); color: var(--ink2); }
+.classic .pbox .tx b { color: var(--accent); font: 600 13px var(--ui); }
+/* the sheet over the terminal page */
+.sheet { position: absolute; left: 0; right: 0; top: 46px; bottom: 0; background: var(--bg); border-top: 1px solid var(--ink); display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; z-index: 3; }
+.classic .sheet { border-top: 0; border-radius: 12px 12px 0 0; background: var(--card); box-shadow: 0 -10px 30px rgba(0,0,0,.4); }
+.dimmer { position: absolute; inset: 0; background: rgba(0,0,0,.45); z-index: 2; }
+.grab { width: 36px; height: 5px; border-radius: 3px; background: var(--ink3); margin: 6px auto 2px; }
+.sheet .pnav { border-bottom: 0; padding-top: 2px; }
+.pcrumbs { display: flex; gap: 0; padding: 0 14px 8px; overflow: hidden; white-space: nowrap; font: 12.5px var(--mono); border-bottom: 1px solid var(--ink4); }
+.pcrumbs button { color: var(--ink2); }
+.pcrumbs button.cur { color: var(--ink); font-weight: 700; }
+.pcrumbs .sl { color: var(--ink3); padding: 0 4px; }
+.classic .pcrumbs { font-family: var(--ui); gap: 4px; }
+.classic .pcrumbs button { background: var(--raise); border-radius: 12px; padding: 1px 9px; font-size: 12px; }
+.classic .pcrumbs button.cur { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); font-weight: 600; }
+.classic .pcrumbs .sl { display: none; }
+.plist { min-height: 0; overflow: hidden; padding: 4px 0; }
+.pr { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; min-height: 40px; padding: 0 14px; font: 13.5px var(--mono); gap: 0; border-bottom: 1px solid var(--ink4); }
+.pr .tr { color: var(--ink3); white-space: pre; }
+.pr .tw { color: var(--ink2); }
+.pr .nm { padding-left: 1ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr.dir .nm { font-weight: 700; }
+.pr.dim .nm { color: var(--ink3); font-weight: 400; }
+.pr .mt { font-size: 11px; color: var(--ink3); padding-left: 8px; }
+.pr .cb { font: 13px var(--mono); color: var(--ink2); margin-right: 8px; }
+.pr .cb.on { color: var(--signal); }
+.pr.on { background: var(--raise); }
+.classic .pr { grid-template-columns: auto 28px minmax(0, 1fr) 14px; font: 14.5px var(--ui); min-height: 52px; gap: 10px; }
+.classic .pr .ic { color: var(--ink2); display: grid; place-items: center; }
+.classic .pr.dir .ic { color: var(--accent); }
+.classic .pr.dir .nm { font-weight: 400; }
+.classic .pr .nm { padding: 0; }
+.classic .pr .nm small { display: block; font-size: 12px; color: var(--ink2); }
+.classic .pr .go { color: var(--ink3); display: grid; place-items: center; }
+.classic .pr .cb2 { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--ink3); display: grid; place-items: center; color: #fff; font: 700 11px var(--ui); }
+.classic .pr .cb2.on { background: var(--accent); border-color: var(--accent); }
+.classic .pr.on { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.pbar { border-top: 1px solid var(--ink4); padding: 10px 14px 26px; display: flex; justify-content: space-between; align-items: center; font: 13px var(--mono); }
+.classic .pbar { font-family: var(--ui); }
+.pmenu { position: absolute; left: 12px; bottom: 76px; width: 230px; z-index: 4; border-radius: 13px; background: rgba(40,40,42,.97); color: #f2f2f4; font: 15px var(--ui); overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,.6); }
+.light .pmenu { background: rgba(250,250,250,.98); color: #1c1c1e; }
+.pmenu .it { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: .5px solid rgba(255,255,255,.12); }
+.light .pmenu .it { border-bottom-color: rgba(0,0,0,.1); }
+.pmenu .it.hi { background: rgba(255,255,255,.12); }
+.light .pmenu .it.hi { background: rgba(0,0,0,.07); }
+.pmenu .it .new { font: 600 10px var(--ui); color: #0a84ff; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; margin-left: 6px; }
+
+/* ---------- second draft (files-v0 §2.1, §3.3, §3.5, §4, §5, §7.5) ---------- */
+/* the preview's buttons: two, one line (user: 这个按钮排列太不文明了) */
+.pv .acts { flex-wrap: nowrap; }
+/* the one line under the list while ⋯ › Show Preview is off */
+.fsel { border-top: 1px solid var(--ink4); padding: 7px 10px 8px 12px; display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: var(--ink2); }
+.fsel .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fsel .t b { color: var(--ink); font-weight: 600; }
+.classic .fsel { font: 12px var(--ui); }
+/* classic, the column 460 points or wider: Finder's columns, the last two */
+.cols { display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
+.cols > .fl { border-right: 1px solid var(--ink4); }
+.cols > .fl:last-child { border-right: 0; }
+.cr.path { background: var(--raise); }
+/* asked before a file that may hold a password goes to an agent: over the reply box of the pane it goes to */
+.warn { position: relative; z-index: 1; margin: 0 0 10px; border: 1px solid var(--ink); background: var(--bg); font: 12.5px/1.65 var(--ui); max-width: 460px; margin-left: auto; }
+.warn::after { content: ""; position: absolute; left: 6px; top: 6px; right: -7px; bottom: -7px; z-index: -1; background: repeating-conic-gradient(var(--ink3) 0 25%, transparent 0 50%) 0 0 / 2px 2px; }
+.warn > * { background: var(--bg); }
+.warn .h { background: var(--amber); color: #000; font: 12px var(--mono); padding: 1px 8px; display: flex; gap: 8px; }
+.warn .b { padding: 8px 10px 4px; color: var(--ink); }
+.warn .b code { font: 11.5px var(--code); }
+.warn .a { display: flex; justify-content: flex-end; gap: 14px; padding: 4px 10px 9px; }
+.classic .warn { border: 0; border-radius: 12px; overflow: hidden; background: var(--card); box-shadow: 0 14px 36px rgba(0,0,0,.5), 0 0 0 .5px var(--ink4); }
+.classic .warn::after { display: none; }
+.classic .warn > * { background: var(--card); }
+.classic .warn .h { color: var(--ink); font: 600 13px var(--ui); align-items: center; padding: 11px 12px 0; }
+.classic .warn .h svg { color: var(--amber); }
+.classic .warn .b { padding: 3px 12px 6px 36px; color: var(--ink2); }
+.classic .warn .a { padding: 4px 12px 11px; gap: 8px; }
+.pane { position: relative; }
+.warnwrap { position: absolute; right: 16px; bottom: 40px; width: 420px; z-index: 3; }
+.fchip .wn { color: var(--amber); font: 700 11.5px var(--mono); font-style: normal; }
+.fchip.sens { border-color: var(--amber); }
+.classic .fchip.sens { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 60%, transparent); }
+.classic .fchip .wn { display: inline-flex; }
+
+/* the phone's Files tab: a page of its own, with the bar of tabs under it */
+.pscr.ptab { grid-template-rows: auto auto minmax(0, 1fr) auto; }
+.pscr.ptab > .pnav { border-bottom: 0; padding-bottom: 6px; }
+.ptabs { display: flex; justify-content: space-around; align-items: center; margin: 6px 10px 18px; height: 56px; border-radius: 28px; background: color-mix(in srgb, var(--raise) 88%, transparent); box-shadow: 0 0 0 .5px var(--ink4), 0 8px 24px rgba(0,0,0,.35); font: 10px var(--ui); }
+.ptabs .t { display: grid; justify-items: center; gap: 3px; color: var(--ink3); min-width: 48px; }
+.ptabs .t.on { color: var(--ink); }
+.classic .ptabs .t.on { color: var(--accent); }
+.pnav .nb.r .more { margin-left: 10px; }
+.sheet.choose { grid-template-rows: auto auto minmax(0, 1fr) auto; top: 160px; }
+.pch { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 8px; align-items: center; min-height: 54px; padding: 0 16px; border-bottom: 1px solid var(--ink4); }
+.pch b { display: block; font: 600 14px var(--ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pch small { font: 11.5px var(--short); color: var(--ink2); }
+.pch .ago { font: 11px var(--short); color: var(--ink3); }
+/* the system's alert (both looks: the system draws it) */
+.palert { position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%); width: 262px; z-index: 6; border-radius: 22px; background: rgba(44,44,46,.97); color: #f2f2f4; text-align: center; overflow: hidden; box-shadow: 0 22px 50px rgba(0,0,0,.6); }
+.light .palert { background: rgba(250,250,250,.98); color: #1c1c1e; }
+.palert .bd { padding: 18px 16px 14px; font: 13px/1.5 var(--ui); }
+.palert .bd b { display: block; font: 600 16px var(--ui); margin-bottom: 4px; }
+.palert .bd code { font: 12px var(--mono); }
+.palert .bt { display: grid; grid-template-columns: 1fr 1fr; border-top: .5px solid rgba(127,127,127,.4); }
+.palert .bt button { padding: 11px; font: 16px var(--ui); color: #0a84ff; }
+.palert .bt button + button { border-left: .5px solid rgba(127,127,127,.4); font-weight: 600; }
+
+/* Settings › Nodes: the node's own switch and each device's Files (files-v0 §7.5) */
+.setwrap { display: flex; flex-wrap: wrap; gap: 28px 44px; align-items: flex-start; }
+.setwin { width: 580px; max-width: 100%; border-radius: 12px; overflow: hidden; background: var(--bg); color: var(--ink); font: 13px var(--ui); box-shadow: 0 0 0 .5px rgba(255,255,255,.2), 0 26px 70px rgba(0,0,0,.6); }
+.setwin .tb2 { height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid var(--ink4); font: 600 13px var(--ui); }
+.setwin .tb2 small { color: var(--ink2); font-weight: 400; }
+.setwin .bd { padding: 6px 18px 18px; position: relative; }
+.setwin .sl { font: 11px var(--mono); color: var(--ink3); letter-spacing: .06em; margin: 14px 2px 6px; }
+.setwin.classic .sl { font: 600 12px var(--ui); color: var(--ink2); letter-spacing: 0; }
+.grp { background: var(--panel); border: 1px solid var(--ink4); }
+.classic .grp { border-radius: 10px; background: var(--card); }
+.grp .r { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 5px 12px; border-top: 1px solid var(--ink4); white-space: nowrap; }
+.grp .r:first-child { border-top: 0; }
+.grp .r.sub { padding-left: 40px; min-height: 32px; border-top-style: dotted; }
+.grp .r.sub2 { padding-left: 58px; min-height: 28px; border-top: 0; font-size: 12.5px; }
+.grp .r.off { opacity: .45; }
+.grp .r .d { color: var(--ink2); font-size: 12.5px; }
+.grp .r .m { font: 12px var(--mono); }
+.grp .r .sp { flex: 1; }
+.grp .r .ic { color: var(--ink2); display: grid; place-items: center; }
+.grp .r .new { font: 600 10px var(--ui); color: var(--signal); border: 1px solid currentColor; padding: 0 4px; }
+.classic .grp .r .new { border-radius: 4px; }
+.tgl { width: 30px; height: 18px; border-radius: 9px; background: var(--ink4); position: relative; flex: none; box-shadow: inset 0 0 0 .5px rgba(127,127,127,.4); cursor: pointer; }
+.tgl::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; }
+.tgl.on { background: var(--signal); }
+.tgl.on::after { left: 14px; }
+.pop { font: 12.5px var(--ui); padding: 2px 6px 2px 9px; border-radius: 6px; background: var(--raise); display: inline-flex; gap: 8px; align-items: center; box-shadow: 0 0 0 .5px var(--ink4); }
+.pop i { font-style: normal; color: var(--ink2); font-size: 10px; }
+.nbtn { font: 12.5px var(--ui); padding: 2px 10px; border-radius: 6px; background: var(--raise); box-shadow: 0 0 0 .5px var(--ink4); }
+.nbtn.red { color: var(--red); }
+.mini { width: 20px; height: 20px; border-radius: 5px; display: grid; place-items: center; color: var(--ink2); font: 14px var(--ui); }
+.mini:hover { background: var(--raise); color: var(--ink); }
+.lnk { color: var(--accent); font: 12.5px var(--ui); }
+.setwin .foot { font: 12px/1.65 var(--ui); color: var(--ink2); margin: 8px 2px 0; max-width: 60ch; }
+.pnote { padding: 18px 16px; color: var(--ink2); font: 13px/1.65 var(--ui); }
+.pnote .btn, .pnote .cbtn { margin-top: 10px; }
+.pfoot2 { padding: 8px 14px; font: 12px var(--ui); color: var(--ink3); border-top: 1px solid var(--ink4); }
+
+/* ---------- third draft (files-v0 §12): new, rename, to the Trash; saving to the phone; a session's folder ---------- */
+.ctl .v3 { font: 11px var(--mono); color: #77746e; letter-spacing: .1em; align-self: center; margin-right: 2px; }
+/* the box a name is typed in, in place */
+.fin { font: inherit; font-weight: 400; color: var(--ink); background: var(--bg); border: 1px solid var(--ink); padding: 0 3px; height: 18px; width: 100%; min-width: 0; outline: none; }
+.fin::selection { background: var(--signal); color: #000; }
+.classic .fin { border: 0; border-radius: 4px; height: 21px; padding: 0 5px; background: var(--card); box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--accent) 65%, transparent); }
+.classic .fin::selection { background: color-mix(in srgb, var(--accent) 40%, transparent); color: inherit; }
+.fr.edit .nm, .cr.edit .nm, .ct.edit .nm { overflow: visible; padding-right: 2px; }
+.fr.edit:hover, .cr.edit:hover, .ct.edit:hover { background: none; }
+.cr.edit.sel, .ct.edit.sel { background: none; color: inherit; }
+.ferr { font: 11.5px/1.45 var(--ui); color: var(--red); padding: 1px 12px 4px; }
+.ferr.warn { color: var(--amber); }
+.ferr:empty { display: none; }
+/* the line under the list after a change; the column's bottom holds it and the preview */
+.fbot { min-height: 0; display: flex; flex-direction: column; }
+.fnote { border-top: 1px solid var(--ink4); padding: 6px 12px; font: 11.5px/1.5 var(--ui); color: var(--ink2); }
+/* the one box the Mac asks with: a terminal runs in the folder */
+.warn.dlg { position: absolute; left: calc(50% + 100px); top: 64px; transform: translateX(-50%); width: 400px; z-index: 10; margin: 0; }
+/* the phone: the system's menus, the share sheet, the confirmation, the select bar's buttons */
+.pmenu.ctxm { left: 22px; bottom: auto; width: 240px; z-index: 6; font-size: 14.5px; }
+.pmenu.ctxm .it { padding: 9px 14px; gap: 12px; }
+.pmenu .it.red { color: #ff453a; }
+.light .pmenu .it.red { color: #e0352b; }
+.pmenu .it .li { opacity: .9; }
+.pmenu .gap { height: 7px; background: rgba(0,0,0,.28); }
+.light .pmenu .gap { background: rgba(0,0,0,.08); }
+.dimmer.blur { z-index: 4; background: rgba(0,0,0,.35); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); }
+.plift { position: absolute; left: 12px; right: 12px; top: 148px; z-index: 5; background: var(--bg); border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+.plift .pr { border-bottom: 0; }
+.palert .pin { display: block; width: 100%; margin-top: 12px; font: 14px var(--ui); padding: 6px 8px; border-radius: 7px; border: .5px solid rgba(127,127,127,.5); background: rgba(127,127,127,.14); color: inherit; outline: none; }
+.palert .bt button:disabled { opacity: .4; cursor: default; }
+.palert .bt.one { grid-template-columns: 1fr; }
+.palert .bt.one button { font-weight: 600; border: 0; }
+.asheet { position: absolute; left: 8px; right: 8px; bottom: 22px; z-index: 6; display: grid; gap: 8px; font: 17px var(--ui); }
+.asheet .g { border-radius: 14px; background: rgba(44,44,46,.97); overflow: hidden; text-align: center; }
+.light .asheet .g { background: rgba(250,250,250,.98); }
+.asheet .hd { padding: 12px 16px; font: 12.5px/1.45 var(--ui); color: #8e8e93; border-bottom: .5px solid rgba(127,127,127,.35); }
+.asheet .hd b { display: block; font-weight: 600; margin-bottom: 2px; }
+.asheet button { display: block; width: 100%; padding: 14px; color: #0a84ff; }
+.asheet button.red { color: #ff453a; }
+.asheet button.cancel { font-weight: 600; }
+.share { position: absolute; left: 0; right: 0; bottom: 0; top: 168px; z-index: 6; border-radius: 14px 14px 0 0; background: rgba(28,28,30,.985); color: #f2f2f4; display: flex; flex-direction: column; font: 14px var(--ui); box-shadow: 0 -10px 30px rgba(0,0,0,.4); }
+.light .share { background: rgba(242,242,247,.99); color: #1c1c1e; }
+.share .sh { display: flex; gap: 10px; align-items: center; padding: 14px 14px 12px; border-bottom: .5px solid rgba(127,127,127,.3); }
+.share .fi { width: 40px; height: 40px; border-radius: 9px; background: rgba(127,127,127,.22); display: grid; place-items: center; flex: none; }
+.share .tt { min-width: 0; }
+.share .tt b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.share .tt small { color: #8e8e93; font-size: 12px; }
+.share .x { margin-left: auto; width: 28px; height: 28px; border-radius: 50%; background: rgba(127,127,127,.25); display: grid; place-items: center; flex: none; }
+.share .tg { display: flex; gap: 12px; padding: 14px; }
+.share .tg span { display: grid; justify-items: center; gap: 5px; font-size: 11px; color: #8e8e93; width: 58px; }
+.share .tg i { width: 54px; height: 54px; border-radius: 14px; background: rgba(127,127,127,.22); display: grid; place-items: center; color: inherit; }
+.share .ac { margin: 4px 14px; border-radius: 11px; background: rgba(127,127,127,.16); overflow: hidden; }
+.share .ac .it { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: .5px solid rgba(127,127,127,.25); }
+.share .ac .it:last-child { border-bottom: 0; }
+.share .ac .it.hi { background: rgba(127,127,127,.25); }
+.pnav .nb.r .ib2 { display: inline-grid; vertical-align: middle; cursor: pointer; }
+.pnav .nb.r .more { cursor: pointer; }
+.pbar .icos { display: flex; gap: 6px; }
+.pbar .ico { width: 34px; height: 30px; display: grid; place-items: center; color: var(--ink); }
+.pbar .ico:disabled { color: var(--ink3); cursor: default; }
+.classic .pbar .ico { color: var(--accent); }
+.classic .pbar .ico:disabled { color: var(--ink3); }
+
+.pmenu .it.sub { justify-content: flex-start; font-weight: 600; }
+.pmenu .it.sub span { display: inline-flex; align-items: center; gap: 6px; }
+.pmenu .it .chv { opacity: .6; }
+.pr.up .nm small { color: var(--ink2); }
+.pr.up .bar { display: block; height: 3px; margin-top: 4px; background: var(--ink4); border-radius: 2px; overflow: hidden; }
+.pr.up .bar b { display: block; height: 100%; background: var(--accent); }
+.pr.up button { color: var(--ink2); }
+
+/* ---------- the notes under the demos ---------- */
+.docs { max-width: 1240px; margin: 0 auto; padding: 0 16px; display: flex; flex-direction: column; gap: 14px; color: #a9a6a0; font-size: 12.5px; line-height: 1.75; }
+.docs ol, .docs ul { margin: 0; padding-left: 1.4em; max-width: 112ch; }
+.tbl { overflow-x: auto; border: 1px solid #333; }
+.tbl table { border-collapse: collapse; width: 100%; font-size: 12.5px; min-width: 720px; }
+.tbl th, .tbl td { text-align: left; vertical-align: top; padding: 7px 12px; border-bottom: 1px solid #2c2c2f; }
+.tbl th { font: 600 11px var(--mono); letter-spacing: .08em; color: #8f8b84; }
+.tbl td:first-child { color: #d8d4cc; white-space: nowrap; }
+.tbl tr:last-child td { border-bottom: 0; }
+@media (max-width: 720px) { .phone { margin: 10px 0; } .phones { justify-content: center; } }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <h1>Files · 主窗口右边的文件栏</h1>
+  <p class="lede"><b>第三稿（2026-10-18，files-v0 §12；四问已答，还没做）</b>：像 VS Code 那样<b>新建文件、新建文件夹、改名、移到废纸篓</b>（Mac ⑪–⑯：标题行的 <code>+</code>、就地起名、右键、<code>↩</code> 改名、<code>⌘⌫</code> 移到废纸篓不问、<code>⌘Z</code> 放回；只有终端在里面运行时问）；手机上<b>存到手机</b>（预览页的 <code>Share</code> → 系统分享面板的 <code>Save to Files</code>）、<b>传文件到 Mac</b>（<code>⋯</code> › <code>Upload</code>，手机 ⑮ ⑯）、长按菜单、<code>⋯</code> 新建、移到废纸篓先问；终端页和会话记录页的 <code>⋯</code> 里 <code>Show in Files</code>（手机 ⑨–⑭）；<code>Settings › Nodes</code> 多一个改文件的总闸。下面带“第三稿”的那两排按钮是这一稿的状态，演示里都能真的建、改、移走（每次点按钮从头来）。</p>
+  <p class="lede">配 <code>docs/files-v0.md</code>（第二稿：第一稿的七件事已拍板）。文件栏是<b>窗口自己的一栏</b>，在所有终端之上：换终端、换页、分屏它都在；默认关着，<b>靠边</b>或<b>浮起</b>（<code>⋯</code> › <code>Float Over Page</code>）。像素外观是 <code>tree</code> 式的目录树，经典外观是 Finder 式的文件夹（一次一层，拉宽到 460 点以上是分栏）；顶上是绝对路径，每一层可点。入口有三个：左边列表的右键 <code>Show in Files</code>、顶栏的文件夹图标（焦点那一块）、分屏时每块标题栏上的同一个图标。选中的文件 <code>Add to Reply</code> 或拖到某一块，落成回复框里的 <code>[File #n]</code>；可能含密码的文件先问一句。预览下面只有两个按钮，其余在右键菜单里；预览可以在 <code>⋯</code> 里关掉。手机多一个 <code>Files</code> 标签页；别的设备能读到哪些文件，在 <code>Settings › Nodes</code> 里给每个设备定。下面的窗口和手机都能点：树的 <code>▸</code>、行（⌘ 点多选、⇧ 点连选、双击文件夹进入、右键）、路径的每一层、<code>⌂</code>、<code>⋯</code>、<code>×</code>、顶栏和标题栏的文件夹图标、左边列表的右键；焦点在文件列表里时 <code>↑ ↓ ← →</code>、<code>空格</code>（Quick Look）、<code>esc</code>；文件栏的左边缘能拖。路径与文件都是编的。</p>
+  <div class="tools">
+    <span>外观 <span class="seg" data-opt="look"><button data-v="pixel" class="on">Pixel</button><button data-v="classic">Classic</button></span></span>
+    <span><span class="seg" data-opt="theme"><button data-v="dark" class="on">Dark</button><button data-v="light">Light</button></span></span>
+  </div>
+</div>
+
+<div class="sec">1 · MAC — 主窗口</div>
+<div class="stage">
+  <div class="ctl" id="ctlMac">
+    <button data-mac="home" class="on">① 第一次打开</button><button data-mac="list">② 左边右键进入项目</button><button data-mac="pane">③ 分屏标题栏的图标</button>
+    <button data-mac="preview">④ 选中看预览</button><button data-mac="ctx">⑤ 右键一项</button><button data-mac="reply">⑥ 两个给 agent</button><button data-mac="sensitive">⑦ 可能含密码的文件</button>
+    <button data-mac="ql">⑧ 空格 Quick Look</button><button data-mac="float">⑨ 浮起</button><button data-mac="wide">⑩ 拉宽</button>
+  </div>
+  <div class="ctl" id="ctlMac3">
+    <span class="v3">第三稿</span><button data-mac="newmenu">⑪ + 新建</button><button data-mac="newin">⑫ 就地起名</button><button data-mac="folderctx">⑬ 右键文件夹</button><button data-mac="rename">⑭ 改名 ↩</button><button data-mac="trash">⑮ 移到废纸篓 · ⌘Z</button><button data-mac="inuse">⑯ 有终端在里面运行</button>
+  </div>
+  <div class="fit" id="fitMac"><div class="scaled"><div class="win" id="win"></div></div></div>
+</div>
+<div class="cap" id="capMac"></div>
+
+<div class="sec">2 · IPHONE — 终端页 + › Files on Mac，和 Files 标签页</div>
+<div class="stage">
+  <div class="ctl" id="ctlPhone">
+    <button data-ph="browse" class="on">① + 菜单</button><button data-ph="open">② 打开在终端的文件夹</button><button data-ph="down">③ 往下一层</button><button data-ph="preview">④ 预览</button><button data-ph="select">⑤ Select 两项</button><button data-ph="reply">⑥ 回到回复框</button>
+    <button data-ph="tab">⑦ Files 标签页</button><button data-ph="sensitive">⑧ 可能含密码的文件</button>
+  </div>
+  <div class="ctl" id="ctlPhone3">
+    <span class="v3">第三稿</span><button data-ph="pnew">⑨ ⋯ 新建文件夹</button><button data-ph="plong">⑩ 长按 · 移到废纸篓</button><button data-ph="psel">⑪ Select 的底栏</button><button data-ph="pshare">⑫ 存到手机</button><button data-ph="pterm">⑬ 终端页 Show in Files</button><button data-ph="psess">⑭ 会话记录页 Show in Files</button><button data-ph="pupload">⑮ 传文件到 Mac</button><button data-ph="pconflict">⑯ 传的时候重名</button>
+  </div>
+  <div class="phones" id="phones"></div>
+</div>
+<div class="cap" id="capPhone"></div>
+
+<div class="sec">3 · 授权范围 — SETTINGS › NODES</div>
+<div class="stage"><div class="setwrap" id="setwrap"></div></div>
+<div class="cap" id="capSet"></div>
+
+<div class="sec">4 · 查到的规范，用了什么</div>
+<div class="docs">
+  <div class="tbl"><table>
+    <tr><th>来源</th><th>说的</th><th>这里</th></tr>
+    <tr><td>HIG · Path controls</td><td>磁盘、上层文件夹、所选项一串，每项图标加名字；放不下时隐去首尾之间的名字；放在窗口内容里，不放工具栏、状态栏</td><td>路径行在文件栏内容的顶上；经典照标准样式；太长时中间收成 <code>…</code>（点开是被收起的几层）</td></tr>
+    <tr><td>HIG · Outline views</td><td>层级放在一列；点三角只展开自己、⌥ 点展开全部；记住展开到哪；长名字中间省略</td><td>像素的树：<code>▸ ▾</code> 只管展开；⌥ 点全部展开；展开状态按节点记住</td></tr>
+    <tr><td>HIG · Column views</td><td>深的层级、常在层间来回时用分栏；根在第一栏；选中没有下层的项时显示它的信息与预览</td><td>经典的“文件夹”窄时一次一层，460 点以上是最后两栏的分栏（⑩）；选中文件时下半是信息与预览（Finder 预览栏竖着放，可关）</td></tr>
+    <tr><td>HIG · Sidebars / Split views</td><td>窄时自动收起；按钮、菜单、快捷键都能开关；1 点分隔线可拖，合理的最小最大宽度</td><td>顶栏图标、<code>⌘⇧F</code>、菜单三处；240–560 点；靠边或浮起（⑨），页面不足 520 点时靠边的也临时浮起；默认关（用户定）</td></tr>
+    <tr><td>HIG · File management、Quick Look</td><td>打开时显示最相关的位置，也能去别处；用 Quick Look 预览打不开的文件</td><td>打开在这一块的文件夹 / 上次 / 家目录；预览一律交给 Quick Look（Mac 嵌在栏里、空格放大；iPhone 下载后 <code>QLPreviewController</code>）</td></tr>
+    <tr><td>WAI-ARIA APG · Tree View</td><td>↑↓ 移动，→ 展开 / 进子项，← 收起 / 回上层，Home / End，打字跳转，<code>*</code> 展开同层；多选空格、⇧↑↓</td><td>键盘照它；网页版标 <code>tree / treeitem / group</code>、<code>aria-expanded</code>、<code>aria-selected</code></td></tr>
+    <tr><td>VS Code Explorer</td><td>文件夹在前；Reveal、Copy Path / Copy Relative Path、Reveal in Finder；拖进聊天或终端是引用 / 路径</td><td>文件夹在前；右键 <code>Copy Path</code>、<code>Copy Relative Path</code>、<code>Show in Finder</code>、<code>New Terminal Here</code>；拖到回复框是占位符、拖到终端是路径</td></tr>
+    <tr><td><code>tree</code>、iOS“文件”</td><td><code>├── └── │</code>，<code>-a</code> 才列隐藏文件；iOS 一次一层往下钻，长按返回键列出上面各层</td><td>像素用两格树线 <code>├─ └─ │</code>、文件夹加 <code>/</code>，隐藏文件默认不列；手机两种外观都是往下钻</td></tr>
+    <tr><td colspan="3" style="color:#77746e; font:11px var(--mono); letter-spacing:.08em">第三稿（2026-10-18）</td></tr>
+    <tr><td>VS Code Explorer（源码）</td><td>右键 <code>New File...</code> <code>New Folder...</code> 在前、<code>Rename...</code> 和删除在最后；树里就地出输入框，回车才建，<code>/</code> 一次建几层；名字为空、已存在是错，首尾空格只提醒；Mac 上 <code>↩</code> 改名、<code>⌘⌫</code> 移到废纸篓；删除默认问、能撤销；远程有 <code>Download...</code> <code>Upload...</code></td><td>新建、改名、移到废纸篓、就地起名、名字检查、键位都照它（⑪–⑮）；删除问不问照 Apple（下一行）</td></tr>
+    <tr><td>HIG · Alerts、Undo and redo</td><td>能撤销的删除不弹框，撤销不了的、少见的才弹；<code>⌘Z</code> <code>⇧⌘Z</code> 多步，撤销后把结果显示出来</td><td>Mac 上移到废纸篓不问、底部一行说明、<code>⌘Z</code> 放回并选中（⑮）；只有终端在里面运行（⑯）和只能永久删除时问</td></tr>
+    <tr><td>HIG · Action sheets、Context menus、Menus</td><td>自己发起的破坏性操作用 action sheet 确认，红色在上、Cancel 另一块；右键菜单里破坏性的在最后、红字，用不了的项藏起来，不写快捷键；要再输入的项加 <code>…</code></td><td>手机上移到废纸篓先问（废纸篓在 Mac 上，手机撤不回来；手机 ⑩ ⑪）；菜单里 <code>Move to Trash</code> 最后；<code>New File…</code> <code>Rename…</code> <code>Share…</code> 带 <code>…</code>；第二稿演示右键菜单里的快捷键去掉（⑬）</td></tr>
+    <tr><td>HIG · Activity views、File management</td><td>用 Share 按钮开系统的分享面板，面板里有的（Save to Files）不另做；新建要有一个 Add (+) 按钮</td><td>手机的“保存”是 <code>Share</code> → <code>Save to Files</code> / <code>Save Image</code>（手机 ⑫）；文件栏标题行一个 <code>+</code>（⑪）</td></tr>
+    <tr><td>Finder、iOS“文件”</td><td><code>⇧⌘N</code> 新建文件夹、<code>↩</code> 改名只选主名、<code>⌘⌫</code> 不问；iOS 文件夹页 <code>⋯</code> 里 New Folder，长按菜单 Delete 在最后，Select 后底栏有分享和删除</td><td>键位同 Finder；手机照 iOS“文件”摆（⑨–⑪）</td></tr>
+  </table></div>
+</div>
+
+<div class="sec">5 · 拍板记录（files-v0 §10）</div>
+<div class="docs"><ol>
+  <li><b>默认关。</b>从入口打开以后记住开着。</li>
+  <li><b>快捷键照这一稿：</b><code>⌘⇧F</code> 开关、<code>⌥↩</code> Add to Reply，其余照 Finder（<code>⌘⇧H</code> <code>⌘⇧G</code> <code>⌘⇧.</code> <code>⌥⌘C</code>）。</li>
+  <li><b>经典拉宽是分栏：</b>460 点以上，最后两栏（⑩）。</li>
+  <li><b>敏感文件看就行，给 agent 时提醒：</b><code>~/.ssh/</code>、<code>.env</code>、各 agent 的登录文件不锁，预览照常；加进回复框时问一次（⑦、手机 ⑧）。</li>
+  <li><b>手机开一个 <code>Files</code> 标签页：</b>第五个，排在 Terminals 后面（手机 ⑦）。</li>
+  <li><b>远程读文件有节点自己的开关，并且每个设备一个授权范围</b>（第 3 节）。</li>
+  <li><b>预览可以设置：</b><code>⋯</code> › <code>Show Preview</code>，关了只在空格时看。</li>
+</ol>
+<p style="margin:0">另两条：浮起随时能用（⑨，<code>⋯</code> › <code>Float Over Page</code>）；预览下面只留 <code>Add to Reply</code> <code>Open</code>，<code>Show in Finder</code> 在右键菜单里（⑤）。这一稿顺手定的：默认靠边；浮起时点页面不收起；那一问在加进回复框时问一次，发送时不再问；新配对的设备默认 <code>Home Folder</code>。</p></div>
+<div class="sec">6 · 第三稿拍板记录（files-v0 §12.7）</div>
+<div class="docs"><ol>
+  <li><b>Mac 上移到废纸篓不问</b>，<code>⌘Z</code> 放回（⑮）。手机上照旧先问。</li>
+  <li><b>加改名</b>（⑭）。<code>↩</code> 从“打开”改成“改名”，打开用双击、<code>⌘↓</code>、<code>⌘O</code>。</li>
+  <li><b>“保存”是存到手机</b>：系统分享面板里的 <code>Save to Files</code> / <code>Save Image</code>（手机 ⑫）。</li>
+  <li><b>从手机往 Mac 传文件：这一轮做</b>（手机 ⑮ ⑯）。</li>
+</ol>
+<p style="margin:0">顺手定的：远程改文件的总闸 <code>Paired Nodes May Change Files</code> 默认开（第 3 节）；手机上不做撤销（先问代替）；这一轮不做剪切、拷贝、粘贴、拖着移动、<code>Duplicate</code>；分享上限 200 MB；预览下载的副本用完就删。</p></div>
+<div style="height:60px"></div>
+
+<script src="pixel.js"></script>
+<script src="files-data.js"></script>
+<script>
+const P = window.Pixel;
+const D = window.FILES_DATA;
+document.getElementById("gcss").textContent = P.GLITCH_CSS;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const attr = (s) => esc(s).replace(/'/g, "&#39;");
+
+// ---------- the made-up file system ----------
+// It can be changed now (third draft, files-v0 §12): each preset starts again from the original.
+const HOME = D.HOME;
+const PRISTINE = structuredClone(D.root);
+const byPath = new Map();
+const index = (n, path) => { n.path = path; byPath.set(path, n); for (const c of n.children ?? []) index(c, `${path}/${c.name}`); };
+function buildTree() {
+  byPath.clear();
+  index(structuredClone(PRISTINE), HOME);
+  for (const [p, names] of Object.entries(D.ABOVE)) {
+    if (!byPath.has(p)) byPath.set(p, { name: p === "/" ? "" : p.split("/").pop(), kind: "dir", path: p, children: [] });
+    const dir = byPath.get(p);
+    dir.children = names.map((n) => { const cp = (p === "/" ? "" : p) + "/" + n; return byPath.get(cp) ?? (byPath.set(cp, { name: n, kind: "dir", path: cp, children: [], mtime: "9/12" }), byPath.get(cp)); });
+  }
+}
+buildTree();
+const node = (p) => byPath.get(p) ?? null;
+const resolve = (n) => n && n.kind === "link" ? node(n.target) : n;
+const isDir = (n) => { const r = resolve(n); return !!r && r.kind === "dir"; };
+const parentOf = (p) => p === "/" ? null : (p.slice(0, p.lastIndexOf("/")) || "/");
+const baseName = (p) => p === "/" ? "/" : p.slice(p.lastIndexOf("/") + 1);
+const kids = (p, hidden) => {
+  const n = resolve(node(p));
+  if (!n || n.locked) return [];
+  return [...(n.children ?? [])].filter((c) => hidden || !c.hidden)
+    .sort((a, b) => (isDir(b) - isDir(a)) || a.name.replace(/^\./, "").localeCompare(b.name.replace(/^\./, ""), "en", { sensitivity: "base" }));
+};
+const size = (n) => {
+  if (n.kind !== "file") return "";
+  const b = n.size;
+  if (b < 1000) return `${b}B`;
+  if (b < 1e6) return `${(b / 1024).toFixed(b < 10240 ? 1 : 0)}K`;
+  if (b < 1e9) return `${(b / 1048576).toFixed(b < 10485760 ? 1 : 0)}M`;
+  return `${(b / 1073741824).toFixed(1)}G`;
+};
+const sizeWords = (b) => b < 1000 ? `${b} bytes` : b < 1e6 ? `${(b / 1000).toFixed(1)} KB` : `${(b / 1e6).toFixed(1)} MB`;
+const kindWord = (n) => {
+  if (isDir(n)) return "Folder";
+  if (n.lang) return n.lang;
+  return { image: "PNG Image", pdf: "PDF Document", archive: "ZIP Archive", binary: "Document", text: "Plain Text" }[n.type] ?? "Document";
+};
+const fileCount = (p, hidden) => kids(p, hidden).length;
+
+// ---------- state ----------
+const S = {
+  look: "pixel", light: false,
+  mac: "home",
+  open: true, root: HOME, expanded: new Set(), sel: [], anchor: null, view: null, hidden: false, back: [], fwd: [],
+  panes: 1, focus: 0, viewOf: ["simple", "terminal"], reply: [[], []], typed: ["", ""],
+  menu: null, ql: false, narrow: false, sideW: 300, float: false, preview: true, warn: null,
+  // third draft: a name being typed in place, the box that asks, the line under the list, what ⌘Z undoes
+  edit: null, dlg: null, note: null, undo: [], redo: [],
+  ph: { step: "browse", root: HOME + "/Projects/lumen", expanded: new Set(), select: false, sel: [], preview: null, added: [] },
+  // Settings › Nodes on the Mac mini (files-v0 §7.5): its own switch, and what each paired device may read.
+  set: { read: true, change: true, menu: null, mbp: { mode: "home", folders: [] }, phone: { mode: "folders", folders: [HOME + "/Projects/lumen", HOME + "/Documents"] }, root: HOME },
+};
+// Files that may hold a password (files-v0 §7.3): by path and name only, the contents are not read.
+const isSensitive = (p) => {
+  const name = baseName(p);
+  if (p.startsWith(HOME + "/.ssh/") && !name.endsWith(".pub") && name !== "config" && name !== "known_hosts") return true;
+  if ([HOME + "/.codex/auth.json", HOME + "/.aws/credentials", HOME + "/.netrc", HOME + "/.git-credentials"].includes(p)) return true;
+  if (name === ".env" || (/^\.env\./.test(name) && !/^\.env\.(example|sample|template)$/.test(name))) return true;
+  return /\.(pem|key|p12|pfx|keychain-db)$/.test(name) || /^id_(rsa|ecdsa|ed25519)$/.test(name);
+};
+
+// ---------- changing files (files-v0 §12): new, rename, to the Trash, and back ----------
+const LANG = { ts: "TypeScript", tsx: "TypeScript JSX", js: "JavaScript", md: "Markdown", json: "JSON", sql: "SQL" };
+// Where a terminal runs now (the list's terminals): a folder holding one is asked about before it moves.
+const RUNNING = D.LIST.flatMap((g) => g.rows.filter((r) => r.kind === "term").map((r) => ({ name: r.name, at: r.workdir ?? g.cwd })));
+const runsIn = (p) => RUNNING.find((t) => t.at === p || t.at.startsWith(p + "/")) ?? null;
+// What cannot be renamed or moved here: outside home, AgentSwitch's own places, and the folders holding them.
+const fixed = (p) => !p.startsWith(HOME + "/") || !!node(p)?.locked || [...byPath.keys()].some((k) => k.startsWith(p + "/") && byPath.get(k).locked);
+/** A name typed for a new item in `dir` (or for `path`, renamed): what is wrong with it, or what to mind. */
+function checkName(dir, value, { renaming = null } = {}) {
+  const name = value.trim();
+  if (!name) return { error: "请输入名称。" };
+  if (renaming && name.includes("/")) return { error: "名称不能包含“/”。" };
+  const segs = name.split("/").filter(Boolean);
+  if (segs.some((x) => x === "." || x === "..")) return { error: "名称不能是“.”或“..”。" };
+  const full = (dir === "/" ? "" : dir) + "/" + segs.join("/");
+  if (full !== renaming && node(full)) return { error: `此位置已有“${segs.join("/")}”。请换一个名称。` };
+  if (value !== value.trim()) return { warn: "名称前后有空格。" };
+  return {};
+}
+const unindex = (p) => { for (const k of [...byPath.keys()]) if (k === p || k.startsWith(p + "/")) byPath.delete(k); };
+/** New folders, or a file at the end; `a/b/c.ts` makes the folders on the way. Returns the new path and the topmost
+ *  new one (what undo takes away). */
+function makeItem(dir, value, kind) {
+  const segs = value.trim().split("/").filter(Boolean);
+  let parent = node(dir), path = dir === "/" ? "" : dir, top = null;
+  segs.forEach((x, i) => {
+    path += "/" + x;
+    let n = node(path);
+    if (!n) {
+      const ext = x.includes(".") ? x.split(".").pop() : "";
+      n = i === segs.length - 1 && kind === "file"
+        ? { name: x, kind: "file", size: 0, mtime: "Now", type: "text", text: "", lang: LANG[ext] }
+        : { name: x, kind: "dir", children: [], mtime: "Now" };
+      if (x.startsWith(".")) n.hidden = true;
+      parent.children = [...(parent.children ?? []), n];
+      index(n, path);
+      top ??= path;
+    }
+    parent = n;
+  });
+  return { path, top };
+}
+function takeOut(p) {
+  const n = node(p), parent = node(parentOf(p));
+  const at = parent.children.indexOf(n);
+  parent.children.splice(at, 1);
+  unindex(p);
+  return { n, parent: parentOf(p), at, path: p };
+}
+function putBack(r) {
+  const parent = node(r.parent);
+  parent.children.splice(Math.min(r.at, parent.children.length), 0, r.n);
+  index(r.n, r.path);
+}
+function renameItem(p, name) {
+  const n = node(p), to = parentOf(p) + "/" + name;
+  unindex(p);
+  n.name = name;
+  index(n, to);
+  const move = (q) => q === p ? to : q.startsWith(p + "/") ? to + q.slice(p.length) : q;
+  S.expanded = new Set([...S.expanded].map(move));
+  S.sel = S.sel.map(move);
+  if (S.root === p || S.root.startsWith(p + "/")) S.root = move(S.root);
+  return to;
+}
+/** One thing done in the column, and how ⌘Z takes it back (HIG Undo and redo: many steps, the result shown). */
+function did(op) { S.undo.push(op); S.redo = []; }
+function undo() {
+  const op = S.undo.pop();
+  if (!op) return;
+  op.back(); S.redo.push(op);
+}
+function redo() {
+  const op = S.redo.pop();
+  if (!op) return;
+  op.again(); S.undo.push(op);
+}
+/** Show `p`: the folders above it open (the tree), or its level the current one (folders), and it selected. */
+function reveal(p) {
+  if (viewNow() === "tree") { for (let q = parentOf(p); q && q !== S.root && q.startsWith(S.root); q = parentOf(q)) S.expanded.add(q); }
+  else if (parentOf(p) !== S.root) S.root = parentOf(p);
+  S.sel = [p]; S.anchor = p;
+}
+const quoted = (paths) => paths.length === 1 ? `“${baseName(paths[0])}”` : ` ${paths.length} 项`;
+/** ⌘⌫ / Move to Trash: not asked (HIG Alerts: undoable), unless a terminal runs in it. */
+function toTrash(paths, { force = false } = {}) {
+  paths = paths.filter((p) => node(p));
+  if (!paths.length) return;
+  if (paths.some(fixed)) { S.note = "此文件夹中有 AgentSwitch 的凭据，不能在这里改名或移到废纸篓。"; return; }
+  const busy = !force && paths.map(runsIn).find(Boolean);
+  if (busy) { S.dlg = { kind: "inuse", op: "trash", paths, term: busy.name }; return; }
+  let gone = [];
+  const once = () => { gone = paths.map(takeOut); S.sel = S.sel.filter((p) => !paths.includes(p)); S.note = `已将${quoted(paths)}移到废纸篓。⌘Z 可放回。`; };
+  once();
+  did({ back: () => { [...gone].reverse().forEach(putBack); S.sel = [...paths]; reveal(paths[0]); S.sel = [...paths]; S.note = `已放回${quoted(paths)}。`; }, again: once });
+}
+/** + / a folder's menu / ⌥⌘N ⇧⌘N: a row with a box for the name, where it will be (files-v0 §12.2). */
+function startNew(kind, inside = null) {
+  let dir = inside;
+  if (!dir) {
+    const one = S.sel.length === 1 ? node(S.sel[0]) : null;
+    // The tree as VS Code: in the selected folder, beside the selected file; the folders view as Finder: this level.
+    dir = viewNow() === "tree" && one ? (isDir(one) ? one.path : parentOf(one.path)) : S.root;
+  }
+  if (viewNow() === "tree") { if (dir !== S.root) { for (let q = dir; q && q !== S.root; q = parentOf(q)) S.expanded.add(q); } }
+  else if (dir !== S.root) goTo(dir);
+  S.menu = null;
+  S.edit = { mode: "new", kind, dir, value: "" };
+}
+function startRename(p) {
+  const n = node(p);
+  if (!n || fixed(p)) { if (n) S.note = "此文件夹中有 AgentSwitch 的凭据，不能在这里改名或移到废纸篓。"; return; }
+  S.menu = null;
+  S.edit = { mode: "rename", path: p, value: n.name };
+}
+/** ↩ in the box, or a click elsewhere with a good name (VS Code); a bad one is let go. */
+function commitEdit({ force = false } = {}) {
+  const ed = S.edit;
+  if (!ed) return;
+  const dir = ed.mode === "new" ? ed.dir : parentOf(ed.path);
+  const check = checkName(dir, ed.value, { renaming: ed.mode === "rename" ? ed.path : null });
+  if (check.error) return false;
+  const name = ed.value.trim();
+  if (ed.mode === "rename") {
+    if (name === node(ed.path).name) { S.edit = null; return true; }
+    const busy = !force && isDir(node(ed.path)) && runsIn(ed.path);
+    if (busy) { S.dlg = { kind: "inuse", op: "rename", path: ed.path, term: busy.name }; return true; }
+    const from = ed.path, old = node(from).name;
+    let to = null;
+    const once = () => { to = renameItem(from, name); reveal(to); };
+    once();
+    did({ back: () => { renameItem(to, old); reveal(from); S.note = `已改回“${old}”。`; }, again: once });
+  } else {
+    const made = makeItem(dir, name, ed.kind);
+    let taken = null;
+    const shown = viewNow() === "tree" ? made.path : made.top;
+    reveal(shown);
+    if (baseName(made.path).startsWith(".") && !S.hidden) S.note = `已创建“${baseName(made.path)}”。它是隐藏文件，可在 ⋯ › Show Hidden Files 中显示。`;
+    did({ back: () => { taken = takeOut(made.top); S.sel = []; S.note = `已将“${baseName(made.top)}”移到废纸篓。`; }, again: () => { putBack(taken); reveal(shown); } });
+  }
+  S.edit = null;
+  return true;
+}
+const C = () => S.look === "classic";
+const look = () => `${C() ? "classic" : ""} ${S.light ? "light" : ""}`;
+const viewNow = () => S.view ?? (C() ? "folders" : "tree");
+const PANES = [
+  { term: "t1", name: "排序改成最近使用", ag: "cc", st: "busy", cwd: HOME + "/Projects/lumen", short: "~/Projects/lumen", git: "main ±2" },
+  { term: "t2", name: "refreshToken 字段", ag: "codex", st: "idle", cwd: HOME + "/Projects/harbor-api/src", short: "~/Projects/harbor-api/src", git: "auth ±1" },
+];
+const paneOf = (i) => S.panes === 1 ? PANES[0] : PANES[i];
+const showsPane = (i) => S.open && S.root === paneOf(i).cwd;
+
+function goTo(path, { history = true } = {}) {
+  if (path === S.root) return;
+  if (history) { S.back.push(S.root); S.fwd = []; }
+  S.root = path; S.sel = []; S.anchor = null; S.ql = false;
+}
+function preset(name) {
+  S.mac = name; S.menu = null; S.ql = false; S.narrow = false; S.open = true; S.view = null; S.hidden = false; S.back = []; S.fwd = [];
+  S.expanded = new Set(); S.sel = []; S.anchor = null; S.panes = 1; S.focus = 0; S.reply = [[], []]; S.typed = ["", ""]; S.viewOf = ["simple", "terminal"];
+  S.float = false; S.preview = true; S.warn = null; S.sideW = 300;
+  S.edit = null; S.dlg = null; S.note = null; S.undo = []; S.redo = [];
+  buildTree();
+  const lumen = HOME + "/Projects/lumen";
+  if (name === "home") { S.root = HOME; }
+  if (name === "list") { S.root = lumen; S.menu = { kind: "list", cwd: lumen, id: "g0", hi: "files" }; }
+  if (name === "pane") { S.panes = 2; S.focus = 1; S.root = PANES[1].cwd; S.expanded = new Set([PANES[1].cwd + "/routes"]); }
+  if (name === "preview") { S.root = lumen; S.expanded = new Set([lumen + "/src"]); S.sel = [lumen + "/src/app.ts"]; }
+  if (name === "ctx") { S.root = lumen; S.expanded = new Set([lumen + "/src"]); S.sel = [lumen + "/src/app.ts"]; S.menu = { kind: "file", path: lumen + "/src/app.ts", hi: "finder" }; }
+  if (name === "reply") { S.root = lumen; S.expanded = new Set([lumen + "/src", lumen + "/docs"]); S.sel = [lumen + "/src/store.ts", lumen + "/docs/design.md"]; S.reply[0] = [...S.sel]; }
+  if (name === "sensitive") { S.root = lumen; S.hidden = true; S.expanded = new Set([lumen + "/src"]); S.reply[0] = [lumen + "/src/store.ts"]; S.sel = [lumen + "/.env"]; S.warn = { pane: 0, files: [lumen + "/.env"], sens: [lumen + "/.env"] }; }
+  if (name === "ql") { S.root = lumen; S.expanded = new Set([lumen + "/docs"]); S.sel = [lumen + "/docs/logo.png"]; S.ql = true; }
+  if (name === "float") { S.float = true; S.root = lumen; S.expanded = new Set([lumen + "/src"]); S.sel = [lumen + "/src/store.ts"]; S.reply[0] = [lumen + "/src/store.ts"]; }
+  if (name === "wide") { S.sideW = 500; S.root = lumen; S.expanded = new Set([lumen + "/src", lumen + "/src/components"]); S.sel = [lumen + "/src/store.ts"]; }
+  if (name === "narrow") { S.narrow = true; S.root = lumen; S.expanded = new Set([lumen + "/src"]); }
+  // third draft (files-v0 §12)
+  if (name === "newmenu") { S.root = lumen; S.expanded = new Set([lumen + "/src"]); S.menu = { kind: "new" }; }
+  if (name === "newin") { S.root = lumen; S.edit = { mode: "new", kind: "dir", dir: lumen, value: "docs" }; }
+  if (name === "folderctx") { S.root = lumen; S.sel = [lumen + "/src"]; S.menu = { kind: "file", path: lumen + "/src", hi: "new" }; }
+  if (name === "rename") { S.root = lumen; S.expanded = new Set([lumen + "/src"]); S.sel = [lumen + "/src/app.ts"]; S.edit = { mode: "rename", path: lumen + "/src/app.ts", value: "app.ts" }; }
+  if (name === "trash") { S.root = lumen; S.expanded = new Set([lumen + "/docs"]); S.sel = [lumen + "/docs/logo.png"]; }
+  if (name === "inuse") { S.root = HOME + "/Projects"; S.sel = [HOME + "/Projects/harbor-api"]; S.dlg = { kind: "inuse", op: "trash", paths: [HOME + "/Projects/harbor-api"], term: "refreshToken 字段" }; }
+  // Folders, one level at a time: the level the selection is in (what was added before stays in the reply).
+  if (viewNow() === "folders" && S.sel.length) { S.root = parentOf(S.sel.at(-1)); S.sel = S.sel.filter((p) => parentOf(p) === S.root); }
+  if (S.menu?.kind === "file" && viewNow() === "folders") S.menu.path = S.sel[0];
+  // Moved to the Trash just now: the line under the list, and ⌘Z.
+  if (name === "trash") toTrash([...S.sel]);
+}
+/** Classic, the column 460 points or wider, as folders: Finder's columns (files-v0 §3.3, user: 3可以). */
+const columns = () => C() && viewNow() === "folders" && S.sideW >= 460;
+const floated = () => S.open && (S.float || S.narrow);
+
+// ---------- icons: pixel sprites, and the classic look's line drawings ----------
+const PX = {
+  folder: ["###......", "#########", "#.......#", "#.......#", "#.......#", "#########"],
+  list: ["#########", "#..#....#", "#..#....#", "#..#....#", "#..#....#", "#########"],
+  record: ["#########", "#.......#", "#.#####.#", "#.......#", "#.###...#", "#.......#", "#########"],
+  terminal: ["#########", "#.......#", "#.#.....#", "#..#....#", "#.#..##.#", "#.......#", "#########"],
+  right: ["#########", "#...#####", "#...#####", "#...#####", "#...#####", "#########"],
+  down: ["#########", "#.......#", "#.......#", "#########", "#########", "#########"],
+  plus: ["....#....", "....#....", "#########", "....#....", "....#...."],
+  home: ["....#....", "...###...", "..##.##..", ".##...##.", "#########", ".#.....#.", ".#.##..#.", ".#.##..#."],
+  share: ["....#....", "...###...", "..#.#.#..", "....#....", "##..#..##", "#.......#", "#.......#", "#########"],
+  trash: ["...###...", "#########", ".#.....#.", ".#.#.#.#.", ".#.#.#.#.", ".#.#.#.#.", ".#.....#.", "..#####.."],
+};
+const RAIL = {
+  dispatch: ["......###", ".....#...", "....#....", "###.#####", "###......", "....#....", ".....#...", "......###"],
+  terminals: ["#########", "#.......#", "#.#.....#", "#..#....#", "#.#..##.#", "#.......#", "#########"],
+  browser: [".#####.", "#..#..#", "#######", "#..#..#", "#######", "#..#..#", ".#####."],
+  clash: ["#.....#", "##...##", "#######", "#.#.#.#", "#######", ".#####."],
+  settings: ["#........", "#####....", "#........", "....#....", "#########", "....#....", "..#......", "#########", "..#......"],
+};
+const LINE = {
+  dispatch: '<circle cx="4.5" cy="12" r="2"/><path d="M6.5 12H19M6.5 12c5 0 5-6 10-6H19M6.5 12c5 0 5 6 10 6H19"/>',
+  terminals: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 10l3 2-3 2M12.5 15H17"/>',
+  terminal: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 10l3 2-3 2M12.5 15H17"/>',
+  browser: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c3.2 3 3.2 14 0 17M12 3.5c-3.2 3-3.2 14 0 17"/>',
+  clash: '<path d="M5 10l1-5 3.5 3h5L18 5l1 5v3.5a7 7 0 0 1-14 0z"/><path d="M9.5 13h.01M14.5 13h.01"/>',
+  settings: '<path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="1.9"/><circle cx="15" cy="12" r="1.9"/><circle cx="8" cy="17" r="1.9"/>',
+  folder: '<path d="M3.5 7.5V17.5a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2V9.5a2 2 0 0 0-2-2h-6.8l-2-2.5H5.5a2 2 0 0 0-2 2z"/>',
+  doc: '<path d="M7 3.5h6.5L18.5 8.5v10a2 2 0 0 1-2 2h-9.5a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2z"/><path d="M13.5 3.5v5h5"/>',
+  code: '<path d="M7 3.5h6.5L18.5 8.5v10a2 2 0 0 1-2 2h-9.5a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2z"/><path d="M10.2 12.2l-1.8 1.8 1.8 1.8M13.8 12.2l1.8 1.8-1.8 1.8"/>',
+  image: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M5 18l5-5 4 4 2.5-2.5L20 18"/>',
+  pdf: '<path d="M7 3.5h6.5L18.5 8.5v10a2 2 0 0 1-2 2h-9.5a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2z"/><path d="M13.5 3.5v5h5M8.5 13.5h7M8.5 16.5h5"/>',
+  archive: '<rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M12 4v3M12 9v2M11 13h2v3h-2z"/>',
+  lock: '<rect x="5.5" y="10.5" width="13" height="9" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>',
+  link: '<path d="M10 14l4-4M8.5 11.5l-1.8 1.8a3 3 0 0 0 4.2 4.2l1.8-1.8M15.5 12.5l1.8-1.8a3 3 0 0 0-4.2-4.2l-1.8 1.8"/>',
+  home: '<path d="M4 11l8-6.5 8 6.5"/><path d="M6.5 9.5V19h11V9.5"/>',
+  more: '<circle cx="6" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="18" cy="12" r="1.2" fill="currentColor"/>',
+  x: '<path d="M7 7l10 10M17 7L7 17"/>',
+  chevR: '<path d="M9.5 6l6 6-6 6"/>', chevL: '<path d="M14.5 6l-6 6 6 6"/>', chevD: '<path d="M6 9.5l6 6 6-6"/>',
+  list: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M9 5v14"/>',
+  record: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h5"/>',
+  right: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M12 5v14"/><path fill="currentColor" stroke="none" opacity=".4" d="M12 5h6a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-6z"/>',
+  down: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 12h18"/><path fill="currentColor" stroke="none" opacity=".4" d="M3 12h18v4a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  laptop: '<rect x="5" y="5" width="14" height="10" rx="1.5"/><path d="M3 18.5h18"/>',
+  camera: '<path d="M4 8.5a2 2 0 0 1 2-2h2l1.5-2h5L16 6.5h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.2"/>',
+  clip: '<rect x="6" y="4.5" width="12" height="16" rx="2"/><path d="M9.5 4.5V3.5h5v1M9 10h6M9 13.5h6M9 17h4"/>',
+  keys: '<rect x="3" y="6.5" width="18" height="11" rx="2"/><path d="M7 10h.01M10.5 10h.01M14 10h.01M17.5 10h.01M8 14h8"/>',
+  warn: '<path d="M10.3 4.9a2 2 0 0 1 3.4 0l7 12.2a2 2 0 0 1-1.7 3H5a2 2 0 0 1-1.7-3z"/><path d="M12 9.5v4.2M12 16.8h.01"/>',
+  phone: '<rect x="7" y="3" width="10" height="18" rx="2.6"/><path d="M11 18h2"/>',
+  share: '<path d="M12 3.5v11M8 7.5l4-4 4 4"/><path d="M8.5 10.5H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-1.5"/>',
+  trash: '<path d="M4.5 6.5h15M9.5 6.5V4.5h5v2M6.5 6.5l1 13a1.5 1.5 0 0 0 1.5 1.4h6a1.5 1.5 0 0 0 1.5-1.4l1-13M10 10.5v6.5M14 10.5v6.5"/>',
+  pencil: '<path d="M15.5 5l3.5 3.5L9 18.5H5.5V15z"/><path d="M13.5 7l3.5 3.5"/>',
+  copy: '<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/>',
+  folderPlus: '<path d="M3.5 7.5V17.5a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2V9.5a2 2 0 0 0-2-2h-6.8l-2-2.5H5.5a2 2 0 0 0-2 2z"/><path d="M12 10.5v6M9 13.5h6"/>',
+  docPlus: '<path d="M7 3.5h6.5L18.5 8.5v10a2 2 0 0 1-2 2h-9.5a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2z"/><path d="M13.5 3.5v5h5M12 11.5v6M9 14.5h6"/>',
+  eye: '<path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
+  sort: '<path d="M8 4.5v15M4.5 8L8 4.5 11.5 8M16 19.5v-15M12.5 16l3.5 3.5 3.5-3.5"/>',
+  reply: '<path d="M10 6.5L4.5 12l5.5 5.5"/><path d="M4.5 12H14a5.5 5.5 0 0 1 5.5 5.5v1"/>',
+  airdrop: '<circle cx="12" cy="12" r="1.6"/><path d="M8.5 15.5a5 5 0 1 1 7 0M6 18a8.5 8.5 0 1 1 12 0"/>',
+  bubble: '<path d="M12 4.5c4.7 0 8.5 3 8.5 6.8s-3.8 6.8-8.5 6.8c-1 0-2-.1-2.9-.4L5 19.5l1.2-3.4C4.5 14.9 3.5 13.2 3.5 11.3 3.5 7.5 7.3 4.5 12 4.5z"/>',
+  mail: '<rect x="3.5" y="6" width="17" height="12" rx="2"/><path d="M4 7l8 6 8-6"/>',
+  notes: '<rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4"/>',
+  plusminus: '<path d="M12 4.5v7M8.5 8h7M8.5 17h7"/>',
+  upload: '<path d="M12 15V4.5M8 8.5l4-4 4 4"/><path d="M4.5 14.5v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/>',
+};
+const line = (k, size = 16, w) => `<svg class="li" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w ?? (size < 15 ? 2.1 : 1.6)}" stroke-linecap="round" stroke-linejoin="round">${LINE[k]}</svg>`;
+const tbIcon = (k) => C() ? line(k, 16) : P.sprite(PX[k], { px: 1.5 });
+const railIcon = (k) => C() ? line(k, 20) : P.sprite(RAIL[k], { px: 2 });
+const fileIcon = (n) => {
+  if (n.locked) return line("lock", 15);
+  if (n.kind === "link") return line("link", 15);
+  if (isDir(n)) return line("folder", 17);
+  if (n.type === "image") return line("image", 16);
+  if (n.type === "pdf") return line("pdf", 16);
+  if (n.type === "archive") return line("archive", 16);
+  return line(n.lang ? "code" : "doc", 16);
+};
+const AGENT_LINE = { cc: "✳", codex: "›_", oc: "▢", pi: "π" };
+const agent = (a) => C() ? `<span class="cag">${AGENT_LINE[a]}</span>` : P.sprite(P.AGENT_PX[a], { px: 2 });
+const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+let frame = 0;
+const spin = () => C() ? `<span class="cspin"></span>` : `<span class="spin" data-spin>${SPIN[frame % SPIN.length]}</span>`;
+const mark = (st) => st === "busy" ? spin() : `<span class="sq" style="background:${st === "waiting" ? "var(--amber)" : "var(--green)"}"></span>`;
+const B = (word, kind = "", act = "", extra = "") => C() ? `<button class="cbtn ${kind}" ${act ? `data-act="${act}"` : ""} ${extra}>${word}</button>` : `<button class="btn ${kind}" ${act ? `data-act="${act}"` : ""} ${extra}>[ ${word} ]</button>`;
+const tb = (k, act, tip, { on = false, data = "" } = {}) => `<button class="tb ${on ? "on" : ""}" data-act="${act}" ${data} aria-label="${attr(tip)}">${tbIcon(k)}<span class="tip">${esc(tip)}</span></button>`;
+
+// ---------- 1. the window ----------
+function drawMac() {
+  const win = document.getElementById("win");
+  win.className = `win ${look()} ${S.narrow ? "narrow" : ""}`;
+  const float = floated();
+  win.style.setProperty("--fw", S.open && !float ? `${S.sideW}px` : "0px");
+  const f = paneOf(S.focus);
+  const head = S.panes === 1 ? PANES[0] : f;
+  const viewTip = S.viewOf[S.panes === 1 ? 0 : S.focus] === "simple" ? "Terminal View ⌘⇧E" : "Simple View ⌘⇧E";
+  const viewIcon = S.viewOf[S.panes === 1 ? 0 : S.focus] === "simple" ? "terminal" : "record";
+  const filesTip = showsPane(S.focus) ? "Hide Files ⌘⇧F" : "Show in Files ⌘⇧F";
+  const bar = `<div class="bar"><div class="lights"><i></i><i></i><i></i></div>
+    ${tb("list", "", "List ⌘B")}
+    <span class="ttl">${esc(head.name)} <small>${esc(head.git)}</small></span>
+    <div class="end">${tb("folder", "barfiles", filesTip, { on: showsPane(S.focus) })}${tb(viewIcon, "view", viewTip)}${tb("right", "split", "Split Right ⌘D")}${tb("down", "", "Split Down ⌘⇧D")}${tb("plus", "", "New Terminal ⌘T")}</div></div>`;
+  const rail = `<div class="rail">${["dispatch", "terminals", "browser", "clash"].map((k) => `<span class="ic ${k === "terminals" ? "on" : ""}">${railIcon(k)}</span>`).join("")}<span class="gap"></span><span class="ic" style="margin-bottom:12px">${railIcon("settings")}</span></div>`;
+  const center = `<div class="center" style="--panes:${S.panes}">${Array.from({ length: S.panes }, (_, i) => paneHtml(i)).join("")}${S.ql ? qlHtml() : ""}</div>`;
+  const files = S.open ? filesHtml({ float }) : "";
+  const selInfo = S.open && S.sel.length ? `<span>${S.sel.length} Selected${S.sel.length > 1 ? ` · ${sizeWords(S.sel.reduce((a, p) => a + (node(p)?.size ?? 0), 0))}` : ""}</span>` : "";
+  const status = `<div class="status"><span><span class="sq" style="background:var(--green)"></span> ${C() ? "Gateway OK" : "Gateway"}</span><span>iPhone Online</span><span class="sp"></span>${selInfo}<span>${f.ag === "cc" ? "Claude Code · Opus 5.5" : "Codex · GPT-6 Astra"}</span><span>${S.viewOf[S.panes === 1 ? 0 : S.focus] === "simple" ? "Simple" : "120×38"}</span></div>`;
+  win.innerHTML = `${bar}<div class="body">${rail}${listHtml()}${center}${files}${S.menu ? menuHtml() : ""}${S.dlg ? dlgHtml() : ""}</div>${status}`;
+  const anchor = win.querySelector(".menu[data-anchor]");
+  if (anchor) { const el = win.querySelector(`[data-ctx-id="${anchor.dataset.anchor}"]`); if (el) anchor.style.top = `${el.offsetTop + el.offsetHeight - 2}px`; }
+  document.getElementById("capMac").innerHTML = capMac();
+  fitAll();
+  const fin = document.getElementById("fin");
+  if (fin && !S.dlg && document.activeElement !== fin) {
+    fin.focus({ preventScroll: true });
+    const v = fin.value, dot = v.lastIndexOf(".");
+    if (S.edit.mode === "rename" && !isDir(node(S.edit.path)) && dot > 0) fin.setSelectionRange(0, dot); else fin.select();
+  }
+  // A row's right click: the system's menu opens at the row, kept inside the window.
+  const fm = win.querySelector(".menu[data-file]");
+  if (fm) {
+    const row = [...win.querySelectorAll(".files [data-row]")].find((r) => r.dataset.row === S.menu.path);
+    const body = win.querySelector(".body"), k = body.getBoundingClientRect().width / body.offsetWidth;
+    if (row) {
+      const b = body.getBoundingClientRect(), r = row.getBoundingClientRect();
+      const x = (r.left - b.left) / k + 60, y = (r.bottom - b.top) / k - 2;
+      fm.style.left = `${Math.max(8, Math.min(x, body.offsetWidth - fm.offsetWidth - 8))}px`;
+      fm.style.top = `${Math.max(4, Math.min(y, body.offsetHeight - fm.offsetHeight - 4))}px`;
+    }
+  }
+}
+
+function listHtml() {
+  const out = [`<div class="list"><div class="hd">${C() ? "Terminals" : "// TERMINALS"}</div>`];
+  D.LIST.forEach((g, gi) => {
+    const ctx = S.menu?.kind === "list" && S.menu.id === `g${gi}`;
+    out.push(C()
+      ? `<div class="ldir ${ctx ? "ctx" : ""}" data-ctx="${attr(g.cwd)}" data-ctx-id="g${gi}"><span class="chev">${line("chevD", 11, 2.4)}</span><span style="color:var(--accent)">${line("folder", 15)}</span><span class="name">${esc(g.short.split("/").pop())}</span><span class="count">${esc(g.git)}</span></div>`
+      : `<div class="ldir ${ctx ? "ctx" : ""}" data-ctx="${attr(g.cwd)}" data-ctx-id="g${gi}"><span class="chev">▾</span><span class="name">${esc(g.short)}</span><span class="count">${esc(g.git)}</span></div>`);
+    g.rows.forEach((r, i) => {
+      const last = i === g.rows.length - 1;
+      const on = r.kind === "term" && (S.panes === 1 ? r.id === "t1" : r.id === paneOf(S.focus).term);
+      const id = `g${gi}r${i}`, rc = S.menu?.kind === "list" && S.menu.id === id ? "ctx" : "";
+      const meta = r.kind === "term" ? agent(r.ag) : `${agent(r.ag)}<span>${C() ? `${r.at} ago` : r.at}</span>`;
+      out.push(C()
+        ? `<div class="row ${r.kind} ${on ? "sel" : ""} ${rc}" data-ctx="${attr(r.workdir ?? g.cwd)}" data-ctx-id="${id}"><span>${r.kind === "term" ? mark(r.st) : `<span style="color:var(--ink3)">${line("doc", 13)}</span>`}</span><span></span><span class="nm">${esc(r.name)}</span><span class="mt">${meta}</span></div>`
+        : `<div class="row ${r.kind} ${on ? "sel" : ""} ${rc}" data-ctx="${attr(r.workdir ?? g.cwd)}" data-ctx-id="${id}"><span class="ix">${r.n ?? ""}</span><span class="tr">${last ? "└─" : "├─"}</span><span>${r.kind === "term" ? mark(r.st) : ""}</span><span class="nm">${esc(r.name)}</span><span class="mt">${meta}</span></div>`);
+    });
+  });
+  out.push(`</div>`);
+  return out.join("");
+}
+
+function paneHtml(i) {
+  const p = paneOf(i), view = S.viewOf[i];
+  const title = S.panes > 1 ? `<div class="sph"><span>${i + 1}</span>${mark(p.st)}<b>${esc(p.name)}</b><span class="pth">${esc(p.short)}</span>${agent(p.ag)}
+      <span class="end">${tb("folder", "panefiles", showsPane(i) ? "Hide Files" : "Show in Files", { on: showsPane(i), data: `data-pane="${i}"` })}${tb(view === "simple" ? "terminal" : "record", "", view === "simple" ? "Terminal View" : "Simple View")}<button class="tb" aria-label="Close Pane">${C() ? line("x", 12) : "×"}</button></span></div>` : "<div></div>";
+  const body = view === "simple" ? recordHtml(i) : ttyHtml(i);
+  // A terminal view has no reply box: the same card, over the bottom of the pane.
+  const warn = view === "terminal" && S.warn?.pane === i ? `<div class="warnwrap">${warnHtml()}</div>` : "";
+  return `<div class="pane ${S.panes > 1 && S.focus === i ? "focus" : ""}" data-pane-body="${i}">${title}${body.main}${body.foot}${warn}</div>`;
+}
+/** Asked once, as a file that may hold a password lands in a reply (files-v0 §4; user: 发送给agent的时候加上预警). */
+function warnHtml() {
+  const w = S.warn;
+  const names = w.sens.map((p) => `<code>${esc(baseName(p))}</code>`).join("、");
+  const say = w.sens.length === 1 ? `${names} 可能含有密码或密钥。交给 agent 后，它能读到其中的内容，并可能发给模型的服务商。`
+    : `这 ${w.sens.length} 个文件可能含有密码或密钥：${names}。交给 agent 后，它能读到其中的内容，并可能发给模型的服务商。`;
+  return `<div class="warn" role="alertdialog" aria-label="Add to Reply?"><div class="h">${C() ? line("warn", 16) : ""}<span>Add to Reply?</span></div><div class="b">${say}</div><div class="a">${B("Cancel", "", "warncancel")}${B("Add", "pri", "warnadd")}</div></div>`;
+}
+const chipMark = (p) => isSensitive(p) ? `<span class="wn" title="可能含有密码或密钥。">${C() ? line("warn", 13, 2.2) : "!"}</span>` : "";
+function recordHtml(i) {
+  const files = S.reply[i];
+  const work = C() ? `<span>${line("chevR", 11, 2.4)}</span>` : "▸";
+  const main = `<div class="rec">
+    <div class="ub">把列表的排序改成按最近使用，置顶的仍然在最前。</div>
+    <div class="work">${work}<span>Worked 1m 12s · Read 3 · Edited 2</span><span class="d">+15 <i>−7</i></span></div>
+    <div class="md"><p>改好了：列表现在按最近使用排，置顶的仍然在最前。</p><ul><li>排序放在 <code class="c">store.ts</code> 里做，界面只读结果；</li><li>从没用过的排在最后，按名字。</li></ul></div>
+    <div class="ub">顺便看看规则写的和代码是不是一致。</div>
+    <div class="now">${spin()}<span>Read</span><code>docs/design.md</code><span class="t">0:08</span></div>
+  </div>`;
+  const chips = files.length ? `<div class="chips">${files.map((p, k) => `<span class="fchip ${isSensitive(p) ? "sens" : ""}">${C() ? `<span style="color:var(--ink2)">${fileIcon(node(p))}</span>` : `<i>[File #${k + 1}]</i>`}${chipMark(p)}${esc(baseName(p))}<button data-act="unreply" data-pane="${i}" data-k="${k}" aria-label="Remove">${C() ? line("x", 11) : "×"}</button></span>`).join("")}</div>` : "";
+  const text = files.length ? `对照一下 ${files.map((_, k) => `<b>[File #${k + 1}]</b>`).join(" ")}，规则和代码有没有不一致的地方<span class="caret"></span>` : `<span class="tx ph">回复…</span>`;
+  const foot = `<div class="reply">${S.warn?.pane === i ? warnHtml() : ""}${chips}<div class="box"><span style="font:16px var(--mono); color:var(--ink2)">+</span><span class="tx">${files.length ? text : "<span style='color:var(--ink3)'>回复…</span>"}</span>${B("Send", "pri")}</div></div>`;
+  return { main, foot };
+}
+function ttyHtml(i) {
+  const typed = S.typed[i];
+  const main = `<pre class="tty"><span class="d">╭──────────────────────────────────────────╮</span>
+<span class="d">│</span> <span class="u">&gt;_ OpenAI Codex</span>                          <span class="d">│</span>
+<span class="d">│</span> <span class="d">directory: ~/Projects/harbor-api/src</span>     <span class="d">│</span>
+<span class="d">╰──────────────────────────────────────────╯</span>
+
+<span class="u">› 登录接口的返回加上 refreshToken 字段</span>
+
+<span class="k">•</span> 已在 routes/auth.ts 的登录返回里加了
+  refreshToken，过期时间取配置里的
+  REFRESH_TTL。
+
+  <span class="d">└</span> npm test  <span class="g">12 passed</span>
+
+<span class="u">› ${esc(typed)}</span>▌
+
+
+
+<span class="d">  gpt-6-astra medium · ~/Projects/harbor-api/src</span></pre>`;
+  return { main, foot: "" };
+}
+
+// ---------- Files ----------
+function filesHtml({ float = false } = {}) {
+  const hd = C()
+    ? `<div class="fhd"><span class="lb">Files</span><span class="acts"><button class="ib" data-act="home" aria-label="Home">${line("home", 15)}</button><button class="ib ${S.menu?.kind === "new" ? "on" : ""}" data-act="newmenu" aria-label="New">${line("plus", 15)}</button><button class="ib ${S.menu?.kind === "more" ? "on" : ""}" data-act="more" aria-label="More">${line("more", 16)}</button><button class="ib" data-act="close" aria-label="Close">${line("x", 13)}</button></span></div>`
+    : `<div class="fhd"><span class="lb">// FILES</span><span class="acts"><button class="ib" data-act="home" aria-label="Home ⌘⇧H">${P.sprite(PX.home, { px: 1.5 })}</button><button class="ib ${S.menu?.kind === "new" ? "on" : ""}" data-act="newmenu" aria-label="New">+</button><button class="ib ${S.menu?.kind === "more" ? "on" : ""}" data-act="more" aria-label="More">⋯</button><button class="ib" data-act="close" aria-label="Close">×</button></span></div>`;
+  const body = columns() ? columnsHtml()
+    : `<div class="fl" tabindex="0" id="fl" role="tree" aria-label="${attr(S.root)}" aria-multiselectable="true">${viewNow() === "tree" ? (C() ? classicTreeHtml() : treeHtml()) : foldersHtml()}</div>`;
+  const hiddenHere = kids(S.root, true).length - kids(S.root, false).length;
+  const foot = S.sel.length ? (S.preview ? previewHtml() : selLineHtml()) : `<div class="ffoot"><span>${fileCount(S.root, S.hidden)} ${fileCount(S.root, S.hidden) === 1 ? "Item" : "Items"}</span>${!S.hidden && hiddenHere ? `<span>${hiddenHere} Hidden</span>` : ""}</div>`;
+  const note = S.note ? `<div class="fnote" role="status">${esc(S.note)}</div>` : "";
+  return `<div class="files ${float ? "float" : ""}" ${float ? `style="width:${S.sideW}px"` : ""} role="region" aria-label="Files"><span class="drag" data-act="drag" title="Drag to resize"></span>${hd}${crumbsHtml()}${body}<div class="fbot">${note}${foot}</div></div>`;
+}
+/** The box a name is typed in, in place (files-v0 §12.2, VS Code's explorer); the line under it says what is wrong. */
+function finHtml() {
+  const ed = S.edit;
+  return `<input class="fin" id="fin" value="${attr(ed.value)}" spellcheck="false" autocomplete="off" aria-label="${ed.mode === "rename" ? "Rename" : ed.kind === "dir" ? "New Folder" : "New File"}">`;
+}
+function ferrHtml(pad) {
+  const ed = S.edit;
+  const c = checkName(ed.mode === "new" ? ed.dir : parentOf(ed.path), ed.value, { renaming: ed.mode === "rename" ? ed.path : null });
+  const say = ed.value === "" ? "" : c.error ?? c.warn ?? "";
+  return `<div class="ferr ${c.warn && !c.error ? "warn" : ""}" id="ferr" data-pad="${pad}" style="padding-left:${pad}px">${esc(say)}</div>`;
+}
+const editing = (p) => S.edit?.mode === "rename" && S.edit.path === p;
+const newHere = (dir) => S.edit?.mode === "new" && S.edit.dir === dir;
+/** ⋯ › Show Preview off: the list keeps the column; what is selected is one line, and the space bar shows it. */
+function selLineHtml() {
+  const canReply = S.sel.every((p) => !node(p)?.locked);
+  const one = S.sel.length === 1 ? node(S.sel[0]) : null;
+  const total = S.sel.reduce((a, p) => a + (node(p)?.size ?? 0), 0);
+  const t = one ? `<b>${esc(one.name)}</b> · ${isDir(one) ? `${fileCount(one.kind === "link" ? one.target : one.path, true)} Items` : sizeWords(one.size)}` : `<b>${S.sel.length} Items</b> · ${sizeWords(total)}`;
+  return `<div class="fsel"><span class="t">${t}</span>${B("Add to Reply", "pri", "addreply", canReply ? "" : "disabled")}</div>`;
+}
+/** Finder's columns, the last two: the folder above (the current one marked in it) and the current folder. A folder
+ *  is gone into with one click, as in Finder's columns; the row of columns moves one to the left. */
+function columnsHtml() {
+  const up = parentOf(S.root);
+  const right = kids(S.root, S.hidden);
+  S.visible = right.map((n) => n.path);
+  const col = (list, side) => list.map((n) => crRow(n, { side, path: side === "l" && n.path === S.root })).join("");
+  return `<div class="cols"><div class="fl" role="tree" aria-label="${attr(up ?? "/")}">${up ? col(kids(up, S.hidden), "l") : ""}</div><div class="fl" tabindex="0" id="fl" role="tree" aria-label="${attr(S.root)}" aria-multiselectable="true">${newHere(S.root) ? newRowHtml() : ""}${right.length ? col(right, "r") : newHere(S.root) ? "" : `<div class="note">此文件夹为空。</div>`}</div></div>`;
+}
+/** The absolute path, every level a button; the middle folded into `…` when it does not fit. */
+function crumbsHtml() {
+  const parts = S.root === "/" ? [] : S.root.split("/").slice(1);
+  const levels = [{ name: "/", path: "/" }, ...parts.map((n, i) => ({ name: n, path: "/" + parts.slice(0, i + 1).join("/") }))];
+  // Points, roughly: a level's name and what goes with it (the classic look's folder icon, padding and chevron).
+  const budget = S.sideW - (C() ? 70 : 26);
+  let shown = levels, folded = [];
+  const width = (ls) => ls.reduce((a, l) => a + (C() ? (l.path === "/" ? 30 : l.name === "…" ? 30 : 7 * l.name.length + 34) : 7.3 * ((l.path === "/" ? 1 : l.name.length) + 3)), 0);
+  if (width(levels) > budget && levels.length > 3) {
+    let cut = 1;
+    while (cut < levels.length - 2 && width([levels[0], { name: "…" }, ...levels.slice(cut + 1)]) > budget) cut++;
+    folded = levels.slice(1, cut + 1);
+    shown = [levels[0], { name: "…", fold: true }, ...levels.slice(cut + 1)];
+  }
+  const nav = C() ? `<span class="nav"><button data-act="back" ${S.back.length ? "" : "disabled"} aria-label="Back">${line("chevL", 13, 2.2)}</button><button data-act="fwd" ${S.fwd.length ? "" : "disabled"} aria-label="Forward">${line("chevR", 13, 2.2)}</button></span>` : "";
+  const segs = shown.map((l, i) => {
+    const cur = l.path === S.root;
+    const sep = i === 0 ? "" : C() ? `<span class="sl">${line("chevR", 10, 2.4)}</span>` : "";
+    if (l.fold) return `${sep}<button class="seg2" data-act="fold" aria-label="${attr(folded.map((x) => x.name).join(" / "))}">…</button>${C() ? "" : `<span class="sl">/</span>`}`;
+    if (C()) return `${sep}<button class="seg2 ${cur ? "cur" : ""}" data-act="crumb" data-path="${attr(l.path)}" ${l.path === "/" ? 'aria-label="Macintosh HD" title="Macintosh HD" style="min-width:0"' : ""}>${l.path === "/" ? line("laptop", 13) : line("folder", 13) + `<span class="t">${esc(l.name)}</span>`}</button>`;
+    return `<button class="seg2 ${cur ? "cur" : ""}" data-act="crumb" data-path="${attr(l.path)}">${l.path === "/" ? "/" : esc(l.name)}</button>${l.path === "/" ? "" : `<span class="sl">/</span>`}`;
+  }).join("");
+  S.folded = folded;
+  return `<div class="crumbs">${nav}${segs}</div>`;
+}
+/** Pixel: the tree, `tree -F` in two-cell lines (ui-v0 §7.2 1); ▸ ▾ only open and close (§7.2 6). */
+function treeHtml() {
+  const rows = [];
+  const walk = (p, stems) => {
+    const list = kids(p, S.hidden);
+    if (newHere(p)) rows.push({ edit: true, stems, last: !list.length, depth: stems.length });
+    list.forEach((n, i) => {
+      const last = i === list.length - 1;
+      const dir = isDir(n);
+      const open = dir && S.expanded.has(n.path);
+      rows.push({ n, stems, last, dir, open, depth: stems.length });
+      if (open && !n.locked) walk(n.kind === "link" ? n.target : n.path, [...stems, last]);
+    });
+  };
+  walk(S.root, []);
+  S.visible = rows.filter((r) => !r.edit).map((r) => r.n.path);
+  const up = parentOf(S.root);
+  const out = up ? [`<div class="fr up" data-act="up"><span class="tr"></span><span class="nm">../</span><span class="mt"></span></div>`] : [];
+  if (!rows.length) out.push(`<div class="note">${C() ? "" : ""}此文件夹为空。</div>`);
+  for (const r of rows) {
+    const { n } = r;
+    const stem = r.stems.map((l) => (l ? "   " : "│  ")).join("") + (r.last ? "└─" : "├─");
+    const pad = 12 + (r.depth * 3 + 4) * 7.25;
+    if (r.edit) { out.push(`<div class="fr edit ${S.edit.kind === "dir" ? "dir" : "file"}"><span class="tr">${stem}${S.edit.kind === "dir" ? "▸" : "─"}</span><span class="nm">${finHtml()}</span><span class="mt"></span></div>${ferrHtml(pad)}`); continue; }
+    const tw = r.dir && !n.locked ? `<span class="tw" data-act="twist" data-path="${attr(n.path)}">${r.open ? "▾" : "▸"}</span>` : "─";
+    const cls = ["fr", r.dir ? "dir" : "file", n.hidden || n.dim ? "dim" : "", n.locked ? "locked" : "", S.sel.includes(n.path) ? "sel" : ""].join(" ");
+    const name = `${esc(n.name)}${r.dir ? "/" : ""}${n.kind === "link" ? `<span class="to"> → ${esc(n.target.replace(HOME, "~"))}</span>` : ""}${n.locked ? `<span class="lk" title="此处存放 AgentSwitch 的凭据，无法在此打开。">⌧</span>` : ""}`;
+    const meta = n.locked ? "" : r.dir ? `<span>${esc(n.mtime ?? "")}</span>` : `<span class="sz">${size(n)}</span><span>${esc(n.mtime ?? "")}</span>`;
+    out.push(`<div class="${cls} ${editing(n.path) ? "edit" : ""}" data-row="${attr(n.path)}" role="treeitem" aria-level="${r.depth + 1}" ${r.dir ? `aria-expanded="${r.open}"` : ""} aria-selected="${S.sel.includes(n.path)}" ${n.locked ? 'title="此处存放 AgentSwitch 的凭据，无法在此打开。"' : ""}><span class="tr">${stem}${tw}</span><span class="nm">${editing(n.path) ? finHtml() : name}</span><span class="mt">${editing(n.path) ? "" : meta}</span></div>${editing(n.path) ? ferrHtml(pad) : ""}`);
+  }
+  return out.join("");
+}
+/** Classic: Finder's folders, one level at a time; or, by ⋯ › As Tree, an outline with disclosure chevrons. */
+function foldersHtml() {
+  const list = kids(S.root, S.hidden);
+  S.visible = list.map((n) => n.path);
+  const out = [];
+  if (newHere(S.root)) out.push(newRowHtml());
+  if (!list.length && !newHere(S.root)) out.push(`<div class="note">此文件夹为空。</div>`);
+  for (const n of list) {
+    const dir = isDir(n);
+    const cls = [C() ? "cr" : "fr", dir ? "dir" : "file", n.hidden || n.dim ? "dim" : "", n.locked ? "locked" : "", S.sel.includes(n.path) ? "sel" : ""].join(" ");
+    if (C()) {
+      out.push(crRow(n));
+    } else {
+      if (editing(n.path)) { out.push(`<div class="${cls} edit" data-row="${attr(n.path)}"><span class="tr"></span><span class="nm" style="padding-left:0">${finHtml()}</span><span class="mt"></span></div>${ferrHtml(12)}`); continue; }
+      out.push(`<div class="${cls}" data-row="${attr(n.path)}" role="treeitem" aria-selected="${S.sel.includes(n.path)}"><span class="tr"></span><span class="nm" style="padding-left:0">${esc(n.name)}${dir ? "/" : ""}${n.locked ? `<span class="lk">⌧</span>` : ""}</span><span class="mt">${dir ? "" : `<span class="sz">${size(n)}</span>`}<span>${esc(n.mtime ?? "")}</span>${dir && !n.locked ? `<span class="go" data-act="enter" data-path="${attr(n.path)}">›</span>` : ""}</span></div>`);
+    }
+  }
+  return out.join("");
+}
+/** The row a new item's name is typed in, at the top of the level (Finder's folders, the pixel look's one level). */
+function newRowHtml() {
+  const dir = S.edit.kind === "dir";
+  return C() ? `<div class="cr edit ${dir ? "dir" : "file"}"><span class="ic">${dir ? line("folder", 17) : line("doc", 16)}</span><span class="nm">${finHtml()}</span><span class="mt"></span><span class="go"></span></div>${ferrHtml(44)}`
+    : `<div class="fr edit ${dir ? "dir" : "file"}"><span class="tr"></span><span class="nm" style="padding-left:0">${finHtml()}</span><span class="mt"></span></div>${ferrHtml(12)}`;
+}
+/** A classic row of a folder's level; in the columns `side` is the column it is in, `path` marks the folder whose
+ *  contents the right column shows. */
+function crRow(n, { side = null, path = false } = {}) {
+  const dir = isDir(n);
+  if (editing(n.path)) return `<div class="cr edit ${dir ? "dir" : "file"}" data-row="${attr(n.path)}"><span class="ic">${fileIcon(n)}</span><span class="nm">${finHtml()}</span><span class="mt"></span><span class="go"></span></div>${ferrHtml(44)}`;
+  const cls = ["cr", dir ? "dir" : "file", n.hidden || n.dim ? "dim" : "", n.locked ? "locked" : "", S.sel.includes(n.path) ? "sel" : "", path ? "path" : ""].join(" ");
+  const meta = side ? (n.locked || dir ? "" : size(n)) : n.locked ? "" : dir ? esc(n.mtime ?? "") : `${esc(n.mtime ?? "")} · ${size(n)}`;
+  return `<div class="${cls}" data-row="${attr(n.path)}" ${side ? `data-col="${side}"` : ""} role="treeitem" aria-selected="${S.sel.includes(n.path)}" ${n.locked ? 'title="此处存放 AgentSwitch 的凭据，无法在此打开。"' : ""}><span class="ic">${fileIcon(n)}</span><span class="nm">${esc(n.name)}${n.kind === "link" ? ` <span class="to">→ ${esc(baseName(n.target))}</span>` : ""}</span><span class="mt">${meta}</span><span class="go" ${dir && !n.locked && !side ? `data-act="enter" data-path="${attr(n.path)}"` : ""}>${dir && !n.locked ? line("chevR", 12, 2.2) : ""}</span></div>`;
+}
+function classicTreeHtml() {
+  const rows = [];
+  const walk = (p, depth) => {
+    if (newHere(p)) rows.push({ edit: true, depth });
+    kids(p, S.hidden).forEach((n) => {
+      const dir = isDir(n), open = dir && S.expanded.has(n.path);
+      rows.push({ n, depth, dir, open });
+      if (open && !n.locked) walk(n.kind === "link" ? n.target : n.path, depth + 1);
+    });
+  };
+  walk(S.root, 0);
+  S.visible = rows.filter((r) => !r.edit).map((r) => r.n.path);
+  return rows.map(({ n, depth, dir, open, edit }) => edit || editing(n.path)
+    ? `<div class="ct edit ${edit ? (S.edit.kind === "dir" ? "dir" : "file") : dir ? "dir" : "file"}" style="padding-left:${8 + depth * 16}px"><span class="tw"></span><span class="ic">${edit ? (S.edit.kind === "dir" ? line("folder", 17) : line("doc", 16)) : fileIcon(n)}</span><span class="nm">${finHtml()}</span><span class="mt"></span></div>${ferrHtml(8 + depth * 16 + 42)}`
+    : `<div class="ct ${dir ? "dir" : "file"} ${n.hidden || n.dim ? "dim" : ""} ${n.locked ? "locked" : ""} ${S.sel.includes(n.path) ? "sel" : ""}" data-row="${attr(n.path)}" role="treeitem" aria-level="${depth + 1}" style="padding-left:${8 + depth * 16}px">
+      <span class="tw" ${dir && !n.locked ? `data-act="twist" data-path="${attr(n.path)}"` : ""}>${dir && !n.locked ? line(open ? "chevD" : "chevR", 11, 2.4) : ""}</span><span class="ic">${fileIcon(n)}</span><span class="nm">${esc(n.name)}</span><span class="mt">${n.locked ? "" : dir ? "" : size(n)}</span></div>`).join("");
+}
+
+// The preview: Quick Look in the column's lower part (one file), or what is selected (several).
+function previewHtml() {
+  const target = paneOf(S.focus);
+  const canReply = S.sel.every((p) => !node(p)?.locked);
+  // Two buttons, one line at any width; Show in Finder and the rest are in the row's right-click menu (files-v0 §3.5).
+  const folder = S.sel.length === 1 && isDir(node(S.sel[0]));
+  const acts = `<div class="acts">${B("Add to Reply", "pri", "addreply", canReply ? "" : "disabled")}${folder ? B("Open", "", "enter", `data-path="${attr(S.sel[0])}"`) : B("Open")}</div>`;
+  if (S.sel.length > 1) {
+    const total = S.sel.reduce((a, p) => a + (node(p)?.size ?? 0), 0);
+    return `<div class="pv" style="height:150px"><div class="h"><b>${S.sel.length} Items</b><span>${sizeWords(total)} · 给 ${esc(target.name)}</span></div><div class="cnt" style="border:0; background:none; margin:0 12px"><div style="font:12px/1.7 var(--code); color:var(--ink2)">${S.sel.map((p) => esc(p.replace(HOME, "~"))).join("<br>")}</div></div>${acts}</div>`;
+  }
+  const n = node(S.sel[0]);
+  if (!n) return "";
+  const dir = isDir(n);
+  const meta = dir ? `Folder · ${fileCount(n.kind === "link" ? n.target : n.path, true)} Items · ${n.mtime ?? ""}` : `${kindWord(n)} · ${size(n)}${n.text ? ` · ${n.lines ?? n.text.split("\n").length - 1} Lines` : ""} · ${n.mtime ?? ""}`;
+  return `<div class="pv" style="${dir ? "height:140px" : ""}"><div class="h"><b>${esc(n.name)}</b><span>${esc(meta)}</span></div><div class="cnt">${dir ? "" : contentHtml(n, false)}</div>${acts}</div>`;
+}
+function contentHtml(n, big) {
+  if (n.type === "text" && !n.text) return `<div class="nopv"><div>此文件为空。</div></div>`;
+  if (n.text) {
+    const lines = n.text.replace(/\n$/, "").split("\n");
+    const shown = lines.slice(0, big ? 40 : 18);
+    return `<pre class="code ${big ? "big" : ""}">${shown.map((l, i) => `<span class="ln">${i + 1}</span>${esc(l)}`).join("\n")}</pre>${n.truncated ? `<div class="trunc">仅显示前 64 KB（共 ${sizeWords(n.size)}）。</div>` : ""}`;
+  }
+  if (n.type === "image") return `<div class="pic">${picSvg(n.pic, big)}</div>`;
+  if (n.type === "pdf") return `<div class="pic">${pdfSvg(big)}</div>`;
+  return `<div class="nopv"><div><div class="big">${C() ? line(n.type === "archive" ? "archive" : "doc", 34, 1.2) : "▤"}</div>${esc(kindWord(n))} · ${sizeWords(n.size)}<br>无法预览此类文件。</div></div>`;
+}
+function picSvg(kind, big) {
+  const w = big ? 360 : 200, h = big ? 240 : 132;
+  if (kind === "logo") return `<svg width="${w}" height="${h}" viewBox="0 0 120 80"><rect width="120" height="80" fill="#151515"/>${[[34, 18, 52, "#ff2e88"], [34, 30, 40, "#e9e6df"], [34, 42, 28, "#8d8a84"]].map(([x, y, w, c]) => `<rect x="${x}" y="${y}" width="${w}" height="7" fill="${c}"/>`).join("")}<text x="60" y="68" fill="#e9e6df" font-family="Menlo, monospace" font-size="8" text-anchor="middle">lumen</text></svg>`;
+  return `<svg width="${w}" height="${h}" viewBox="0 0 120 80"><rect width="120" height="80" fill="#2a2a2e"/><rect x="10" y="10" width="100" height="60" rx="4" fill="#0b0b0b"/><circle cx="17" cy="16" r="2" fill="#ff5f57"/><circle cx="23" cy="16" r="2" fill="#febc2e"/><circle cx="29" cy="16" r="2" fill="#28c840"/><rect x="18" y="28" width="50" height="3" fill="#8d8a84"/><rect x="18" y="36" width="70" height="3" fill="#4d4b48"/><rect x="18" y="44" width="38" height="3" fill="#2ee6ff"/></svg>`;
+}
+function pdfSvg(big) {
+  const w = big ? 220 : 110, h = big ? 290 : 140;
+  return `<svg width="${w}" height="${h}" viewBox="0 0 85 110"><rect x="2" y="2" width="81" height="106" fill="#fff" stroke="#ccc"/><rect x="10" y="12" width="44" height="5" fill="#222"/>${[24, 30, 36, 42, 48, 58, 64, 70, 76, 82].map((y, i) => `<rect x="10" y="${y}" width="${i % 4 === 3 ? 40 : 64}" height="2" fill="#999"/>`).join("")}<text x="42" y="102" font-size="5" fill="#999" text-anchor="middle" font-family="-apple-system">1 / 6</text></svg>`;
+}
+function qlHtml() {
+  const n = node(S.sel[0]);
+  if (!n) return "";
+  const head = C()
+    ? `<div class="h"><button class="x" data-act="qlclose" aria-label="Close">${line("x", 13)}</button><span>${esc(n.name)}</span><span class="op">${B("Open")}</span></div>`
+    : `<div class="h"><span>${esc(n.name)}</span><span style="opacity:.6">${esc(kindWord(n))} · ${sizeWords(n.size)}</span><span class="sp"></span><button data-act="qlclose">esc</button></div>`;
+  return `<div class="ql" role="dialog" aria-label="Quick Look">${head}<div class="bd">${contentHtml(n, true)}</div></div>`;
+}
+
+/** Asked before a folder a terminal runs in is renamed or moved (files-v0 §12.2); nothing else is asked on the Mac. */
+function dlgHtml() {
+  const d = S.dlg;
+  const say = `终端“${esc(d.term)}”正在此文件夹中运行。${d.op === "rename" ? "改名后" : "移到废纸篓后"}，其中的 agent 仍会使用原来的路径，可能出错。`;
+  return `<div class="warn dlg" role="alertdialog" aria-label="In Use"><div class="h">${C() ? line("warn", 16) : ""}<span>In Use</span></div><div class="b">${say}</div><div class="a">${B("Cancel", "", "dlgcancel")}${B(d.op === "rename" ? "Rename" : "Move to Trash", "pri", "dlgok")}</div></div>`;
+}
+// System menus: the list's right click, ⋯, and the path's folded levels.
+function menuHtml() {
+  const m = S.menu;
+  if (m.kind === "list") {
+    const it = (label, key, hi, isNew) => `<div class="it ${hi ? "hi" : ""}" ${key === "files" ? `data-act="showin" data-path="${attr(m.cwd)}"` : ""}>${label}${isNew ? `<span class="new">New</span>` : ""}</div>`;
+    const [, gi, ri] = /^g(\d+)(?:r(\d+))?$/.exec(m.id) ?? [];
+    const kind = ri === undefined ? "dir" : D.LIST[Number(gi)].rows[Number(ri)].kind;
+    const files = it("Show in Files", "files", m.hi === "files");
+    // A terminal's and a session's own menus as they are (TerminalSidebar.swift), with the one new item; a folder row
+    // has had no menu (its `+` is New Terminal Here).
+    const items = kind === "term" ? [it("Rename"), it("Open in New Window"), files, "<hr>", it("Close")]
+      : kind === "session" ? [it("Resume"), files, "<hr>", it("Delete")]
+      : [it("New Terminal Here"), files];
+    return `<div class="menu" data-anchor="${m.id}" style="left:132px; top:0">${items.join("")}</div>`;
+  }
+  if (m.kind === "more") {
+    const right = 8, v = viewNow();
+    return `<div class="menu" style="right:${right}px; top:30px; width:236px">
+      <div class="it ${v === "tree" ? "chk" : ""}" data-act="viewas" data-v="tree">As Tree</div><div class="it ${v === "folders" ? "chk" : ""}" data-act="viewas" data-v="folders">As Folders</div><hr>
+      <div class="it ${S.hidden ? "chk" : ""}" data-act="hidden">Show Hidden Files<span class="k">⌘⇧.</span></div>
+      <div class="it ${S.preview ? "chk" : ""}" data-act="pvtoggle">Show Preview</div>
+      <div class="it ${S.float ? "chk" : ""}" data-act="floattoggle">Float Over Page</div><hr>
+      <div class="it off">Sort By<span class="k">›</span></div><hr>
+      <div class="it" data-act="home">Home<span class="k">⌘⇧H</span></div><div class="it off">Go to Folder…<span class="k">⌘⇧G</span></div><div class="it off">Places<span class="k">›</span></div></div>`;
+  }
+  if (m.kind === "fold") {
+    return `<div class="menu" style="left:${(S.narrow ? 900 : 1200) - S.sideW + 14}px; top:52px; min-width:150px">${(S.folded ?? []).map((l) => `<div class="it" data-act="crumb" data-path="${attr(l.path)}">${esc(l.name)}</div>`).join("")}</div>`;
+  }
+  if (m.kind === "file") {
+    // A row's right click (files-v0 §3.3): where Show in Finder went from under the preview (user: 把在访达打开改成在右键菜单里吧).
+    const n = node(m.path);
+    if (!n) return "";
+    const dir = isDir(n), under = m.path.startsWith(paneOf(S.focus).cwd + "/");
+    const it = (label, { act = "", hi = false, isNew = false } = {}) => `<div class="it ${hi ? "hi" : ""}" ${act ? `data-act="${act}" data-path="${attr(m.path)}"` : ""}>${label}${isNew ? `<span class="new">New</span>` : ""}</div>`;
+    // No shortcuts in a context menu, and what does not apply is left out rather than dimmed (HIG Context menus;
+    // the third draft). New items in a folder's menu, under what is used most; Rename… and Move to Trash last (VS Code).
+    const items = [it("Add to Reply", { act: "addreply" }), dir ? "" : it("Quick Look", { act: "qlopen" }), it("Open", { act: dir ? "enter" : "" }),
+      ...(dir ? ["<hr>", it("New File…", { act: "newfile", isNew: true, hi: m.hi === "new" }), it("New Folder…", { act: "newfolder", isNew: true })] : []), "<hr>",
+      it("Show in Finder", { hi: m.hi === "finder" }), it("Copy Path"), under ? it("Copy Relative Path") : "", dir ? it("New Terminal Here") : "",
+      ...(fixed(m.path) ? [] : ["<hr>", it("Rename…", { act: "rename", isNew: true }), it("Move to Trash", { act: "trash", isNew: true })])];
+    return `<div class="menu" data-file style="left:0; top:0; min-width:230px">${items.join("")}</div>`;
+  }
+  if (m.kind === "bg") {
+    // The list's empty part: this folder's menu, new items first (VS Code).
+    const it = (label, act = "", isNew = false) => `<div class="it" ${act ? `data-act="${act}" data-path="${attr(S.root)}"` : ""}>${label}${isNew ? `<span class="new">New</span>` : ""}</div>`;
+    return `<div class="menu" style="left:${m.x}px; top:${m.y}px; min-width:210px">${it("New File…", "newfile", true)}${it("New Folder…", "newfolder", true)}<hr>${it("Show in Finder")}${it("Copy Path")}${it("New Terminal Here")}</div>`;
+  }
+  if (m.kind === "new") {
+    // The column's +: a pull-down menu, so its keys are written in it (files-v0 §12.2).
+    return `<div class="menu" style="right:56px; top:30px; min-width:200px"><div class="it" data-act="newfile">New File…<span class="k">⌥⌘N</span></div><div class="it" data-act="newfolder">New Folder…<span class="k">⇧⌘N</span></div></div>`;
+  }
+  return "";
+}
+
+function capMac() {
+  const v = viewNow() === "tree" ? "目录树" : "文件夹";
+  const say = {
+    home: `<b>第一次打开</b>：在家目录 <code>/Users/you</code>。路径行从 <code>/</code> 开始，每一层可点；${C() ? "经典外观默认是文件夹看法：一次一层，文件夹行尾 <code>›</code>，单击选中、双击或点 <code>›</code> 进去，路径左边 <code>‹ ›</code> 前进后退" : "像素外观默认是目录树：<code>▸</code> 展开一层（只管展开），点名字选中，双击文件夹把它当作当前文件夹，<code>../</code> 到上一层"}。隐藏文件（<code>.</code> 开头）默认不列，底部写着有几项没列；<code>⋯</code> › <code>Show Hidden Files</code> 打开后能看到 <code>.secret-gate</code>、<code>.agentswitch/nodes</code> 这些受保护的地方——照列，带锁，点不开。`,
+    list: `<b>从左边进入</b>：在左边列表的文件夹行（或它下面的终端、会话）上右键，系统菜单里多一项 <code>Show in Files</code>，文件栏到那个文件夹（终端是它此刻所在的文件夹）。演示里右键左边任意一行都能弹出这个菜单。`,
+    pane: `<b>分屏时</b>：每块标题栏上一个文件夹图标，到那一块的文件夹（这里是右边 Codex 所在的 <code>harbor-api/src</code>）；顶栏的同一个图标管焦点那一块——和顶栏、标题栏上的终端 / 简略切换一样。<b>图标亮着</b>表示文件栏正显示这一块的文件夹，再点一下收起；点另一块的图标就换到那一块的文件夹。试试点左边那块标题栏上的图标。`,
+    preview: `<b>选中看预览</b>：选中一个文件，栏的下半是 Quick Look 画的预览（本机文件由系统画；别的节点上的由服务给前 64 KB 或缩略图）。一行信息：类型、大小、修改时间、行数。下面<b>只有两个按钮</b> <code>Add to Reply</code>（主）、<code>Open</code>，栏最窄时也是一行；<code>Show in Finder</code> 这些在行的右键菜单里（⑤）。⌘ 点、⇧ 点多选；选中文件夹时 <code>Open</code> 是进去。不要预览：<code>⋯</code> › <code>Show Preview</code> 关掉，底部只剩一行和 <code>Add to Reply</code>，看内容按空格。`,
+    ctx: `<b>右键一项</b>：系统菜单，<code>Add to Reply</code>、<code>Quick Look</code>、<code>Open</code>；<code>Show in Finder</code>（从预览下面挪过来的）、<code>Copy Path</code>、<code>Copy Relative Path</code>（相对于焦点那一块终端的文件夹，不在它下面时不出现）；文件夹另有 <code>New Terminal Here</code>。演示里每一行都能右键。`,
+    reply: `<b>两个给 agent</b>：选两个文件 <code>Add to Reply</code>（或拖到某一块上），焦点那一块的回复框里多两个占位符 <code>[File #1] [File #2]</code>，上面一排小条可以 <code>×</code> 拿掉——和今天拖文件、<code>+</code> › <code>Files…</code> 是同一条路：发送时输入路径，文件不拷贝。状态栏写着选了几个、多大。终端视图的那一块没有回复框：给它就是把路径打进光标处（③ 里选右边那块再点 <code>Add to Reply</code> 试试）。`,
+    sensitive: `<b>可能含密码的文件</b>：<code>.env</code>、<code>~/.ssh/</code> 里的钥匙、各 agent 的登录文件这一类，照常列出、照常预览（手机上也能看），<b>交给 agent 的那一刻</b>问一次：卡浮在那一块的回复框上方，<code>Cancel</code> 只拿掉这几个，<code>Add</code> 以后小条上带${C() ? "一个琥珀色的三角" : "琥珀色的 <code>!</code>"}，发送时不再问。只看路径和名字判断，不读内容。点 <code>Add</code> 试试；或者打开 <code>⋯</code> › <code>Show Hidden Files</code>，从家目录的 <code>.ssh</code> 里挑 <code>id_ed25519</code>。`,
+    ql: `<b>空格</b>：Quick Look 的面板，和在 Finder 里按空格一样（原生是 <code>QLPreviewPanel</code>）；<code>esc</code> 或再按空格关上。焦点在文件列表里时 <code>↑ ↓</code> 换一项，面板跟着换。预览关着时也是空格看。`,
+    float: `<b>浮起</b>：<code>⋯</code> › <code>Float Over Page</code>，在任何宽度都能这样开${C() ? "（左边两个圆角、投影）" : "（1 点墨色框、抖动的硬阴影）"}。页面不变窄，<b>终端的列数不变</b>，agent 的界面不用重画。点页面不收起，可以一边往块上拖、一边在回复框里打字（这里已经加了一个文件）；<code>×</code>、顶栏的图标、<code>⌘⇧F</code> 收起，焦点在栏里时 <code>esc</code> 也收起。盖住的是页面右边一截，宽度照样拖。窗口窄到靠边放不下时，靠边的也会临时这样浮起。`,
+    wide: C() && viewNow() === "folders"
+      ? `<b>拉宽</b>：栏宽到 460 点以上，经典的文件夹看法变成 Finder 的<b>分栏</b>，只留最后两栏：左边是上一层（当前的 <code>src</code> 在里面标着），右边是当前文件夹。和 Finder 的分栏一样，<b>单击文件夹就进去</b>，整排往左移一栏；点左栏里别的文件夹，右栏换成它的。拖文件栏的左边缘到 460 点以下，回到一次一层。`
+      : `<b>拉宽</b>：像素的树拉宽了还是树，名字和右边的大小、时间有了地方。分栏是经典外观的（切到 Classic 看）。拖文件栏的左边缘改宽度，240–560 点。`,
+    newmenu: `<b>新建</b>（第三稿）：标题行 <code>⌂</code> 后面多一个 <code>+</code>（Apple 的文件管理规范要一个 Add 按钮），菜单 <code>New File…</code> <code>New Folder…</code>，快捷键写在这个下拉菜单里（<code>⌥⌘N</code>、<code>⇧⌘N</code>）。${viewNow() === "tree" ? "目录树照 VS Code：选中的是文件夹就建在它里面，是文件就建在它旁边，没选中就建在当前文件夹——这里选的是 <code>src</code> 里的文件，点 <code>New File…</code> 看它出在哪。" : "文件夹看法照 Finder：建在当前这一层。"}`,
+    newin: `<b>就地起名</b>：新的一行出在${viewNow() === "tree" ? "那个文件夹的第一行（树线照画）" : "这一层的最上面"}，名字在框里打（VS Code 的做法）。一边打一边检查：这里打的是 <code>docs</code>，已经有了，框下一行红字，<code>↩</code> 不响。改成别的再按 <code>↩</code> 建好并选中；<code>esc</code> 取消；点到别处时名字有效就建、无效就取消。名字里带 <code>/</code> 一次建几层（试试 <code>fixtures/users.json</code>）；名字前后有空格是琥珀色的提醒，照样能建；以 <code>.</code> 开头的建好后底部说它是隐藏文件。<code>⌘Z</code> 撤销刚建的。`,
+    folderctx: `<b>右键一个文件夹</b>：在 <code>Add to Reply</code> <code>Open</code> 下面一组是 <code>New File…</code> <code>New Folder…</code>（建在它里面），最后一组是 <code>Rename…</code> 和 <code>Move to Trash</code>（VS Code 的顺序）。右键菜单里<b>不写快捷键</b>、用不了的项<b>不出现</b>而不是变灰（Apple 的右键菜单规范；第二稿的演示写了快捷键，这一稿去掉）：<code>Copy Relative Path</code> 只在它在焦点那一块终端的文件夹下面时才有；装着 AgentSwitch 凭据的文件夹（比如家目录）没有改名和移到废纸篓。列表空白处右键是这一层的菜单。`,
+    rename: `<b>改名</b>：右键 <code>Rename…</code>，或选中后按 <code>↩</code>（同 Finder、VS Code 的 Mac 键位；第一步的 <code>↩</code> 是“打开”，现在打开用双击、<code>⌘↓</code>、<code>⌘O</code>）。名字原地变成框，文件只选中主名（<code>app</code>，不含 <code>.ts</code>），检查同新建；<code>↩</code> 改，<code>esc</code> 不改，<code>⌘Z</code> 改回去。有终端在里面运行的文件夹，改名前问一句（⑮）。`,
+    trash: `<b>移到废纸篓</b>：右键最后一项 <code>Move to Trash</code>，或 <code>⌘⌫</code>。<b>不问</b>——Apple 的规范：能撤销的删除不弹框（VS Code 默认要问，这里照 Apple，第一问）。<code>logo.png</code> 刚移走：底部一行说移到了废纸篓、<code>⌘Z</code> 可放回。点一下列表再按 <code>⌘Z</code>，它回到原处、被选中；<code>⇧⌘Z</code> 重做。也可以选别的按 <code>⌘⌫</code> 试试。不做永久删除；放不进废纸篓的盘（一些网络盘）才问一句“要永久删除吗？此操作无法撤销。”。`,
+    inuse: `<b>有终端在里面运行</b>：<code>harbor-api</code> 里有终端“refreshToken 字段”在跑（它在 <code>harbor-api/src</code>）。移走或改名后，agent 仍按原来的路径找文件，会出错，所以这一种要问。Mac 上会问的只有这一种和“只能永久删除”。`,
+    narrow: `<b>窗口窄时</b>：打开文件栏后页面剩不到 520 点，靠边的文件栏临时浮在页面右边${C() ? "（圆角、投影）" : "（1 点墨色框、抖动的硬阴影）"}，不挤页面。窗口拉宽后回到一栏。`,
+  }[S.mac];
+  return `${say} 现在是<b>${v}</b>看法（<code>⋯</code> 里能换）。`;
+}
+
+// ---------- 2. the phone ----------
+/** A terminal's page: `p` is the terminal, `added` the files in its reply box. */
+function phoneTerm({ menu = false, added = [], p = PANES[0], more = null } = {}) {
+  const chips = added.length ? `<div class="chips" style="margin:0 0 6px">${added.map((f, k) => `<span class="fchip ${isSensitive(f) ? "sens" : ""}">${C() ? `<span style="color:var(--ink2)">${fileIcon(node(f))}</span>` : `<i>[File #${k + 1}]</i>`}${chipMark(f)}${esc(baseName(f))}<i>on Mac</i><button aria-label="Remove">×</button></span>`).join("")}</div>` : "";
+  const text = added.length ? `<span class="tx">看一下 ${added.map((_, k) => `<b>[File #${k + 1}]</b>`).join(" ")} <span class="caret"></span></span>` : `<span class="tx ph">回复…</span>`;
+  const body = p.term === "t1"
+    ? `<div class="ub" style="max-width:90%">把列表的排序改成按最近使用，置顶的仍然在最前。</div><div class="md"><p>改好了：列表现在按最近使用排，置顶的仍然在最前。排序放在 <code class="c">store.ts</code> 里做。</p></div><div class="now">${spin()}<span>Read</span><code>docs/design.md</code></div>`
+    : `<div class="ub" style="max-width:90%">登录接口的返回加上 refreshToken 字段</div><div class="md"><p>已在 <code class="c">routes/auth.ts</code> 的登录返回里加了 refreshToken，过期时间取配置里的 REFRESH_TTL。</p></div>`;
+  const termMenu = more ? `<div class="pmenu ctxm" style="top:52px; right:10px; left:auto">${mi("Terminal View", "terminal")}${mi("Transcript: Verbose", "notes")}${mi("Changes", "plusminus")}<div class="gap"></div>${mi("Show in Files", "folder", "phshowin", { isNew: true, hi: true })}<div class="gap"></div>${mi("Rename", "pencil")}${mi("Close", "x", "", { red: true })}</div>` : "";
+  return `<div class="pscr"><div class="pnav"><span class="nb">‹</span><span class="t"><b>${esc(p.name)}</b><span>${esc(p.short)} · ${p.st === "busy" ? (C() ? "Working" : "Busy") : "Idle"}</span></span><span class="nb r">${C() ? `<span class="ib2">${line("terminal", 18)}</span>` : "▤"}${more !== null ? `<span class="more" data-act="phtermmore">⋯</span>` : ""}</span></div>${termMenu}
+    <div class="pbody">${body}</div>
+    <div class="pfoot">${chips}<div class="pbox"><span class="plus">+</span>${text}</div></div>
+    ${menu ? `<div class="pmenu"><div class="it"><span>Camera</span>${line("camera", 18)}</div><div class="it"><span>Photos</span>${line("image", 18)}</div><div class="it"><span>Files</span>${line("folder", 18)}</div><div class="it hi"><span>Files on Mac<span class="new">New</span></span>${line("laptop", 18)}</div><div class="it"><span>Paste Image</span>${line("clip", 18)}</div><div class="it" style="border:0"><span>Keys</span>${line("keys", 18)}</div></div>` : ""}
+  </div>`;
+}
+/** The path under the bar, every level a button; `act` is what a tap on a level does. */
+function phCrumbs(root, act = "phcrumb") {
+  const parts = root === "/" ? [] : root.split("/").slice(1);
+  const levels = [{ name: "/", path: "/" }, ...parts.map((n, i) => ({ name: n, path: "/" + parts.slice(0, i + 1).join("/") }))];
+  return `<div class="pcrumbs">${levels.slice(-4).map((l, i, a) => `${i ? (a[i - 1].path === "/" ? "" : `<span class="sl">/</span>`) : (levels.length > 4 ? `<button data-act="${act}" data-path="${attr(levels[levels.length - 5].path)}">…</button><span class="sl">/</span>` : "")}<button class="${i === a.length - 1 ? "cur" : ""}" data-act="${act}" data-path="${attr(l.path)}">${esc(l.name)}</button>`).join("")}</div>`;
+}
+/** One level as the phone lists it: iOS Files' rows (classic), or the level in tree lines with ▸ opening one more in
+ *  place (pixel). `o`: {select, sel, expanded, hidden, list (the entries, when a scope narrowed them), ns (acts' prefix)}. */
+function phRows(root, o) {
+  const ns = o.ns ?? "ph";
+  const list = o.list ?? kids(root, o.hidden);
+  const actOf = (n) => o.select ? `${ns}pick` : isDir(n) ? `${ns}enter` : `${ns}open`;
+  const rows = (o.ups ?? []).filter((u) => u.dir === root).map(upRowHtml);
+  list.forEach((n, i) => {
+    const dir = isDir(n), last = i === list.length - 1;
+    const checked = (o.sel ?? []).includes(n.path) || o.flash === n.path;
+    if (C()) {
+      rows.push(`<div class="pr ${dir ? "dir" : ""} ${n.dim ? "dim" : ""} ${checked ? "on" : ""}" data-act="${actOf(n)}" data-path="${attr(n.path)}">${o.select ? `<span class="cb2 ${checked ? "on" : ""}">${checked ? "✓" : ""}</span>` : "<span></span>"}<span class="ic">${fileIcon(n)}</span><span class="nm">${esc(n.name)}<small>${esc(n.mtime ?? "")}${dir ? "" : ` · ${size(n)}`}</small></span><span class="go">${dir && !o.select ? line("chevR", 13, 2.2) : ""}</span></div>`);
+    } else {
+      const open = dir && o.expanded?.has(n.path);
+      rows.push(`<div class="pr ${dir ? "dir" : ""} ${n.dim || n.hidden ? "dim" : ""} ${checked ? "on" : ""}" data-act="${actOf(n)}" data-path="${attr(n.path)}">${o.select ? `<span class="cb ${checked ? "on" : ""}">${checked ? "[x]" : "[ ]"}</span>` : "<span></span>"}<span class="tr">${last ? "└─" : "├─"}${dir && o.expanded ? `<span class="tw" data-act="${ns}twist" data-path="${attr(n.path)}">${open ? "▾" : "▸"}</span>` : dir ? "▸" : "─"}</span><span class="nm">${esc(n.name)}${dir ? "/" : ""}</span><span class="mt">${dir ? "" : size(n)}</span></div>`);
+      if (open) kids(n.path, o.hidden).forEach((c, k, all) => {
+        const cl = k === all.length - 1, cd = isDir(c);
+        rows.push(`<div class="pr ${cd ? "dir" : ""}" data-act="${actOf(c)}" data-path="${attr(c.path)}"><span></span><span class="tr">${last ? "   " : "│  "}${cl ? "└─" : "├─"}${cd ? "▸" : "─"}</span><span class="nm">${esc(c.name)}${cd ? "/" : ""}</span><span class="mt">${cd ? "" : size(c)}</span></div>`);
+      });
+    }
+  });
+  return rows.join("");
+}
+/** `+` › Files on Mac: a sheet over the terminal's page; what is picked lands in this terminal. */
+function phoneSheet() {
+  const ph = S.ph;
+  const list = kids(ph.root, ph.hidden);
+  const nav = `<div class="pnav"><span class="nb">${ph.select ? "" : "Done"}</span><span class="t"><b>${esc(baseName(ph.root))}</b><span>${C() ? "On Mac" : "@ Mac"}</span></span><span class="nb r" data-act="phselect">${ph.select ? "Cancel" : "Select"}</span></div>`;
+  const foot = ph.select ? `<div class="pbar"><span style="color:var(--ink2)">${ph.sel.length} Selected</span>${B(`Add to Reply (${ph.sel.length})`, "pri", "phadd", ph.sel.length ? "" : "disabled")}</div>` : `<div class="pbar" style="color:var(--ink3); font-size:12px"><span>${list.length} Items · 给 01 · 排序改成最近使用</span></div>`;
+  return `<div class="dimmer"></div><div class="sheet"><div class="grab"></div>${nav}${phCrumbs(ph.root)}<div class="plist">${phRows(ph.root, ph)}</div>${foot}</div>`;
+}
+/** The pixel look's tabs are shaded pictures; the classic look's the system's symbols. */
+function tabBar() {
+  const tabs = [["dispatch", "Dispatch"], ["terminals", "Terminals"], ["folder", "Files"], ["browser", "Browser"], ["settings", "Settings"]];
+  return `<div class="ptabs">${tabs.map(([k, label]) => `<span class="t ${k === "folder" ? "on" : ""}">${C() ? line(k, 22) : P.sprite(k === "folder" ? PX.folder : RAIL[k], { px: 2 })}<span>${label}</span></span>`).join("")}</div>`;
+}
+/** The Files tab (files-v0 §5; user: 5开一个标签页吧): a page of its own, at the last place; nobody to give to yet, so
+ *  Select ends in Add to Reply…, which asks which terminal. */
+function phoneTab({ chooser = false, root = null } = {}) {
+  const ph = S.ph;
+  const at = root ?? ph.root, selecting = ph.select && !root;
+  const up = parentOf(at);
+  // Selecting: the count under the title, the bar's two buttons before Add to Reply… (iOS Files' select bar).
+  const nav = `<div class="pnav"><span class="nb" ${up ? `data-act="phcrumb" data-path="${attr(up)}"` : ""}>${up ? `‹ ${esc(baseName(up))}` : ""}</span><span class="t"><b>${esc(baseName(at))}</b><span>${selecting ? `${ph.sel.length} Selected` : C() ? "On Mac mini" : "@ Mac mini"}</span></span><span class="nb r"><span data-act="phselect">${selecting ? "Cancel" : "Select"}</span><span class="more" data-act="phmore">⋯</span></span></div>`;
+  const files = ph.sel.length && ph.sel.every((p) => node(p) && !isDir(node(p)));
+  const foot = selecting ? `<div class="pbar"><span class="icos"><button class="ico" data-act="phselshare" ${files ? "" : "disabled"} aria-label="Share">${ico("share")}</button><button class="ico" data-act="phseltrash" ${ph.sel.length ? "" : "disabled"} aria-label="Move to Trash">${ico("trash")}</button></span>${B("Add to Reply…", "pri", "tabadd", ph.sel.length ? "" : "disabled")}</div>` : tabBar();
+  return `<div class="pscr ptab">${nav}${phCrumbs(at)}<div class="plist">${phRows(at, root ? { ...ph, select: false, sel: [], expanded: new Set(), flash: null, ups: [] } : ph)}</div>${foot}</div>${chooser ? phoneChooser() : ""}`;
+}
+const ico = (k) => C() ? line(k, 20) : P.sprite(PX[k], { px: 2 });
+function phoneChooser() {
+  const rows = PANES.map((p, k) => `<div class="pch" data-act="choose" data-k="${k}">${agent(p.ag)}<span><b>${esc(p.name)}</b><small>${esc(p.short)} · ${p.st === "busy" ? (C() ? "Working" : "Busy") : "Idle"}</small></span><span class="ago">${k === 0 ? "Now" : "12m"}</span></div>`).join("");
+  return `<div class="dimmer"></div><div class="sheet choose"><div class="grab"></div><div class="pnav"><span class="nb" data-act="chcancel">Cancel</span><span class="t"><b>Add to Reply</b><span>${S.ph.sel.length} Files</span></span><span class="nb r"></span></div><div class="plist">${rows}</div><div class="pfoot2">选的文件会落进这个终端的回复框，最近用过的终端在前。</div></div>`;
+}
+/** The system's alert before a file that may hold a password goes to an agent (files-v0 §5). */
+function alertHtml(files) {
+  const names = files.map((p) => `<code>${esc(baseName(p))}</code>`).join("、");
+  const say = files.length === 1 ? `${names} 可能含有密码或密钥。` : `这 ${files.length} 个文件可能含有密码或密钥：${names}。`;
+  return `<div class="dimmer" style="z-index:5"></div><div class="palert" role="alertdialog" aria-label="Add to Reply?"><div class="bd"><b>Add to Reply?</b>${say}交给 agent 后，它能读到其中的内容，并可能发给模型的服务商。</div><div class="bt"><button data-act="alertcancel">Cancel</button><button data-act="alertadd">Add</button></div></div>`;
+}
+function phonePreview() {
+  const n = node(S.ph.preview);
+  const lines = (n.text ?? "").replace(/\n$/, "").split("\n").slice(0, 22);
+  return `<div class="pscr"><div class="pnav"><span class="nb" data-act="phback">‹ ${esc(baseName(parentOf(n.path)))}</span><span class="t"><b>${esc(n.name)}</b><span>${esc(kindWord(n))} · ${sizeWords(n.size)}</span></span><span class="nb r"><span class="ib2" data-act="phshare" aria-label="Share">${C() ? line("share", 19) : P.sprite(PX.share, { px: 2 })}</span><span class="more" data-act="phpvmore">⋯</span></span></div>
+    <div class="pbody" style="padding:0">${n.text ? `<pre class="code" style="font-size:11.5px; padding:10px 12px">${lines.map((l, i) => `<span class="ln">${i + 1}</span>${esc(l)}`).join("\n")}</pre>` : `<div class="pic">${picSvg(n.pic, false)}</div>`}</div>
+    <div class="pbar" style="justify-content:flex-start; gap:16px">${B(S.ph.tab ? "Add to Reply…" : "Add to Reply", "pri", "phaddone")}${B("Copy Path")}</div>${S.ph.menu === "pv" ? `<div class="pmenu ctxm" style="top:52px; right:10px; left:auto">${mi("Rename…", "pencil", "phpvrename", { isNew: true })}<div class="gap"></div>${mi("Move to Trash", "trash", "phpvtrash", { red: true, isNew: true })}</div>` : ""}</div>`;
+}
+
+// ---------- the phone, third draft (files-v0 §12.3, §12.4): changing files, saving to the phone, a session's folder ----------
+/** An item of the system's menu on iOS: the word, its symbol at the end; a destructive one red. */
+const mi = (label, icon, act = "", { red = false, isNew = false, hi = false, path = "" } = {}) =>
+  `<div class="it ${red ? "red" : ""} ${hi ? "hi" : ""}" ${act ? `data-act="${act}"` : ""} ${path ? `data-path="${attr(path)}"` : ""}><span>${label}${isNew ? `<span class="new">New</span>` : ""}</span>${line(icon, 18)}</div>`;
+/** The folder page's ⋯: New Folder and New File first (iOS Files), then what was there. */
+function phMoreHtml() {
+  // Over the whole phone (outside the page): under the bar's ⋯.
+  if (S.ph.menu === "up") return `<div class="pmenu ctxm" style="top:94px; right:10px; left:auto"><div class="it sub" data-act="phmore"><span>${line("chevL", 14, 2.4)}Upload</span></div>${mi("Camera", "camera", "phupfrom", { path: "camera" })}${mi("Photos", "image", "phupfrom", { path: "photos" })}${mi("Files", "folder", "phupfrom", { path: "files" })}</div>`;
+  return `<div class="pmenu ctxm" style="top:94px; right:10px; left:auto">${mi("New Folder", "folderPlus", "phnewfolder", { isNew: true })}${mi("New File", "docPlus", "phnewfile", { isNew: true })}<div class="it" data-act="phupmenu"><span>Upload<span class="new">New</span></span><span class="chv">${line("chevR", 13, 2.4)}</span></div><div class="gap"></div>${mi("Show Hidden Files", "eye")}${mi("Sort By", "sort")}<div class="gap"></div>${mi("Home", "home")}</div>`;
+}
+/** A long press on a row: the row lifted, the system's menu under it; Move to Trash last and red (HIG Context menus).
+ *  What cannot be changed here has no Rename… and no Move to Trash. */
+function phRowMenuHtml(path) {
+  const n = node(path);
+  if (!n) return "";
+  const dir = isDir(n);
+  const row = C()
+    ? `<div class="pr ${dir ? "dir" : ""}"><span></span><span class="ic">${fileIcon(n)}</span><span class="nm">${esc(n.name)}<small>${esc(n.mtime ?? "")}${dir ? "" : ` · ${size(n)}`}</small></span><span class="go"></span></div>`
+    : `<div class="pr ${dir ? "dir" : ""}"><span></span><span class="tr">${dir ? "▸" : "─"}</span><span class="nm">${esc(n.name)}${dir ? "/" : ""}</span><span class="mt">${dir ? "" : size(n)}</span></div>`;
+  const items = [mi("Add to Reply…", "reply", "phmreply"), dir ? "" : mi("Share…", "share", "phmshare", { isNew: true, path }), mi("Copy Path", "copy"),
+    ...(fixed(path) ? [] : [`<div class="gap"></div>`, mi("Rename…", "pencil", "phmrename", { isNew: true, path }), `<div class="gap"></div>`, mi("Move to Trash", "trash", "phmtrash", { red: true, isNew: true, path })])];
+  return `<div class="dimmer blur"></div><div class="plift">${row}</div><div class="pmenu ctxm" style="top:206px">${items.join("")}</div>`;
+}
+/** The system's alert with a field: a name for a new item, or a new name (the terminal page's Rename is the same). A
+ *  name that cannot be used is said in a second alert, and the field keeps what was typed (files-v0 §12.3). */
+function phNameHtml(d) {
+  if (d.err) return `<div class="dimmer" style="z-index:5"></div><div class="palert" role="alertdialog"><div class="bd"><b>${d.title}</b>${esc(d.err)}</div><div class="bt one"><button data-act="phdlgok">OK</button></div></div>`;
+  const go = d.kind === "rename" ? ["phrenamego", "Rename"] : ["phcreate", "Create"];
+  return `<div class="dimmer" style="z-index:5"></div><div class="palert" role="alertdialog"><div class="bd"><b>${d.title}</b><input class="pin" value="${attr(d.value)}" placeholder="名称" spellcheck="false" autocomplete="off"></div><div class="bt"><button data-act="phdlgcancel">Cancel</button><button class="go" data-act="${go[0]}" ${d.value.trim() ? "" : "disabled"}>${go[1]}</button></div></div>`;
+}
+/** Asked before anything goes to the Mac's Trash from the phone: the Trash is on the Mac, so it cannot be undone here
+ *  (HIG Action sheets: Move to Trash red on top, Cancel apart). A folder a terminal runs in says so. */
+function phTrashHtml(d) {
+  const what = d.paths.length === 1 ? `“${baseName(d.paths[0])}”` : ` ${d.paths.length} 项`;
+  const busy = d.paths.map(runsIn).find(Boolean);
+  const say = busy ? `终端“${esc(busy.name)}”正在此文件夹中运行。移到废纸篓后，其中的 agent 仍会使用原来的路径，可能出错。` : "可在 Mac mini 的废纸篓中恢复。";
+  return `<div class="dimmer" style="z-index:5"></div><div class="asheet" role="dialog"><div class="g"><div class="hd"><b>将${esc(what)}移到 Mac mini 的废纸篓？</b>${say}</div><button class="red" data-act="phdotrash">Move to Trash</button></div><div class="g"><button class="cancel" data-act="phdlgcancel">Cancel</button></div></div>`;
+}
+/** The system's share sheet, the file fetched to the phone first: Save to Files puts it where you pick in the Files app,
+ *  Save Image into Photos (HIG Activity views: the Share button, no saving of our own). */
+function phShareHtml(d) {
+  const ns = d.paths.map(node).filter(Boolean);
+  const one = ns.length === 1 ? ns[0] : null;
+  const head = one ? `<b>${esc(one.name)}</b><small>${esc(kindWord(one))} · ${sizeWords(one.size)}</small>` : `<b>${ns.length} Files</b><small>${sizeWords(ns.reduce((a, n) => a + (n.size ?? 0), 0))}</small>`;
+  const targets = [["airdrop", "AirDrop"], ["bubble", "Messages"], ["mail", "Mail"], ["notes", "Notes"]];
+  const acts = [["Copy", "copy"], ["Save to Files", "folder", true], ...(ns.every((n) => n.type === "image") ? [["Save Image", "image"]] : [])];
+  return `<div class="dimmer" style="z-index:5"></div><div class="share" role="dialog" aria-label="Share"><div class="sh"><span class="fi">${one ? fileIcon(one) : line("doc", 18)}</span><span class="tt">${head}</span><button class="x" data-act="phdlgcancel" aria-label="Close">${line("x", 12)}</button></div><div class="tg">${targets.map(([k, l]) => `<span><i>${line(k, 24)}</i>${l}</span>`).join("")}</div><div class="ac">${acts.map(([l, k, hi]) => `<div class="it ${hi ? "hi" : ""}">${l}${line(k, 19)}</div>`).join("")}</div></div>`;
+}
+/** The same name already there (files-v0 §12.8): Finder's and Files' three answers, for all of them at once. */
+function phConflictHtml(d) {
+  const say = d.names.length === 1 ? `此位置已有名为“${esc(d.names[0])}”的项目。要替换它吗？` : `此位置已有 ${d.names.length} 个同名的项目。要替换它们吗？`;
+  return `<div class="dimmer" style="z-index:5"></div><div class="asheet" role="dialog"><div class="g"><div class="hd"><b>${say}</b>原来的会移到 Mac mini 的废纸篓。</div><button data-act="phkeep">Keep Both</button><button data-act="phreplace" style="border-top:.5px solid rgba(127,127,127,.35)">Replace</button></div><div class="g"><button class="cancel" data-act="phstop">Stop</button></div></div>`;
+}
+const phOverlay = (d) => !d ? "" : d.kind === "trash" ? phTrashHtml(d) : d.kind === "share" ? phShareHtml(d) : d.kind === "conflict" ? phConflictHtml(d) : phNameHtml(d);
+/** A file on its way to the Mac: on top of the list, its progress, × to stop it (files-v0 §12.8). */
+function upRowHtml(u) {
+  const say = u.state === "wait" ? "Waiting" : `Uploading ${Math.floor(u.pct)}%`;
+  if (C()) return `<div class="pr up"><span></span><span class="ic">${line(/\.(heic|jpe?g|png)$/i.test(u.name) ? "image" : "doc", 16)}</span><span class="nm">${esc(u.name)}<small>${say} · ${sizeWords(u.size)}</small><i class="bar"><b style="width:${u.pct}%"></b></i></span><button class="go" data-act="phupstop" data-path="${attr(u.name)}" aria-label="Stop">${line("x", 13)}</button></div>`;
+  const cells = 10, on = Math.round(u.pct / 100 * cells);
+  return `<div class="pr up"><span></span><span class="tr">├─</span><span class="nm">${esc(u.name)}<small> [${"█".repeat(on)}${"░".repeat(cells - on)}] ${u.state === "wait" ? "Waiting" : `${Math.floor(u.pct)}%`}</small></span><button class="mt" data-act="phupstop" data-path="${attr(u.name)}" aria-label="Stop">×</button></div>`;
+}
+/** An earlier session, read only, `Resume` under it; ⋯ has Show in Files (files-v0 §12.4). Made up. */
+function phoneSession({ menu = false } = {}) {
+  return `<div class="pscr"><div class="pnav"><span class="nb">‹</span><span class="t"><b>文件接口的分页</b><span>~/Projects/harbor-api · 5d</span></span><span class="nb r"><span class="more" data-act="phsessmore">⋯</span></span></div>
+    <div class="pbody"><div class="ub" style="max-width:90%">文件接口加上分页，每页 50 条。</div><div class="md"><p>已在 <code class="c">routes/files.ts</code> 加了游标分页：带 <code class="c">?cursor=</code> 取下一页，每页 50 条。</p></div><div class="ub" style="max-width:90%">测试也补上。</div><div class="md"><p>补了 3 个测试，<code class="c">npm test</code> 全部通过。</p></div></div>
+    <div class="pbar" style="justify-content:center">${B("Resume", "pri")}</div>
+    ${menu ? `<div class="pmenu ctxm" style="top:52px; right:10px; left:auto">${mi("Show in Files", "folder", "phshowin", { isNew: true, hi: true })}</div>` : ""}</div>`;
+}
+function drawPhones() {
+  const ph = S.ph;
+  const el = document.getElementById("phones");
+  let left, right, ll, rl;
+  const lumen = HOME + "/Projects/lumen";
+  // the third draft's pairs: left what is done, right what comes of it
+  const list = () => ph.preview ? phonePreview() : phoneTab();
+  const leftMenu = () => ph.menu === "more" || ph.menu === "up" ? phMoreHtml() : ph.menu?.kind === "row" ? phRowMenuHtml(ph.menu.path) : "";
+  if (ph.v3) {
+    if (ph.step === "pnew") { left = list() + leftMenu(); ll = "Files 标签页 · ⋯"; right = list() + phOverlay(ph.dlg); rl = ph.dlg ? (ph.dlg.err ? "名字用不了" : `${ph.dlg.title} · 起名`) : "建好了"; }
+    if (ph.step === "plong") { left = list() + leftMenu(); ll = "长按一项（演示里右键）"; right = list() + phOverlay(ph.dlg); rl = ph.dlg?.kind === "trash" ? "Move to Trash · 先问" : ph.dlg ? "下一步" : "移走了"; }
+    if (ph.step === "psel") { left = list() + leftMenu(); ll = "Select · 底栏"; right = list() + phOverlay(ph.dlg); rl = ph.dlg?.kind === "trash" ? "废纸篓按钮 · 先问" : ph.dlg?.kind === "share" ? "分享按钮 · 分享面板" : "Files 标签页"; }
+    if (ph.step === "pshare") { left = phonePreview(); ll = "预览 · 右上角 Share"; right = phonePreview() + phOverlay(ph.dlg); rl = ph.dlg ? "分享面板 · Save to Files" : "预览"; }
+    if (ph.step === "pterm") { left = phoneTerm({ more: ph.menu === "term" }); ll = "终端页 · ⋯"; right = phoneTab({ root: lumen }); rl = "Show in Files · 它此刻的文件夹"; }
+    if (ph.step === "pupload") { left = list() + leftMenu(); ll = "⋯ › Upload"; right = list() + phOverlay(ph.dlg); rl = ph.ups.length ? "传的时候" : "传完了"; }
+    if (ph.step === "pconflict") { left = list() + leftMenu(); ll = "选了一个同名的"; right = list() + phOverlay(ph.dlg); rl = ph.dlg ? "重名 · 问一次" : ph.ups.length ? "传的时候" : "传完了"; }
+    if (ph.step === "psess") { left = phoneSession({ menu: ph.menu === "sess" }); ll = "会话记录页 · ⋯"; right = phoneTab({ root: HOME + "/Projects/harbor-api" }); rl = "Show in Files · 会话的文件夹"; }
+  } else if (ph.tab) {
+    left = phoneTab(); ll = ph.select ? "Files 标签页 · Select" : "Files 标签页";
+    if (ph.chosen != null) { right = phoneTerm({ added: ph.added, p: PANES[ph.chosen] }); rl = "选了终端 · 它的回复框"; }
+    else if (ph.choosing) { right = phoneTab({ chooser: true }); rl = "Add to Reply… · 给哪个终端"; }
+    else { right = ph.preview ? phonePreview() : phoneTab(); rl = ph.preview ? "点一个文件 · 预览" : "Files 标签页"; }
+  } else {
+    left = ph.step === "browse" ? phoneTerm({ menu: true }) : `${phoneTerm()}${phoneSheet()}`; ll = ph.step === "browse" ? "终端页 · + 菜单" : "Files on Mac · sheet";
+    right = ph.preview ? phonePreview() : phoneTerm({ added: ph.added }); rl = ph.preview ? "点一个文件 · 预览" : "回到终端页";
+  }
+  if (ph.alert) { if (ph.alert.side === "left") left += alertHtml(ph.alert.sens); else right += alertHtml(ph.alert.sens); }
+  const sb = `<div class="sbar"><span>13:06</span><span>●●●</span></div>`;
+  el.innerHTML = `<div class="phonebox"><span class="lbl">${ll}</span><div class="phone ${look()}">${sb}${left}</div></div>
+    <div class="phonebox"><span class="lbl">${rl}</span><div class="phone ${look()}">${sb}${right}</div></div>`;
+  document.getElementById("capPhone").innerHTML = capPhone();
+  const pin = el.querySelector(".pin");
+  if (pin && S.ph.focusPin) { S.ph.focusPin = false; pin.focus({ preventScroll: true }); pin.select(); }
+}
+function phPreset(name) {
+  const lumen = HOME + "/Projects/lumen";
+  S.ph = { step: name, root: lumen, expanded: new Set(), select: false, sel: [], preview: null, added: [], hidden: false, tab: false, choosing: false, chosen: null, alert: null };
+  if (name === "down") S.ph.root = lumen + "/src";
+  if (name === "preview") { S.ph.root = lumen + "/src"; S.ph.preview = lumen + "/src/app.ts"; }
+  if (name === "select") { S.ph.root = lumen + "/src"; S.ph.select = true; S.ph.sel = [lumen + "/src/app.ts", lumen + "/src/store.ts"]; }
+  if (name === "reply") { S.ph.root = lumen + "/src"; S.ph.select = true; S.ph.sel = [lumen + "/src/app.ts", lumen + "/src/store.ts"]; S.ph.added = [...S.ph.sel]; }
+  if (name === "tab") { S.ph.tab = true; S.ph.root = lumen + "/src"; S.ph.select = true; S.ph.sel = [lumen + "/src/app.ts", lumen + "/src/store.ts"]; S.ph.choosing = true; }
+  if (name === "sensitive") { S.ph.hidden = true; S.ph.preview = lumen + "/.env"; S.ph.alert = { side: "right", add: [lumen + "/.env"], sens: [lumen + "/.env"], k: null }; }
+  // third draft (files-v0 §12.3, §12.4): the Files tab, each a pair — left what is done, right what comes of it
+  Object.assign(S.ph, { v3: ["pnew", "plong", "psel", "pshare", "pterm", "psess", "pupload", "pconflict"].includes(name), menu: null, dlg: null, flash: null, ups: [] });
+  if (S.ph.v3) { S.ph.tab = true; buildTree(); S.undo = []; S.redo = []; S.note = null; }
+  if (name === "pnew") { S.ph.menu = "more"; S.ph.dlg = { kind: "new", type: "dir", title: "New Folder", value: "fixtures" }; }
+  if (name === "plong") { S.ph.root = lumen + "/src"; S.ph.menu = { kind: "row", path: lumen + "/src/app.ts" }; S.ph.dlg = { kind: "trash", paths: [lumen + "/src/app.ts"] }; }
+  if (name === "psel") { S.ph.root = lumen + "/src"; S.ph.select = true; S.ph.sel = [lumen + "/src/app.ts", lumen + "/src/store.ts"]; S.ph.dlg = { kind: "trash", paths: [...S.ph.sel] }; }
+  if (name === "pshare") { S.ph.root = lumen + "/docs"; S.ph.preview = lumen + "/docs/logo.png"; S.ph.dlg = { kind: "share", paths: [lumen + "/docs/logo.png"] }; }
+  if (name === "pterm") { S.ph.menu = "term"; }
+  if (name === "psess") { S.ph.menu = "sess"; }
+  if (name === "pupload") { S.ph.root = lumen + "/docs"; S.ph.menu = "up"; S.ph.ups = [{ name: "IMG_0412.HEIC", size: 2_400_000, pct: 42, state: "up", dir: lumen + "/docs" }, { name: "IMG_0413.HEIC", size: 3_100_000, pct: 0, state: "up", dir: lumen + "/docs" }]; }
+  if (name === "pconflict") { S.ph.root = lumen + "/docs"; S.ph.ups = [{ name: "logo.png", size: 31_000, pct: 0, state: "wait", dir: lumen + "/docs" }]; S.ph.dlg = { kind: "conflict", names: ["logo.png"] }; }
+}
+function capPhone() {
+  return {
+    browse: `<b>入口</b>：终端页 <code>+</code> 菜单多一项 <code>Files on Mac</code>（<code>Files</code> 是从手机的“文件”App 选，图标各是各的）。另外两个入口：第五个标签 <code>Files</code>（⑦），终端行长按的 <code>Show in Files</code>。`,
+    open: `<b>打开在这个终端的文件夹</b>：一张大的 sheet，标题是当前文件夹，下面一行路径每层可点（横向可滑；长按返回键是系统列出的上面各层）。${C() ? "经典：iOS“文件”的列表，一次一层往下钻。" : "像素：这一层画成树线，<code>▸</code> 就地展开一层，点名字进去——手机屏窄，往深处还是进页。"}底部写着选的会落进哪个终端。`,
+    down: `<b>往下一层</b>：点文件夹进去（${C() ? "行尾 <code>›</code>" : "或先点 <code>▸</code> 就地看一眼"}）。点路径里的 <code>lumen</code> 回去。`,
+    preview: `<b>预览</b>：点一个文件推进一页。文字由应用自己显示前 64 KB（等宽、行号）；图片、PDF 和其他点 <code>Open Preview</code> 下载后交给系统的 <code>QLPreviewController</code>，超过 25 MB 的不下载。底部 <code>Add to Reply</code>、<code>Copy Path</code>。`,
+    select: `<b>Select</b>：勾几项，底栏 <code>Add to Reply (2)</code>。点它回到终端页。`,
+    reply: `<b>回到回复框</b>：光标处是 <code>[File #1] [File #2]</code>，上面一排小条写着 <code>on Mac</code>：文件在 Mac 上，发送时附件是路径（<code>{path}</code>），不上传。`,
+    tab: `<b>Files 标签页</b>（用户定）：第五个标签，排在 Terminals 后面，五个正好不进“更多”。整页的文件浏览器，打开在上次的位置，第一次是家目录，跟着当前连着的那台。这里不知道要给谁，所以 <code>Select</code> 以后底栏是 <code>Add to Reply…</code>：先选哪个终端（右边，最近用过的在前），再落进它的回复框。点右边的一个终端试试。`,
+    pnew: `<b>新建</b>（第三稿）：文件夹页 <code>⋯</code> 最上面一组 <code>New Folder</code>、<code>New File</code>（iOS“文件”的摆法），点了是系统带输入框的提示框（同终端页的 <code>Rename</code>），<code>Create</code> 在名字空时是灰的。右边打的是 <code>fixtures</code>，点 <code>Create</code> 建好、列表里亮一下；改成 <code>docs</code> 再点，第二个提示框说“此位置已有……”，<code>OK</code> 回去改，打的字还在。名字里带 <code>/</code> 一次建几层。`,
+    plong: `<b>长按一项</b>（文件列表以前没有长按菜单）：行浮起来，下面是系统的菜单——<code>Add to Reply…</code>、<code>Share…</code>、<code>Copy Path</code>；<code>Rename…</code>；最后一组红字的 <code>Move to Trash</code>（Apple 的右键菜单规范：破坏性的在最后、红色）。文件夹没有 <code>Share…</code>；装着 AgentSwitch 凭据的没有改名和移到废纸篓。手机上移到废纸篓<b>先问</b>（右边）：废纸篓在 Mac 上，手机这边撤不回来；系统的确认面板，<code>Move to Trash</code> 红色在上，<code>Cancel</code> 另一块。演示里在左边任何一行上右键试试，点右边的 <code>Move to Trash</code> 真的移走。`,
+    psel: `<b>Select 的底栏</b>：标题下面的小字换成 <code>2 Selected</code>；底栏左边两个按钮——分享（选中里有文件夹时是灰的）、移到废纸篓，右边 <code>Add to Reply…</code>。点废纸篓先问（右边，几项一起：“将 2 项移到……”）；点分享是系统的分享面板。从终端 <code>+</code> 进来的那张 sheet 里只有 <code>Add to Reply (n)</code>：那里是给这个终端挑文件。`,
+    pshare: `<b>存到手机</b>（你说的“保存”，我的读法）：预览页右上角多一个 <code>Share</code> 按钮（长按菜单的 <code>Share…</code> 同样）。先把整个文件下到手机（同 <code>Open Preview</code> 的进度条），再开<b>系统的分享面板</b>：<code>Save to Files</code> 存到“文件”App 里你挑的位置，图片还有 <code>Save Image</code> 存进照片，也能 AirDrop。Apple 的规范要求用 Share 按钮、不另做一份“保存”。存在哪由你挑、在“文件”App 里能删——这回答了 10-17 那一问；应用自己下载的副本用完就删（当时的方案 1）。分享上限 200 MB。`,
+    pterm: `<b>终端页 › Show in Files</b>：导航栏 <code>⋯</code> 里单独一组 <code>Show in Files</code>，在 <code>Rename</code>、<code>Close</code> 上面（名字同 Mac 左边列表的右键菜单）。切到 <code>Files</code> 标签，到这个终端<b>此刻</b>所在的文件夹（右边）；终端页留在 Terminals 标签里，切回去还在。`,
+    psess: `<b>会话记录页 › Show in Files</b>：以前的会话（只读，底部 <code>Resume</code>）导航栏右边加 <code>⋯</code>，里面 <code>Show in Files</code>，到会话的文件夹（右边）。文件夹已经不在时到它还在的最近一层，上面一行说明。终端列表里长按会话行的菜单（<code>Resume</code>、<code>Resume As</code>、<code>Delete</code>）也加这一项，同 Mac。`,
+    pupload: `<b>从手机往 Mac 传文件</b>（你定的，§12.8）：文件夹页 <code>⋯</code> 里 <code>Upload</code> 子菜单，<code>Camera</code>、<code>Photos</code>、<code>Files</code>——和终端页 <code>+</code> 菜单是同样三个来源、同样的图标。传进当前这个文件夹（这里是 <code>docs</code>）。选好的文件排在列表最上面，各自一条进度，<code>×</code> 停下这一个；传完变成普通的一行、亮一下。照片按原样传（HEIC 就是 HEIC，同 AirDrop），一个文件最多 200 MB，切到别的应用也接着传。左边点 <code>Photos</code> 再传两张试试（其中 <code>logo.png</code> 会重名）。`,
+    pconflict: `<b>重名</b>：要传的 <code>logo.png</code> 这里已经有了，先停下问一次（Finder 和 iOS“文件”的三个选择）：<code>Keep Both</code> 新的叫 <code>logo 2.png</code>；<code>Replace</code> 原来的那个<b>移到 Mac 的废纸篓</b>，不是直接覆盖；<code>Stop</code> 不传这几个，不同名的照传。几个同名时一次答全部。`,
+    sensitive: `<b>可能含密码的文件</b>：<code>.env</code> 照常能预览（左边的 sheet 打开了隐藏文件，<code>⋯</code> › <code>Show Hidden Files</code>）；点 <code>Add to Reply</code> 时系统的提示框问一次。<code>Add</code> 以后小条上带${C() ? "琥珀色的三角" : "琥珀色的 <code>!</code>"}，发送时不再问。`,
+  }[S.ph.step] ?? "";
+}
+
+// ---------- interaction ----------
+function draw() { drawMac(); drawPhones(); drawSet(); }
+function select(path, e) {
+  const n = node(path);
+  if (!n || n.locked) return;
+  if (e && (e.metaKey || e.ctrlKey)) S.sel = S.sel.includes(path) ? S.sel.filter((p) => p !== path) : [...S.sel, path];
+  else if (e && e.shiftKey && S.anchor && S.visible) {
+    const a = S.visible.indexOf(S.anchor), b = S.visible.indexOf(path);
+    if (a >= 0 && b >= 0) S.sel = S.visible.slice(Math.min(a, b), Math.max(a, b) + 1).filter((p) => !node(p)?.locked);
+  } else S.sel = [path];
+  if (!e?.shiftKey) S.anchor = path;
+}
+function addToReply() {
+  const files = S.sel.filter((p) => !node(p)?.locked);
+  if (!files.length) return;
+  const i = S.panes === 1 ? 0 : S.focus;
+  // A file that may hold a password is asked about first (files-v0 §4).
+  const sens = files.filter(isSensitive);
+  if (sens.length) { S.warn = { pane: i, files, sens }; return; }
+  give(i, files);
+}
+function give(i, files) {
+  if (!files.length) return;
+  if (S.viewOf[i] === "simple") S.reply[i] = [...S.reply[i], ...files.filter((p) => !S.reply[i].includes(p))].slice(0, 10);
+  else S.typed[i] = files.map((p) => p.replace(/ /g, "\\ ")).join(" ") + " ";
+}
+document.addEventListener("click", (e) => {
+  const opt = e.target.closest("[data-opt] button");
+  if (opt) {
+    const k = opt.parentElement.dataset.opt;
+    opt.parentElement.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === opt));
+    if (k === "look") { S.look = opt.dataset.v; preset(S.mac); } else S.light = opt.dataset.v === "light";
+    draw(); return;
+  }
+  const mc = e.target.closest("[data-mac]");
+  if (mc) { document.querySelectorAll("#ctlMac button, #ctlMac3 button").forEach((b) => b.classList.toggle("on", b === mc)); preset(mc.dataset.mac); drawMac(); return; }
+  const pc = e.target.closest("[data-ph]");
+  if (pc) { document.querySelectorAll("#ctlPhone button, #ctlPhone3 button").forEach((b) => b.classList.toggle("on", b === pc)); phPreset(pc.dataset.ph); draw(); return; }
+  const inMac = e.target.closest("#win"), inPhone = e.target.closest("#phones"), inSet = e.target.closest("#setwrap");
+  const a = e.target.closest("[data-act]");
+  const act = a?.dataset.act;
+  if (inPhone) { phoneAct(act, a, e); return; }
+  if (inSet) { setAct(act, a, e); return; }
+  if (!inMac) return;
+  const menuWas = S.menu;
+  if (!e.target.closest(".menu")) S.menu = null;
+  // The line under the list is for what was just done; the next click in the window lets it go.
+  if (!e.target.closest("[data-mac]")) S.note = null;
+  const paneEl = e.target.closest("[data-pane-body]");
+  if (paneEl && !act) { S.focus = Number(paneEl.dataset.paneBody); }
+  switch (act) {
+    case "barfiles": case "panefiles": {
+      const i = act === "panefiles" ? Number(a.dataset.pane) : S.focus;
+      if (showsPane(i)) S.open = false; else { S.open = true; goTo(paneOf(i).cwd); S.focus = i; }
+      break;
+    }
+    case "view": { const i = S.panes === 1 ? 0 : S.focus; S.viewOf[i] = S.viewOf[i] === "simple" ? "terminal" : "simple"; break; }
+    case "split": if (S.panes === 1) { S.panes = 2; S.focus = 1; } break;
+    case "home": goTo(HOME); S.menu = null; break;
+    case "more": S.menu = menuWas?.kind === "more" ? null : { kind: "more" }; break;
+    case "close": S.open = false; break;
+    case "crumb": goTo(a.dataset.path); S.menu = null; break;
+    case "fold": S.menu = menuWas?.kind === "fold" ? null : { kind: "fold" }; break;
+    case "back": if (S.back.length) { S.fwd.push(S.root); goTo(S.back.pop(), { history: false }); } break;
+    case "fwd": if (S.fwd.length) { S.back.push(S.root); goTo(S.fwd.pop(), { history: false }); } break;
+    case "up": goTo(parentOf(S.root)); break;
+    case "twist": {
+      const p = a.dataset.path;
+      if (e.altKey) { const all = (q) => kids(q, S.hidden).filter(isDir).forEach((c) => { S.expanded.add(c.path); all(c.kind === "link" ? c.target : c.path); }); if (S.expanded.has(p)) S.expanded.delete(p); else { S.expanded.add(p); all(p); } }
+      else if (S.expanded.has(p)) S.expanded.delete(p); else S.expanded.add(p);
+      break;
+    }
+    case "enter": { const n = node(a.dataset.path); if (n && !n.locked) goTo(n.kind === "link" ? n.target : n.path); break; }
+    case "viewas": S.view = a.dataset.v; S.menu = null; break;
+    case "hidden": S.hidden = !S.hidden; S.menu = null; break;
+    case "pvtoggle": S.preview = !S.preview; S.menu = null; break;
+    case "floattoggle": S.float = !S.float; S.menu = null; break;
+    case "addreply": S.menu = null; addToReply(); break;
+    case "warnadd": give(S.warn.pane, S.warn.files); S.warn = null; break;
+    case "warncancel": give(S.warn.pane, S.warn.files.filter((p) => !S.warn.sens.includes(p))); S.warn = null; break;
+    case "qlopen": S.menu = null; S.ql = true; break;
+    case "unreply": S.reply[Number(a.dataset.pane)].splice(Number(a.dataset.k), 1); break;
+    case "qlclose": S.ql = false; break;
+    case "showin": S.open = true; goTo(a.dataset.path); S.menu = null; break;
+    // third draft (files-v0 §12)
+    case "newmenu": S.menu = menuWas?.kind === "new" ? null : { kind: "new" }; break;
+    case "newfile": case "newfolder": startNew(act === "newfile" ? "file" : "dir", a.dataset.path || null); break;
+    case "rename": startRename(a.dataset.path); break;
+    case "trash": S.menu = null; toTrash(S.sel.includes(a.dataset.path) ? [...S.sel] : [a.dataset.path]); break;
+    case "dlgcancel": S.dlg = null; break;
+    case "dlgok": { const d = S.dlg; S.dlg = null; if (d.op === "rename") commitEdit({ force: true }); else toTrash(d.paths, { force: true }); break; }
+    default: {
+      const row = e.target.closest("[data-row]");
+      if (row && row.dataset.col) {
+        // Finder's columns: one click on a folder goes into it; a file in the left column moves the row back one.
+        const n = node(row.dataset.row);
+        if (n && !n.locked && isDir(n)) goTo(n.kind === "link" ? n.target : n.path);
+        else if (n && !n.locked && row.dataset.col === "l") { goTo(parentOf(n.path)); select(n.path); }
+        else select(row.dataset.row, e);
+      } else if (row && e.target.closest(".files")) select(row.dataset.row, e);
+      // Floating, the column stays when the page is clicked (files-v0 §2.1): only ×, the icons, ⌘⇧F and esc close it.
+    }
+  }
+  // A menu item that does nothing in the demo still closes its menu, as the system's would.
+  if (!act && e.target.closest(".menu .it:not(.off)")) S.menu = null;
+  drawMac();
+  if (e.target.closest(".files") && !S.edit) document.getElementById("fl")?.focus({ preventScroll: true });
+});
+document.addEventListener("dblclick", (e) => {
+  const row = e.target.closest("#win [data-row]");
+  if (!row || row.dataset.col) return;
+  const n = node(row.dataset.row);
+  if (n && isDir(n) && !n.locked) { goTo(n.kind === "link" ? n.target : n.path); drawMac(); }
+});
+document.addEventListener("contextmenu", (e) => {
+  const pr = e.target.closest("#phones .pr[data-path]");
+  if (pr && S.ph.v3 && ["pnew", "plong", "psel"].includes(S.ph.step)) {
+    e.preventDefault();
+    Object.assign(S.ph, { menu: { kind: "row", path: pr.dataset.path }, dlg: null, preview: null });
+    drawPhones(); return;
+  }
+  const fr = e.target.closest("#win .files [data-row]");
+  if (fr) {
+    e.preventDefault();
+    const n = node(fr.dataset.row);
+    if (!n || n.locked) return;
+    if (!S.sel.includes(n.path)) { S.sel = [n.path]; S.anchor = n.path; }
+    S.menu = { kind: "file", path: n.path, hi: null };
+    drawMac(); return;
+  }
+  const bg = e.target.closest("#win .files .fl");
+  if (bg) {
+    e.preventDefault();
+    const body = document.querySelector("#win .body"), k = body.getBoundingClientRect().width / body.offsetWidth, b = body.getBoundingClientRect();
+    S.sel = []; S.menu = { kind: "bg", x: Math.min((e.clientX - b.left) / k, body.offsetWidth - 220), y: Math.min((e.clientY - b.top) / k, body.offsetHeight - 130) };
+    drawMac(); return;
+  }
+  const r = e.target.closest("#win [data-ctx]");
+  if (!r) return;
+  e.preventDefault();
+  S.menu = { kind: "list", cwd: r.dataset.ctx, id: r.dataset.ctxId, hi: null };
+  drawMac();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.target.id === "fin" && S.edit) {
+    if (e.key === "Enter") { e.preventDefault(); if (commitEdit() !== false) { drawMac(); document.getElementById("fl")?.focus({ preventScroll: true }); } }
+    else if (e.key === "Escape") { e.preventDefault(); S.edit = null; drawMac(); document.getElementById("fl")?.focus({ preventScroll: true }); }
+    return;
+  }
+  if (e.target.classList?.contains("pin")) {
+    if (e.key === "Enter") { const go = e.target.closest(".palert")?.querySelector(".go"); if (go && !go.disabled) go.click(); }
+    else if (e.key === "Escape") { S.ph.dlg = null; drawPhones(); }
+    return;
+  }
+  if (e.target.closest?.("#phones")) return;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && e.target.closest?.("#win")) {
+    e.preventDefault(); if (e.shiftKey) redo(); else undo(); drawMac(); document.getElementById("fl")?.focus({ preventScroll: true }); return;
+  }
+  if (e.key === "Escape" && S.dlg) { S.dlg = null; drawMac(); return; }
+  if (e.key === "Escape") {
+    if (S.menu || S.ql || S.warn) { S.menu = null; S.ql = false; S.warn = null; drawMac(); }
+    // Floating, esc closes the column when the focus is in it; in a terminal esc is the terminal's.
+    else if (floated() && e.target.closest?.(".files")) { S.open = false; drawMac(); }
+    return;
+  }
+  if (!e.target.closest || !e.target.closest("#fl")) return;
+  const vis = S.visible ?? [];
+  const cur = S.sel.at(-1) ?? null;
+  const at = cur ? vis.indexOf(cur) : -1;
+  const move = (k) => { let j = at; do { j += k; } while (j >= 0 && j < vis.length && node(vis[j])?.locked); if (j >= 0 && j < vis.length) { S.sel = [vis[j]]; S.anchor = vis[j]; } };
+  const n = cur ? node(cur) : null;
+  const open = () => { if (n && isDir(n) && !n.locked) goTo(n.kind === "link" ? n.target : n.path); };
+  S.note = null;
+  if (e.metaKey && e.key === "Backspace") { toTrash([...S.sel]); }
+  else if (e.metaKey && e.altKey && e.code === "KeyN") { startNew("file"); }
+  else if (e.metaKey && e.shiftKey && e.code === "KeyN") { startNew("dir"); }
+  else if ((e.metaKey && e.key === "ArrowDown") || (e.metaKey && e.key.toLowerCase() === "o")) { open(); }
+  else if (e.key === "ArrowDown") { move(at < 0 ? 1 : 1); }
+  else if (e.key === "ArrowUp") { move(-1); }
+  else if (e.key === "Home") { S.sel = vis.length ? [vis[0]] : []; }
+  else if (e.key === "End") { S.sel = vis.length ? [vis[vis.length - 1]] : []; }
+  else if (e.key === "ArrowRight" && n && isDir(n)) { if (viewNow() === "tree") { if (!S.expanded.has(n.path)) S.expanded.add(n.path); else move(1); } else goTo(n.kind === "link" ? n.target : n.path); }
+  else if (e.key === "ArrowLeft") { if (viewNow() === "tree" && n && S.expanded.has(n.path)) S.expanded.delete(n.path); else if (viewNow() === "tree" && n && parentOf(n.path) !== S.root) { S.sel = [parentOf(n.path)]; } else { const p = parentOf(S.root); if (p) goTo(p); } }
+  else if (e.key === " ") { if (n && !isDir(n)) S.ql = !S.ql; }
+  // ↩ renames, as in Finder and VS Code (files-v0 §12.2); ⌥↩ is Add to Reply.
+  else if (e.key === "Enter") { if (e.altKey) addToReply(); else if (n && S.sel.length === 1) startRename(n.path); }
+  else if (e.key.length === 1 && /\S/.test(e.key)) { const k = e.key.toLowerCase(); const from = at + 1; const hit = [...vis.slice(from), ...vis.slice(0, from)].find((p) => baseName(p).replace(/^\./, "").toLowerCase().startsWith(k)); if (hit) S.sel = [hit]; else return; }
+  else return;
+  e.preventDefault();
+  drawMac();
+  // A name box just opened keeps the keys.
+  if (!S.edit) document.getElementById("fl")?.focus({ preventScroll: true });
+  document.querySelector("#fl .sel")?.scrollIntoView({ block: "nearest" });
+});
+function phoneAct(act, a, e) {
+  const ph = S.ph;
+  // A tap beside a menu, or beside the share sheet, closes it (the system's).
+  if (!act) {
+    if (e && !e.target.closest(".pmenu, .share, .palert, .asheet") && (ph.menu || ph.dlg?.kind === "share")) { ph.menu = null; if (ph.dlg?.kind === "share") ph.dlg = null; drawPhones(); }
+    return;
+  }
+  // What lands in a reply: asked first when a file may hold a password (files-v0 §5).
+  const land = (files, side, k = null) => {
+    const sens = files.filter(isSensitive);
+    if (sens.length) { ph.alert = { side, add: files, sens, k }; return; }
+    put(files, k);
+  };
+  const put = (files, k) => {
+    if (!files.length) return;
+    if (k != null) { ph.chosen = k; ph.choosing = false; }
+    ph.added = [...new Set([...ph.added, ...files])]; ph.preview = null;
+    if (!ph.tab) ph.step = "reply";
+  };
+  switch (act) {
+    case "phcrumb": ph.root = a.dataset.path; ph.expanded = new Set(); ph.preview = null; break;
+    case "phenter": ph.root = a.dataset.path; ph.expanded = new Set(); if (!ph.tab) ph.step = "down"; break;
+    case "phtwist": if (ph.expanded.has(a.dataset.path)) ph.expanded.delete(a.dataset.path); else ph.expanded.add(a.dataset.path); break;
+    case "phopen": ph.preview = a.dataset.path; if (!ph.tab) ph.step = "preview"; else { ph.choosing = false; ph.chosen = null; } break;
+    case "phback": ph.preview = null; break;
+    case "phselect": ph.select = !ph.select; ph.sel = []; ph.added = []; ph.chosen = null; ph.choosing = false; if (!ph.tab) ph.step = ph.select ? "select" : "down"; break;
+    case "phpick": { const p = a.dataset.path; ph.sel = ph.sel.includes(p) ? ph.sel.filter((x) => x !== p) : [...ph.sel, p]; break; }
+    case "phadd": land([...ph.sel], "left"); break;
+    case "phaddone": if (ph.tab) { ph.sel = [ph.preview]; ph.preview = null; ph.choosing = true; } else land([ph.preview], "right"); break;
+    case "tabadd": if (ph.sel.length) { ph.choosing = true; ph.chosen = null; ph.added = []; } break;
+    case "chcancel": ph.choosing = false; break;
+    case "choose": land([...ph.sel], "right", Number(a.dataset.k)); break;
+    case "alertadd": put(ph.alert.add, ph.alert.k); ph.alert = null; break;
+    case "alertcancel": put(ph.alert.add.filter((p) => !ph.alert.sens.includes(p)), ph.alert.k); ph.alert = null; break;
+    // third draft (files-v0 §12.3, §12.4)
+    case "phmore": ph.menu = ph.menu === "more" ? null : "more"; break;
+    case "phnewfolder": case "phnewfile": ph.menu = null; ph.flash = null; ph.dlg = { kind: "new", type: act === "phnewfile" ? "file" : "dir", title: act === "phnewfile" ? "New File" : "New Folder", value: "" }; ph.focusPin = true; break;
+    case "phcreate": {
+      const d = ph.dlg, c = checkName(ph.root, d.value);
+      if (c.error) { d.err = c.error; break; }
+      ph.flash = makeItem(ph.root, d.value, d.type).top; ph.dlg = null; ph.menu = null;
+      break;
+    }
+    case "phdlgok": ph.dlg.err = null; ph.focusPin = true; break;
+    case "phdlgcancel": ph.dlg = null; break;
+    case "phmreply": ph.menu = null; break;
+    case "phmshare": ph.menu = null; ph.dlg = { kind: "share", paths: [a.dataset.path] }; break;
+    case "phmrename": ph.menu = null; ph.dlg = { kind: "rename", path: a.dataset.path, title: "Rename", value: baseName(a.dataset.path) }; ph.focusPin = true; break;
+    case "phpvrename": ph.menu = null; ph.dlg = { kind: "rename", path: ph.preview, title: "Rename", value: baseName(ph.preview) }; ph.focusPin = true; break;
+    case "phrenamego": {
+      const d = ph.dlg, c = checkName(parentOf(d.path), d.value, { renaming: d.path });
+      if (c.error) { d.err = c.error; break; }
+      const name = d.value.trim();
+      if (name !== baseName(d.path)) { const to = renameItem(d.path, name); if (ph.preview === d.path) ph.preview = to; ph.sel = ph.sel.map((x) => x === d.path ? to : x); ph.flash = to; }
+      ph.dlg = null;
+      break;
+    }
+    case "phmtrash": ph.menu = null; ph.dlg = { kind: "trash", paths: [a.dataset.path] }; break;
+    case "phpvtrash": ph.menu = null; ph.dlg = { kind: "trash", paths: [ph.preview] }; break;
+    case "phseltrash": if (ph.sel.length) ph.dlg = { kind: "trash", paths: [...ph.sel] }; break;
+    case "phselshare": if (ph.sel.length && ph.sel.every((x) => !isDir(node(x)))) ph.dlg = { kind: "share", paths: [...ph.sel] }; break;
+    case "phdotrash": {
+      const d = ph.dlg;
+      d.paths.filter((x) => node(x) && !fixed(x)).forEach(takeOut);
+      ph.sel = ph.sel.filter((x) => !d.paths.includes(x));
+      if (d.paths.includes(ph.preview)) ph.preview = null;
+      ph.dlg = null; ph.menu = null;
+      break;
+    }
+    case "phshare": ph.menu = null; ph.dlg = { kind: "share", paths: [ph.preview] }; break;
+    case "phpvmore": ph.menu = ph.menu === "pv" ? null : "pv"; break;
+    case "phtermmore": ph.menu = ph.menu === "term" ? null : "term"; break;
+    case "phsessmore": ph.menu = ph.menu === "sess" ? null : "sess"; break;
+    case "phshowin": ph.menu = null; break;
+    // files-v0 §12.8: from the phone into this folder
+    case "phupmenu": ph.menu = "up"; break;
+    case "phupfrom": {
+      ph.menu = null;
+      const picked = { camera: [["IMG_0414.JPG", 1_900_000]], photos: [["IMG_0415.HEIC", 2_600_000], ["logo.png", 31_000]], files: [["notes.pdf", 820_000]] }[a.dataset.path];
+      const clash = picked.filter(([n]) => node(ph.root + "/" + n)).map(([n]) => n);
+      ph.ups.push(...picked.map(([n, size]) => ({ name: n, size, pct: 0, state: clash.includes(n) ? "wait" : "up", dir: ph.root })));
+      if (clash.length) ph.dlg = { kind: "conflict", names: clash };
+      break;
+    }
+    case "phupstop": ph.ups = ph.ups.filter((u) => u.name !== a.dataset.path); break;
+    case "phkeep": case "phreplace": case "phstop": {
+      for (const u of ph.ups.filter((x) => x.state === "wait")) {
+        if (act === "phstop") { ph.ups = ph.ups.filter((x) => x !== u); continue; }
+        if (act === "phreplace") takeOut(u.dir + "/" + u.name);
+        else { const dot = u.name.lastIndexOf("."); let k = 2, n; do { n = dot > 0 ? `${u.name.slice(0, dot)} ${k}${u.name.slice(dot)}` : `${u.name} ${k}`; k++; } while (node(u.dir + "/" + n)); u.name = n; }
+        u.state = "up";
+      }
+      ph.dlg = null;
+      break;
+    }
+    default: return;
+  }
+  drawPhones();
+}
+
+// ---------- 3. Settings › Nodes: the node's own switch, each device's Files (files-v0 §7.5) ----------
+const MODES = [["home", "Home Folder"], ["all", "All Files"], ["folders", "Selected Folders"], ["none", "None"]];
+const MORE_FOLDERS = [HOME + "/Projects/harbor-api", HOME + "/Desktop", HOME + "/Projects/notes"];
+const rootsOf = (sc) => sc.mode === "home" ? [HOME] : sc.mode === "folders" ? sc.folders : [];
+const inScope = (p, sc) => sc.mode === "all" || rootsOf(sc).some((r) => p === r || p.startsWith(r + "/"));
+const leadsTo = (p, sc) => rootsOf(sc).some((r) => r.startsWith(p === "/" ? "/" : p + "/"));
+/** A level as the device is given it: all of it inside the scope; above it only what leads into it. */
+function scopedLevel(p, sc) {
+  const all = kids(p, false);
+  if (inScope(p, sc)) return { list: all, scoped: false };
+  return { list: all.filter((c) => inScope(c.path, sc) || leadsTo(c.path, sc)), scoped: true };
+}
+const scopeHome = (sc) => sc.mode === "folders" ? (sc.folders[0] ?? HOME) : HOME;
+function drawSet() {
+  const st = S.set, el = document.getElementById("setwrap");
+  const tgl = (on, act = "") => `<span class="tgl ${on ? "on" : ""}" ${act ? `data-act="${act}"` : ""} role="switch" aria-checked="${on}"></span>`;
+  const pop = (dev) => `<button class="pop" data-act="spop" data-dev="${dev}">${MODES.find(([v]) => v === st[dev].mode)[1]}<i>${C() ? "⌃⌄" : "▾"}</i></button>`;
+  const folders = (dev) => st[dev].mode !== "folders" ? "" : st[dev].folders.map((f, k) => `<div class="r sub2 ${st.read ? "" : "off"}"><span class="ic">${line("folder", 14)}</span><span class="m">${esc(f.replace(HOME, "~"))}</span><span class="sp"></span><button class="mini" data-act="sdel" data-dev="${dev}" data-k="${k}" aria-label="Remove">−</button></div>`).join("")
+    + `<div class="r sub2 ${st.read ? "" : "off"}"><button class="lnk" data-act="sadd" data-dev="${dev}">Add Folder…</button></div>`;
+  const files = (dev) => `<div class="r sub ${st.read ? "" : "off"}"><span class="d">Files</span><span class="sp"></span>${pop(dev)}</div>${folders(dev)}`;
+  const sl = (t) => `<div class="sl">${C() ? t : `// ${t}`}</div>`;
+  const menu = st.menu ? `<div class="menu" style="right:30px; top:${st.menu.top}px; min-width:190px">${MODES.map(([v, label]) => `<div class="it ${st[st.menu.dev].mode === v ? "chk" : ""}" data-act="smode" data-dev="${st.menu.dev}" data-v="${v}">${label}</div>`).join("")}</div>` : "";
+  const win = `<div class="setwin ${look()}"><div class="tb2"><div class="lights"><i></i><i></i><i></i></div>Nodes<small>Mac mini · Settings</small></div><div class="bd" id="setbd">
+    ${sl("This Mac")}<div class="grp"><div class="r"><span>Mac mini</span><span class="sp"></span><span class="d">LAN 192.168.1.30 · Tailscale mac-mini</span></div>
+      <div class="r"><span>Allow Pairing</span><span class="sp"></span>${tgl(true)}</div>
+      <div class="r"><span>Paired Nodes May Type</span><span class="sp"></span>${tgl(true)}</div>
+      <div class="r"><span>Paired Nodes May Read Files</span><span class="sp"></span>${tgl(st.read, "sread")}</div>
+      <div class="r ${st.read ? "" : "off"}"><span>Paired Nodes May Change Files</span><span class="new">New</span><span class="sp"></span>${tgl(st.read && st.change, st.read ? "schange" : "")}</div></div>
+    ${sl("Nodes")}<div class="grp">
+      <div class="r"><span class="ic">${line("laptop", 16)}</span><span class="m">MacBook Pro</span><span class="d">Online · LAN · 2 ms</span><span class="sp"></span><button class="nbtn red">Remove…</button></div>
+      <div class="r sub"><span class="d">This Mac Uses It</span><span class="sp"></span>${tgl(true)}</div>
+      <div class="r sub"><span class="d">It Uses This Mac</span><span class="sp"></span>${tgl(true)}</div>${files("mbp")}
+      <div class="r"><span class="ic">${line("phone", 16)}</span><span class="m">iPhone 17 Pro</span><span class="d">Online</span><span class="sp"></span><button class="nbtn red">Remove…</button></div>
+      <div class="r sub"><span class="d">It Uses This Mac</span><span class="sp"></span>${tgl(true)}</div>${files("phone")}</div>
+    <div class="foot">范围只限制其他设备在文件栏中能浏览和附加的文件。配对的设备仍可在终端中让 agent 读取其他位置。</div>${menu}</div></div>`;
+  el.innerHTML = `<div class="phonebox"><span class="lbl">MAC MINI · SETTINGS › NODES</span>${win}</div><div class="phonebox"><span class="lbl">IPHONE 17 PRO · FILES（它看到的 Mac mini）</span><div class="phone ${look()}"><div class="sbar"><span>13:06</span><span>●●●</span></div>${scopePhone()}</div></div>`;
+  if (st.menu) {
+    const b = el.querySelector(`.pop[data-dev="${st.menu.dev}"]`), bd = el.querySelector("#setbd"), m = el.querySelector(".setwin .menu");
+    if (b && bd && m) { const top = b.getBoundingClientRect().bottom - bd.getBoundingClientRect().top + 2; if (Math.abs(top - st.menu.top) > 1) { st.menu.top = top; m.style.top = `${top}px`; } }
+  }
+  document.getElementById("capSet").innerHTML = capSet();
+}
+/** The iPhone's Files tab, given what the Mac mini gives it. */
+function scopePhone() {
+  const st = S.set, sc = st.phone;
+  const nav = (title, sub, acts = true) => `<div class="pnav"><span class="nb"></span><span class="t"><b>${esc(title)}</b><span>${sub}</span></span><span class="nb r">${acts ? `<span>Select</span><span class="more">⋯</span>` : ""}</span></div>`;
+  const on = C() ? "On Mac mini" : "@ Mac mini";
+  if (!st.read) return `<div class="pscr ptab">${nav("Files", on, false)}<div></div><div class="pnote">Mac mini 不允许配对的设备读取文件。可在 Mac mini 的“设置 › Nodes”中打开。</div>${tabBar()}</div>`;
+  if (sc.mode === "none") return `<div class="pscr ptab">${nav("Files", on, false)}<div></div><div class="pnote">Mac mini 没有给这台设备读取文件的权限。</div>${tabBar()}</div>`;
+  const root = st.root;
+  if (!inScope(root, sc) && !leadsTo(root, sc)) return `<div class="pscr ptab">${nav(baseName(root), on)}${phCrumbs(root, "scrumb")}<div class="pnote">此文件夹不在 Mac mini 给这台设备的授权范围内。<br>${B("Home", "", "shome")}</div>${tabBar()}</div>`;
+  const { list, scoped } = scopedLevel(root, sc);
+  const rows = list.length ? phRows(root, { list, ns: "s" }) : `<div class="pnote">此文件夹为空。</div>`;
+  return `<div class="pscr ptab">${nav(baseName(root), on)}${phCrumbs(root, "scrumb")}<div class="plist">${rows}${scoped ? `<div class="pfoot2" style="border:0">仅显示授权范围内的项目。</div>` : ""}</div>${tabBar()}</div>`;
+}
+function setAct(act, a) {
+  const st = S.set;
+  const wasMenu = st.menu;
+  if (act !== "spop") st.menu = null;
+  switch (act) {
+    case "sread": st.read = !st.read; break;
+    case "schange": st.change = !st.change; break;
+    case "spop": st.menu = wasMenu?.dev === a.dataset.dev ? null : { dev: a.dataset.dev, top: 0 }; break;
+    case "smode": {
+      const dev = st[a.dataset.dev];
+      dev.mode = a.dataset.v;
+      if (dev.mode === "folders" && !dev.folders.length) dev.folders = [HOME + "/Projects/lumen"];
+      if (a.dataset.dev === "phone") st.root = scopeHome(dev);
+      break;
+    }
+    case "sdel": { const dev = st[a.dataset.dev]; dev.folders.splice(Number(a.dataset.k), 1); if (a.dataset.dev === "phone") st.root = scopeHome(dev); break; }
+    case "sadd": { const dev = st[a.dataset.dev]; const next = [HOME + "/Projects/lumen", HOME + "/Documents", ...MORE_FOLDERS].find((f) => !dev.folders.includes(f)); if (next) dev.folders.push(next); break; }
+    case "scrumb": case "senter": st.root = a.dataset.path; break;
+    case "shome": st.root = scopeHome(st.phone); break;
+    case "sopen": break;
+    default: if (!wasMenu) return;
+  }
+  drawSet();
+}
+function capSet() {
+  const sc = S.set.phone;
+  const now = !S.set.read ? "<b>开关关着</b>：手机和 MacBook Pro 都读不到这台 Mac 的文件，那边写明去哪里打开。本机的应用不受影响。"
+    : { home: "iPhone 现在是 <b>Home Folder</b>（新配对的设备默认这一档）：家目录和它下面的一切；点路径里的 <code>/</code>、<code>Users</code>，那几层只列通往家目录的那一个。",
+        all: "iPhone 现在是 <b>All Files</b>：服务所在账户能读的一切；点路径里的 <code>/</code> 能看到整个磁盘。",
+        folders: `iPhone 现在是 <b>Selected Folders</b>（${sc.folders.map((f) => `<code>${esc(f.replace(HOME, "~"))}</code>`).join("、") || "还没有文件夹"}）：家目录这一层只列通往它们的文件夹，底部写“仅显示授权范围内的项目。”；进到授权的文件夹里，一切照常。`,
+        none: "iPhone 现在是 <b>None</b>：什么都不给读。" }[sc.mode];
+  return `<b>第三稿</b>：下面多一个 <code>Paired Nodes May Change Files</code>（默认开；读的开关关着时它也灰）。关掉以后，手机和别的节点的新建、改名、移到废纸篓都不出现、接口回 <code>changes-off</code>；本机的应用不受影响。它是“文件栏里不许改”的总闸，不是沙箱：配对的设备本来就能在终端里以你的身份做这些。改得了的地方和读得到的一样，由下面每个设备的范围定。<b>节点自己的开关</b> <code>Paired Nodes May Read Files</code> 在 <code>Paired Nodes May Type</code> 下面，默认开。<b>每个设备一个范围</b>：在 <code>It Uses This Mac</code> 下面多一行 <code>Files</code>，四档 <code>Home Folder</code>、<code>All Files</code>、<code>Selected Folders</code>、<code>None</code>，只在这台 Mac 自己身上定（Linux 节点用命令行）。${now} AgentSwitch 自己存凭据的地方在任何一档里都锁着。范围不是沙箱：配对的设备照样能开终端让 agent 读别处，设置里那句说明照写。右边的手机能点：文件夹、路径的每一层；左边的开关和弹出菜单也能点。`;
+}
+
+// the name box: a click anywhere else makes what it holds, if the name is good, else lets it go (VS Code)
+document.addEventListener("pointerdown", (e) => {
+  if (!S.edit || S.dlg || e.target.closest("#fin") || e.target.closest("[data-mac]")) return;
+  if (commitEdit() === false) S.edit = null;
+  drawMac();
+}, true);
+document.addEventListener("input", (e) => {
+  if (e.target.id === "fin" && S.edit) {
+    S.edit.value = e.target.value;
+    const old = document.getElementById("ferr");
+    if (old) old.outerHTML = ferrHtml(Number(old.dataset.pad));
+  }
+  if (e.target.classList.contains("pin") && S.ph.dlg) {
+    S.ph.dlg.value = e.target.value;
+    const go = e.target.closest(".palert")?.querySelector(".go");
+    if (go) go.disabled = !e.target.value.trim();
+  }
+});
+// the column's width: its left edge dragged (240–560 points)
+document.addEventListener("pointerdown", (e) => {
+  if (!e.target.closest("#win .drag")) return;
+  e.preventDefault();
+  const x0 = e.clientX, w0 = S.sideW, k = document.querySelector("#fitMac .scaled").getBoundingClientRect().width / document.getElementById("win").offsetWidth;
+  const move = (m) => { S.sideW = Math.max(240, Math.min(560, Math.round(w0 - (m.clientX - x0) / k))); drawMac(); };
+  const up = () => { document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up); };
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", up);
+});
+
+// ---------- fitting the window to a narrow page ----------
+function fitAll() {
+  const box = document.getElementById("fitMac");
+  const inner = box.firstElementChild, win = document.getElementById("win");
+  const w = win.offsetWidth, h = win.offsetHeight;
+  const avail = box.clientWidth;
+  const k = Math.min(1, avail / (w + 2));
+  inner.style.transform = `scale(${k})`;
+  box.style.height = `${Math.ceil(h * k) + 4}px`;
+}
+window.addEventListener("resize", fitAll);
+// the phone's uploads come in (files-v0 §12.8): a file lands in the folder when it is all there
+setInterval(() => {
+  const ph = S.ph, moving = (ph.ups ?? []).filter((u) => u.state === "up");
+  if (document.hidden || !moving.length || ph.menu || ph.dlg) return;
+  const u = moving[0];
+  u.pct = Math.min(100, u.pct + 6);
+  if (u.pct >= 100) {
+    const made = makeItem(u.dir, u.name, "file").path, n = node(made);
+    Object.assign(n, { size: u.size, mtime: "Now", type: /\.(heic|jpe?g|png)$/i.test(u.name) ? "image" : /\.pdf$/i.test(u.name) ? "pdf" : "binary", pic: "shot", text: null, lang: undefined });
+    ph.ups = ph.ups.filter((x) => x !== u); ph.flash = made;
+  }
+  drawPhones();
+}, 220);
+// the spinners turn (ui-v0 §7.2 4); they stop while the page is hidden
+setInterval(() => { if (document.hidden) return; frame++; document.querySelectorAll("[data-spin]").forEach((s) => { s.textContent = SPIN[frame % SPIN.length]; }); }, 90);
+
+// ?look=classic&theme=light&mac=reply&ph=select
+const q = new URLSearchParams(location.search);
+if (q.get("look") === "classic") S.look = "classic";
+if (q.get("theme") === "light") S.light = true;
+document.querySelectorAll('[data-opt="look"] button').forEach((b) => b.classList.toggle("on", b.dataset.v === S.look));
+document.querySelectorAll('[data-opt="theme"] button').forEach((b) => b.classList.toggle("on", (b.dataset.v === "light") === S.light));
+const mac0 = q.get("mac") ?? "home", ph0 = q.get("ph") ?? "browse";
+phPreset(ph0); preset(mac0);
+document.querySelectorAll("#ctlMac button, #ctlMac3 button").forEach((b) => b.classList.toggle("on", b.dataset.mac === mac0));
+document.querySelectorAll("#ctlPhone button, #ctlPhone3 button").forEach((b) => b.classList.toggle("on", b.dataset.ph === ph0));
+draw();
+</script>
+</body>
+</html>

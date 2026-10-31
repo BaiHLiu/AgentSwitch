@@ -59,7 +59,11 @@ struct TerminalsTab: View {
         let folders = store.folders
         NavigationStack(path: $path) {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
+                // Not a lazy stack: a top folder is one item holding all the rows under it (a home folder, everything),
+                // and with the list scrolled into such an item a line above it going away — a failed read's line, the
+                // connection's — left the lazy stack drawing nothing at all until the list was emptied (2026-10-17,
+                // user: 有的时候手机终端会白屏; TerminalsListProbe). Laziness bought nothing there: the item is built whole.
+                VStack(alignment: .leading, spacing: 0) {
                     if model.connection.endpoint == nil {
                         ConnectionBanner().padding(.bottom, Theme.Space.m)
                     }
@@ -159,6 +163,8 @@ struct TerminalsTab: View {
                         for p in choices.profiles where p.id != (m.session.profile ?? "default") { items.append(.init(label: "Resume As \(p.name)") { Task { await resume(m.session, as: p.id) } }) }
                     }
                 }
+                // Its folder on the Files tab, as on the Mac's list (docs/files-v0.md §12.4).
+                if !m.session.cwd.isEmpty { items.append(.init(label: "Show in Files") { model.showInFiles(m.session.cwd) }) }
                 if TerminalsTab.deletable.contains(m.session.harness) { items.append(.init(label: "Delete", role: .destructive) { deletingSession = m.session }) }
                 return PixelBox(cancel: nil, actions: items, anchor: m.anchor)
             }
@@ -276,6 +282,8 @@ struct TerminalsTab: View {
                 ForEach(Array(f.terminals.enumerated()), id: \.element.id) { i, t in
                     Button { path.append(TerminalRoute.terminal(t)) } label: { terminalRow(t, last: i == rows - 1, depth: depth) }
                         .buttonStyle(.plain)
+                        // Its folder on the Files tab (docs/files-v0.md §5).
+                        .contextMenu { Button("Show in Files", systemImage: "folder") { model.showInFiles(t.workdir) } }
                         .modifier(stepIn(at + 1 + i, within: within))
                     // Its sub-agents, one level under it; a tap opens the terminal.
                     if t.isRunning {

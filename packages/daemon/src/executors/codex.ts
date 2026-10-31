@@ -4,6 +4,7 @@
  *  protected path refused here, the rest by the engine's floor and approvals); MCP elicitations are accepted. A private CODEX_HOME holds a 0600 copy of auth.json and
  *  our config (never the user's ~/.codex/config.toml), removed when the run ends. */
 
+import { WritingFeed, WritingText } from "../core/writing.js";
 import type { ChildProcess } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -289,11 +290,17 @@ export function codexExecutor(opts: CodexExecutorOptions): Executor {
       let watch: RunStop | null = null;
       const timedOut = () => watch?.timedOut === true;
       let notifyDone: (() => void) | null = null;
+      let stopWriting: () => void = () => undefined;
       const completed = new Promise<void>((r) => (notifyDone = r));
       try {
         child = spawnOwned(opts.binary, ["app-server"], { cwd: input.cwd, env, stdio: ["pipe", "pipe", "pipe"] });
         let stderr = "";
         child.stderr!.on("data", (d: Buffer) => (stderr += d.toString()));
+        // The answer as it is written (docs/simple-view-v0.md §5.14): this client opened the thread, so it is sent its
+        // pieces.
+        const writing = input.writing ? new WritingFeed(input.writing) : null;
+        const written = new WritingText();
+        stopWriting = () => writing?.clear();
         const client = new AppServerClient(child.stdin!, child.stdout!, async (method, params) => {
           if (input.signal.aborted) return approvalAnswer(method, false);
           if (method === "mcpServer/elicitation/request") return approvalAnswer(method, true);
@@ -310,7 +317,15 @@ export function codexExecutor(opts: CodexExecutorOptions): Executor {
         }, (method, params) => {
           const before = state;
           state = applyNotification(state, method, params);
+          if (writing) {
+            const piece = typeof params.delta === "string" ? params.delta : "";
+            if (method === "item/agentMessage/delta" && piece) writing.set(written.add(String(params.itemId ?? ""), piece));
+            else if (method === "item/reasoning/summaryTextDelta" && piece) writing.set(written.add(`reasoning:${String(params.itemId ?? "")}`, piece, true));
+            else if (method === "item/completed" && ((params.item as Json | undefined)?.type === "reasoning")) { writing.clear(); written.reset(); }
+          }
           if (state.text.length > before.text.length) input.emit("text", { text: state.text.at(-1) });
+          // The part written is in the task's events now; or the turn is over.
+          if (writing && (state.text.length > before.text.length || state.completed)) { writing.clear(); written.reset(); }
           if (state.tools > before.tools) input.emit("tool_call", codexToolCall((params.item as Json) ?? {}, method));
           const result = method === "item/completed" ? codexToolResult((params.item as Json) ?? {}, state.toolIds) : null;
           if (result) input.emit("tool_result", result);
@@ -334,6 +349,7 @@ export function codexExecutor(opts: CodexExecutorOptions): Executor {
       } catch (err) {
         return { ...outcomeFromTurn(state, (err as Error).message), timedOut: timedOut() };
       } finally {
+        stopWriting();
         watch?.dispose();
         if (child) await terminateProcess(child);
         if (!persistent) rmSync(home, { recursive: true, force: true });

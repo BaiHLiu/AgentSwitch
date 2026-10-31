@@ -221,13 +221,17 @@ struct RecordDraftStrip: View {
                             .framed(Look.line, radius: look.isClassic ? 4 : 0)
                     }
                     Text("#\(file.number)").mono(Look.size(11.5, look), weight: .semibold).foregroundStyle(Look.ink).padding(.leading, file.thumbnail == nil ? 5 : 0)
+                    // May hold a password (docs/files-v0.md §4): asked about as it came in, marked while it is here.
+                    if file.sensitive {
+                        LookGlyph(glyph: "!", symbol: "exclamationmark.triangle.fill", size: 11.5).foregroundStyle(Color.waiting).help("可能含有密码或密钥。")
+                    }
                     Text(file.name).mono(Look.size(11.5, look)).foregroundStyle(Look.ink2).lineLimit(1).truncationMode(.middle).frame(maxWidth: 200, alignment: .leading)
                     Button { record.remove(file) } label: { LookGlyph(glyph: "×", symbol: "xmark", size: 11.5) }
                         .buttonStyle(QuietButtonStyle())
                         .help("Remove")
                 }
                 .padding(.leading, 3).padding(.trailing, 8).padding(.vertical, 3)
-                .framed(Look.line, radius: Look.controlRadius)
+                .framed(file.sensitive ? Color.waiting.opacity(0.7) : Look.line, radius: Look.controlRadius)
                 .help(file.path ?? file.name)
             }
         }

@@ -7,19 +7,24 @@ import SwiftUI
 /// end, while what a session does to it happens — a turn ends (the status goes still, the last run of work closes, an
 /// answer is added; in one step or two); the session not known for a moment; the record read again whole, or under
 /// other names, or much shorter; the reader a little way up, then `↓ Latest` clicked; `Earlier` clicked at its start
-/// and the session going on meanwhile; a run of work opened by a click; a long reply typed; an answer growing.
+/// and the session going on meanwhile; a run of work opened by a click; a long reply typed; an answer growing; a reply
+/// typed in the box and taken back a key at a time to one line (`shrinks`: after each key, how many states the box went
+/// through in the next 1.2 s — more than three reads `MOVING`); what it offers as the next message taken with Tab, then
+/// the box made again (`tab`: the draft must hold it once).
 /// After each step `turn.txt` gets a line — where the record's scroller stands in its document, how much of what it
 /// shows is drawn on (a pane left blank reads 0%), how many items are shown — and the page's picture is
 /// `turn-<scene>-<step>.png`. `-probeOnScreen YES` puts the window on screen behind the others, which the clicks need
 /// (and where the page is drawn as the display asks, not as the probe does); `-probeScene <name>` plays one scene.
 /// `-probeReal YES`: the session has the sizes a real one has (answers from a line to a few thousand characters,
 /// code, tables) instead of forty like turns.
-/// `-probePerf YES` instead says what a record of 60 items and one of 300 cost: to show, to add to, to read through.
+/// `-probePerf YES` instead says what a record of 60 items and one of 300 cost: to show, to add to, to read through;
+/// `-probeCPU YES`, what one costs on screen while nothing is asked of it (`RecordCPUProbe`).
 @MainActor
 enum RecordTurnProbe {
     static func run(into directory: URL) async throws {
         let log = Log()
         if UserDefaults.standard.bool(forKey: "probePerf") { return try await perf(into: directory, log: log) }
+        if UserDefaults.standard.bool(forKey: "probeCPU") { return try await RecordCPUProbe.run(into: directory, log: log) }
         let onScreen = UserDefaults.standard.bool(forKey: "probeOnScreen")
         let only = UserDefaults.standard.string(forKey: "probeScene")
         for scene in Scene.allCases where only == nil || only == scene.rawValue {
@@ -289,6 +294,98 @@ enum RecordTurnProbe {
             pane.record.stageItems(items(turns: 40, working: false))
             await pause(50)
             try await mark("the turn ended")
+        case .shrinks:
+            // Two lines typed in the reply box, then taken back a key at a time to one (2026-10-16, user: 在简略模式写两行字
+            // 然后删除的刚好只剩下一行的时候就会触发抽搐动作): after each key, what moves in the next 1.2 s.
+            guard let text = composer(host) else { log.say("shrinks: no reply box"); break }
+            host.window?.makeFirstResponder(text)
+            log.say("     scroller style \(NSScroller.preferredScrollerStyle == .legacy ? "legacy" : "overlay")")
+            func watch(_ what: String) async {
+                var seen: [String] = []
+                for _ in 0..<75 {
+                    let box = text.enclosingScrollView
+                    let record = scroller(host)
+                    let line = String(format: "box %.1f, text %.1f×%.1f, bar %@, record at %.0f of %.0f, inset %.0f, %@", box?.frame.height ?? -1, text.frame.width, text.frame.height,
+                                      box?.verticalScroller?.isHidden == false && box?.hasVerticalScroller == true ? "shown" : "hidden",
+                                      record?.documentVisibleRect.minY ?? -1, record?.documentView?.frame.height ?? -1, record?.contentInsets.bottom ?? -1, pane.record.atEnd ? "at end" : "Latest")
+                    if seen.last != line { seen.append(line) }
+                    await pause(16)
+                }
+                log.say("     \(what): \(seen.count) states\(seen.count > 3 ? " — MOVING" : "")")
+                for line in seen.prefix(8) { log.say("        \(line)") }
+            }
+            for (label, typed) in [("two lines", "第一行，写一点字\n第二行"), ("one long line wrapped", String(repeating: "这是一段很长的回复，", count: 9)),
+                                  ("eight lines, the last long", (1...7).map { "第 \($0) 行" }.joined(separator: "\n") + "\n" + String(repeating: "这是一段很长的回复，", count: 9))] {
+                text.selectAll(nil)
+                text.deleteBackward(nil)
+                await pause(300)
+                for part in typed.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+                    if part.offset > 0 { text.insertNewlineIgnoringFieldEditor(nil) }
+                    text.insertText(String(part.element), replacementRange: text.selectedRange())
+                }
+                await watch("\(label) typed")
+                try await mark("\(label) typed")
+                var lines = 2
+                var keys = 0
+                while lines > 1, keys < 120 {
+                    text.deleteBackward(nil)
+                    keys += 1
+                    await pause(30)
+                    let used = text.layoutManager.map { m in text.textContainer.map { m.usedRect(for: $0).height } ?? 0 } ?? 0
+                    lines = used > ComposeField.lineHeight * 1.5 ? 2 : 1
+                    if lines == 1 || keys % 4 == 0 { await watch("\(keys) keys back, \(lines == 1 ? "one line" : "still two")") }
+                }
+                try await mark("\(label) taken back to one line")
+                text.deleteBackward(nil)
+                await watch("one more key back")
+            }
+        case .writing:
+            // What it is writing now at the record's end, as it grows: what it thinks first, then its answer.
+            pane.record.stageWriting(AgentWriting(text: "先看看现在的列表是怎么排的：模型里有一个 `sortedRows`，", thinking: true))
+            await pause(300)
+            try await mark("what it thinks, being written")
+            let answer = "改好了：列表现在按最近使用排，置顶的仍然在最前。\n\n- 排序放在模型里做，界面只读结果；\n- 从没用过的排在最后，按名字。\n\n测试 `ListTests` 全过，下面是"
+            for n in [20, 60, answer.count] {
+                pane.record.stageWriting(AgentWriting(text: String(answer.prefix(n))))
+                await pause(200)
+            }
+            try await mark("its answer, being written")
+        case .peer:
+            // Another session's message in the record, by the name it gave and by none, and the answer to it.
+            idle()
+            let base = items(turns: 40, working: false)
+            let t = base.last?.at ?? 0
+            pane.record.stageItems(base + [
+                RecordItem(id: "p1", kind: .user, at: t + 60_000, text: "登录接口新加的字段定名为 refreshToken；登录失败都是 401，body 里的 error 分别是 invalid_credentials 和 expired。", from: "05 · Codex"),
+                RecordItem(id: "p2", kind: .answer, at: t + 70_000, text: "收到。登录页按 `error` 区分：`expired` 先拿 refreshToken 换新再重试一次。"),
+                RecordItem(id: "p3", kind: .user, at: t + 80_000, text: "别按旧格式写了，我刚改了。", from: ""),
+            ])
+            await pause(400)
+            try await mark("another session's messages")
+        case .tab:
+            // What it offers as the next message, taken with Tab into the empty box; then the box made again — the
+            // terminal view and back, twice (2026-10-16, user: 我这边对话框还在一直自己自己补对话).
+            let offered = "写进设计稿和演示页，探针也跑一下"
+            idle()
+            pane.record.stageItems(items(turns: 40, working: false))
+            pane.record.stageSuggestion(offered)
+            await pause(300)
+            _ = pane.record.hintKey(.tab)
+            await pause(400)
+            func copies() -> Int { pane.record.draft.components(separatedBy: offered).count - 1 }
+            log.say("     Tab: the draft holds it \(copies()) time(s)")
+            // Made again as the window makes it again — the record's pane is in the window only while nothing else
+            // stands in its place: here the new-terminal panel opened over it and closed, the pane itself (its record,
+            // its draft) kept.
+            model.focus(pane: pane.id, force: true)
+            for n in 1...2 {
+                model.creating = true
+                await pause(500)
+                model.creating = false
+                await pause(600)
+                log.say("     the box made again (\(n)): the draft holds it \(copies()) time(s)\(copies() > 1 ? " — PUT IN AGAIN" : "")")
+            }
+            try await mark("the suggestion taken, the box made again twice")
         case .grows:
             for n in 1...12 {
                 pane.record.stageItems(items(turns: 40, working: true, grown: n), activity: TerminalActivity(tool: "Bash", target: "npm test"))
@@ -308,7 +405,7 @@ enum RecordTurnProbe {
 
     private static let began = Int64(Date().timeIntervalSince1970 * 1000)
 
-    enum Scene: String, CaseIterable { case ends, statusFirst, unknown, reread, renamed, shorter, up, earlier, opens, typing, grows }
+    enum Scene: String, CaseIterable { case ends, statusFirst, unknown, reread, renamed, shorter, up, earlier, opens, typing, grows, shrinks, tab, peer, writing }
 
     /// A made-up session of `turns` turns: what was asked, a run of work, an answer of some length. `working`: the last
     /// turn is still going (its run of work open, no answer yet). `grown`: how much of the last answer is written.
@@ -343,6 +440,13 @@ enum RecordTurnProbe {
             out.append(RecordItem(id: id(2), kind: .answer, at: at + 60_000, text: text))
         }
         return out
+    }
+
+    /// The reply box's text view.
+    private static func composer(_ host: NSView) -> ComposeTextView? {
+        if let text = host as? ComposeTextView { return text }
+        for view in host.subviews { if let found = composer(view) { return found } }
+        return nil
     }
 
     /// The record's scroller: the one whose document is the tallest.

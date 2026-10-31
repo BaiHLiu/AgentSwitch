@@ -2,6 +2,7 @@
  *  edits inside cwd are allowed, everything else (Bash, writes outside cwd, web) asks the engine.
  *  User settings are not loaded (settingSources: []); the gate proxy goes into the tool env. */
 
+import { WritingFeed, WritingText, type Writing } from "../core/writing.js";
 import { RATE_LIMIT_PROBE_PROMPT } from "../core/probes.js";
 import { query, type CanUseTool, type EffortLevel, type Options, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -260,7 +261,8 @@ function runOptions(runDir: string, input: ExecutionInput, opts: ClaudeExecutorO
   const options: Options = {
     cwd, model: input.model, canUseTool, permissionMode: "default", settingSources: [],
     systemPrompt: { type: "preset", preset: "claude_code", append: executorInstructions() },
-    maxTurns: opts.maxTurns ?? DEFAULT_MAX_TURNS, abortController: abort, includePartialMessages: false,
+    // The answer as it is written (docs/simple-view-v0.md §5.14): the API's own pieces, `stream_event`.
+    maxTurns: opts.maxTurns ?? DEFAULT_MAX_TURNS, abortController: abort, includePartialMessages: !!input.writing,
     ...(input.effort && EFFORTS.has(input.effort) ? { effort: input.effort as EffortLevel } : {}),
     env: { ...withoutCredentialRepair(process.env), ...baseEnv, GIT_EDITOR: "true" } as Record<string, string>,
     ...(input.resume ? { resume: input.resume } : {}),
@@ -269,6 +271,21 @@ function runOptions(runDir: string, input: ExecutionInput, opts: ClaudeExecutorO
     ...(opts.executable ? { pathToClaudeCodeExecutable: opts.executable } : {}),
   };
   return { options, transfer: opts.gate ? run.transfer ?? null : null };
+}
+
+/** What a message of the run says of the part being written: the part's text so far (a piece of text or of thinking
+ *  came), null (a part that is not text began: what was written is done), or undefined (nothing to say). Only the
+ *  run's own answer: a sub-agent's stream (`parent_tool_use_id`) is its own. */
+export function streamWriting(msg: SDKMessage, written: WritingText): Writing | null | undefined {
+  if (msg.type !== "stream_event" || msg.parent_tool_use_id) return undefined;
+  const e = msg.event as { type?: string; index?: number; content_block?: { type?: string }; delta?: { type?: string; text?: string; thinking?: string } };
+  // A block's index counts from 0 in each message.
+  if (e.type === "message_start") { written.reset(); return undefined; }
+  if (e.type === "content_block_start" && e.content_block?.type !== "text" && e.content_block?.type !== "thinking") return null;
+  if (e.type !== "content_block_delta") return undefined;
+  if (e.delta?.type === "text_delta" && e.delta.text) return written.add(`${e.index ?? 0}`, e.delta.text);
+  if (e.delta?.type === "thinking_delta" && e.delta.thinking) return written.add(`${e.index ?? 0}`, e.delta.thinking, true);
+  return undefined;
 }
 
 /** Stream what changed between two folds to the engine. */
@@ -295,18 +312,24 @@ export function claudeExecutor(opts: ClaudeExecutorOptions = {}): Executor {
       let state: Folded = EMPTY_FOLD;
       const timedOutOutcome = () => interruptedOutcome(outcomeFromFold(state, granted.count, false),
         { exitCode: null, stderr: `timed out after ${opts.maxMs} ms`, lastText: state.text.join("\n"), timedOut: true });
+      const writing = input.writing ? new WritingFeed(input.writing) : null;
+      const written = new WritingText();
       try {
         for await (const msg of query({ prompt: composePrompt({ ...input, transfer }), options })) {
           const before = state;
           state = foldMessage(state, msg);
           if (msg.type === "rate_limit_event") opts.rateLimits?.record(msg.rate_limit_info);
+          if (writing) { const w = streamWriting(msg, written); if (w === null) writing.clear(); else if (w) writing.set(w); }
           emitDelta(input, before, state);
+          // The part written is in the task's events now.
+          if (writing && state.text.length > before.text.length) { writing.clear(); written.reset(); }
         }
       } catch (err) {
         if (stop.timedOut) return timedOutOutcome();
         return interruptedOutcome(outcomeFromFold(state, granted.count, input.signal.aborted),
           { exitCode: input.signal.aborted ? null : 1, stderr: (err as Error).message, lastText: state.text.join("\n"), timedOut: false });
       } finally {
+        writing?.clear();
         stop.dispose();
         rmSync(runDir, { recursive: true, force: true });
       }

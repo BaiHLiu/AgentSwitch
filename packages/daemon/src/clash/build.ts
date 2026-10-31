@@ -1,7 +1,8 @@
 /** The subscription AgentSwitch hands to Clash Verge (docs/clash-v0.md §7.2, §7.7): the one it works from as it is,
  *  and for each of Claude and OpenAI that has nodes chosen — a node set AgentSwitch serves (those nodes, in their
  *  order, by their own names), a group that uses the first of them that answers, and the group that decides where that
- *  traffic goes (the automatic one, or a node of the set). Its rules are in front of the subscription's own; the rule
+ *  traffic goes (the automatic one, or a node of the set). Its rules are in front of the subscription's own, and the
+ *  subscription's own rules for that service send to its group too (`ruleService`); the rule
  *  templates (domestic direct, blocking) are rule sets too, the broad ones after the subscription's rules.
  *
  *  What changes from day to day is not in this text but in the sets it names — the node sets, the rule sets — which the
@@ -32,19 +33,24 @@ export type ClashSettings = {
   /** The DNS template (§7.8): on, what is handed over has it under `dns:` in place of the subscription's own.
    *  `text`: the user's own (YAML, what goes under `dns:`); null: the built-in one. */
   readonly dns: { readonly on: boolean; readonly text: string | null };
+  /** Only AgentSwitch's rules (§7.11): what is handed over keeps the subscription's nodes and nothing else of its
+   *  routing — its groups, rules and rule sets are left out; AgentSwitch's groups, its rule sets and `MATCH,Manual`
+   *  are all there is. The domestic template is on while this is. */
+  readonly ownRules: boolean;
 };
 export const EMPTY_SETTINGS: ClashSettings = { claude: { nodes: [] }, openai: { nodes: [] }, direct: [], autoUpdateHours: 24,
-  templates: { domestic: { on: false, rules: null }, block: { on: false, rules: null } }, renameDefault: false, dns: { on: false, text: null } };
+  templates: { domestic: { on: false, rules: null }, block: { on: false, rules: null } }, renameDefault: false, dns: { on: false, text: null }, ownRules: false };
 export const UPDATE_HOURS = [0, 1, 6, 12, 24] as const;
 export const BUILT_IN: Readonly<Record<ClashTemplate, readonly string[]>> = { domestic: DOMESTIC_TEMPLATE, block: BLOCK_TEMPLATE };
 
 /** Each service's names in Clash (the user's own file of 2026-10-08, docs/clash-v0.md §1), where its nodes are tried,
- *  and the domains it is reached at. The node set and the rule set have one name: they are two kinds of set. */
-export const SERVICE: Record<ClashService, { readonly group: string; readonly auto: string; readonly set: string; readonly probe: string; readonly domains: readonly string[] }> = {
+ *  and the domains it is reached at. The node set and the rule set have one name: they are two kinds of set. `own`: a
+ *  word that names a subscription's own rules for it (a rule set `openai`, `…/OpenAI/OpenAI.yaml`; `GEOSITE,openai`). */
+export const SERVICE: Record<ClashService, { readonly group: string; readonly auto: string; readonly set: string; readonly probe: string; readonly domains: readonly string[]; readonly own: RegExp }> = {
   claude: { group: "Claude", auto: "Claude自动选择", set: "as-claude", probe: "https://api.anthropic.com/",
-    domains: ["DOMAIN-KEYWORD,anthropic", "DOMAIN-SUFFIX,claude.ai", "DOMAIN-SUFFIX,claude.com", "DOMAIN-SUFFIX,claudeusercontent.com"] },
+    domains: ["DOMAIN-KEYWORD,anthropic", "DOMAIN-SUFFIX,claude.ai", "DOMAIN-SUFFIX,claude.com", "DOMAIN-SUFFIX,claudeusercontent.com"], own: /^(claude|anthropic)$/i },
   openai: { group: "OpenAI", auto: "OpenAI自动选择", set: "as-openai", probe: "https://api.openai.com/",
-    domains: ["DOMAIN-KEYWORD,openai", "DOMAIN-SUFFIX,chatgpt.com", "DOMAIN-SUFFIX,chat.com", "DOMAIN-SUFFIX,sora.com", "DOMAIN-SUFFIX,oaistatic.com", "DOMAIN-SUFFIX,oaiusercontent.com"] },
+    domains: ["DOMAIN-KEYWORD,openai", "DOMAIN-SUFFIX,chatgpt.com", "DOMAIN-SUFFIX,chat.com", "DOMAIN-SUFFIX,sora.com", "DOMAIN-SUFFIX,oaistatic.com", "DOMAIN-SUFFIX,oaiusercontent.com"], own: /^(openai|chatgpt)$/i },
 };
 export const DIRECT_SET = "as-direct";
 /** The templates' rule sets: the domestic one in two — what a name alone decides, in front; what needs its address
@@ -53,6 +59,9 @@ export const DOMESTIC_SET = "as-domestic", DOMESTIC_LOOKUP_SET = "as-domestic-ip
 /** Every rule set AgentSwitch serves; all of them are always named in the subscription. */
 export const RULE_SETS: readonly string[] = [DIRECT_SET, ...CLASH_SERVICES.map((s) => SERVICE[s].set), DOMESTIC_SET, BLOCK_SET, DOMESTIC_LOOKUP_SET];
 export const DEFAULT_GROUP = "Manual";
+/** With only AgentSwitch's rules: the group `Manual` offers first, the fastest of every node now. */
+export const AUTO_GROUP = "自动选择";
+const AUTO_PROBE = "https://www.gstatic.com/generate_204", AUTO_SECONDS = 300;
 const PROBE_SECONDS = 180;
 /** How often Clash Verge is asked to fetch the subscription again, in hours: the least its header can say (§7.3). */
 export const VERGE_UPDATE_HOURS = 1;
@@ -61,6 +70,12 @@ export const VERGE_UPDATE_HOURS = 1;
 export function chosen(service: ClashService, settings: ClashSettings, nodes: readonly SourceNode[]): SourceNode[] {
   const by = new Map(nodes.map((n) => [n.name, n]));
   return [...new Set(settings[service].nodes)].flatMap((name) => by.get(name) ?? []);
+}
+
+/** A template is in use: switched on, or the domestic one while only AgentSwitch's rules are (without it, everything at
+ *  home would go out by a proxy). */
+export function templateOn(template: ClashTemplate, settings: ClashSettings): boolean {
+  return settings.templates[template].on || (template === "domestic" && settings.ownRules);
 }
 
 /** A template's rules as they are in use: the user's own, else the built-in ones. */
@@ -85,15 +100,17 @@ export function dnsSection(text: string): { readonly section: Record<string, unk
 
 /** A service's two groups by the names they have in this subscription: its own spelling of them where it has such
  *  groups (spaces and case aside — `Claude 自动选择` is `Claude自动选择`), else AgentSwitch's. */
-export function groupNames(document: Record<string, unknown>, service: ClashService): { readonly group: string; readonly auto: string } {
-  const names = groupsOf(document).map((g) => String(g.name ?? ""));
+export function groupNames(document: Record<string, unknown>, service: ClashService, settings?: ClashSettings): { readonly group: string; readonly auto: string } {
+  // With only AgentSwitch's rules the subscription's groups are gone: its spelling of them goes with them.
+  const names = settings?.ownRules ? [] : groupsOf(document).map((g) => String(g.name ?? ""));
   const like = (want: string): string => names.find((n) => same(n, want)) ?? want;
   return { group: like(SERVICE[service].group), auto: like(SERVICE[service].auto) };
 }
 
 /** The subscription's default group: the hand-picked one its last `MATCH` sends everything else to. Null when it has
  *  none such, or already has a group called `Manual`. */
-export function defaultGroup(document: Record<string, unknown>): string | null {
+export function defaultGroup(document: Record<string, unknown>, settings?: ClashSettings): string | null {
+  if (settings?.ownRules) return null;   // its groups are left out: `Manual` is AgentSwitch's own
   const groups = groupsOf(document);
   if (groups.some((g) => g.name === DEFAULT_GROUP)) return null;
   const last = (Array.isArray(document.rules) ? document.rules : []).filter((r): r is string => typeof r === "string").reverse().find((r) => /^MATCH\s*,/i.test(r.trim()));
@@ -112,7 +129,7 @@ export function nodeSet(service: ClashService, settings: ClashSettings, nodes: r
  *  that traffic goes as the subscription's own rules say. */
 export function ruleSet(name: string, settings: ClashSettings, nodes: readonly SourceNode[]): string | null {
   const service = CLASH_SERVICES.find((s) => SERVICE[s].set === name);
-  const of = (template: ClashTemplate): readonly string[] => (settings.templates[template].on ? templateRules(template, settings) : []);
+  const of = (template: ClashTemplate): readonly string[] => (templateOn(template, settings) ? templateRules(template, settings) : []);
   const payload = name === DIRECT_SET ? settings.direct.flatMap(directRule)
     : service ? (chosen(service, settings, nodes).length ? SERVICE[service].domains : [])
     : name === DOMESTIC_SET ? of("domestic").filter((r) => !looksUp(r))
@@ -139,17 +156,23 @@ export function buildConfig(document: Record<string, unknown>, nodes: readonly S
     const dns = dnsSection(dnsText(settings));
     if ("section" in dns) config.dns = dns.section;   // one that is not a section was refused when it was saved
   }
-  const renamed = settings.renameDefault ? defaultGroup(config) : null;
+  const renamed = settings.renameDefault ? defaultGroup(config, settings) : null;
   if (renamed) rename(config, renamed, DEFAULT_GROUP);
   const at = (path: string): string => `${base}/${path}?k=${token}`;
-  const groups = groupsOf(config);
+  const own = record(config["proxy-providers"]);
+  const theirSets = Object.keys(own);
+  // Only AgentSwitch's rules: of the subscription's routing nothing is kept but its nodes (§7.11).
+  const dropped = settings.ownRules ? new Set(groupsOf(config).map((g) => String(g.name ?? ""))) : null;
+  const groups = dropped ? [] : groupsOf(config);
   const front: Record<string, unknown>[] = [];
   const first = [`RULE-SET,${DIRECT_SET},DIRECT`];
   const sets: Record<string, unknown> = {};
+  const decides: Partial<Record<ClashService, string>> = {};
   for (const service of CLASH_SERVICES) {
     if (!chosen(service, settings, nodes).length) continue;
     const { set, probe } = SERVICE[service];
-    const names = groupNames(config, service);
+    const names = groupNames(config, service, settings);
+    decides[service] = names.group;
     const made: Record<string, unknown>[] = [
       { name: names.group, type: "select", proxies: [names.auto], use: [set] },
       { name: names.auto, type: "fallback", use: [set], url: probe, interval: PROBE_SECONDS },
@@ -165,27 +188,83 @@ export function buildConfig(document: Record<string, unknown>, nodes: readonly S
     first.push(`RULE-SET,${set},${names.group}`);
   }
   // The domestic template's names and processes: decided without a lookup (`no-resolve`: an address rule in it
-  // matches an address as given, never a name's).
-  first.push(`RULE-SET,${DOMESTIC_SET},DIRECT,no-resolve`);
+  // matches an address as given, never a name's). To the subscription's own group for what goes direct where it has
+  // one (`🎯 直连`): switched to a proxy there, this goes with the rest (2026-10-16, §7.10).
+  const direct = directGroup(config, settings) ?? "DIRECT";
+  first.push(`RULE-SET,${DOMESTIC_SET},${direct},no-resolve`);
   // The node sets it fetched by link are fetched from AgentSwitch instead: one place asks the subscription service,
   // and what it brings back the core can be told to take at once.
-  const own = record(config["proxy-providers"]);
   for (const name of held) {
     const set = record(own[name]);
     if (set.type === "http") own[name] = { ...set, url: at(`providers/${providerSlug(name)}.yaml`), proxy: "DIRECT" };
   }
   const ruleSets = Object.fromEntries(RULE_SETS.map((name) =>
     [name, { type: "http", behavior: "classical", format: "yaml", url: at(`rules/${name}.yaml`), path: `./ruleset/${name}.yaml`, interval: 86400, proxy: "DIRECT" }]));
+  if (dropped) front.push(...everyNode(config, theirSets));
   config["proxy-groups"] = [...front, ...groups];
   if (Object.keys(own).length || Object.keys(sets).length) config["proxy-providers"] = { ...own, ...sets };
+  if (dropped) {
+    config["rule-providers"] = ruleSets;
+    config.rules = [...first, `RULE-SET,${BLOCK_SET},REJECT`, `RULE-SET,${DOMESTIC_LOOKUP_SET},DIRECT`, `MATCH,${DEFAULT_GROUP}`];
+    delete config["sub-rules"];
+    unname(config, dropped);
+    return config;
+  }
   config["rule-providers"] = { ...record(config["rule-providers"]), ...ruleSets };
-  // Blocking, then what needs a lookup: after everything of the subscription's that claims traffic, before the rules
-  // it ends on (`GEOIP…`, `MATCH`) — where the user's own file had them.
-  const theirs = Array.isArray(config.rules) ? config.rules : [];
-  let end = theirs.length;
-  while (end > 0 && typeof theirs[end - 1] === "string" && /^(MATCH|GEOIP)\s*,/i.test((theirs[end - 1] as string).trim())) end -= 1;
-  config.rules = [...first, ...theirs.slice(0, end), `RULE-SET,${BLOCK_SET},REJECT`, `RULE-SET,${DOMESTIC_LOOKUP_SET},DIRECT`, ...theirs.slice(end)];
+  // The subscription's own rules for a service AgentSwitch has nodes for send that traffic to AgentSwitch's group too,
+  // where they stand: its lists are often longer than AgentSwitch's (sign-in, the human check, voice), and what they
+  // caught went out by the subscription's own group (`🤖 AI`) — one service by two ways out (2026-10-16, user: 代理的
+  // 分组现在怎么带上了上游订阅的分组？两个不会打架吗).
+  const theirs = (Array.isArray(config.rules) ? config.rules : []).map((rule) => {
+    const service = ruleService(rule, config);
+    const group = service && decides[service];
+    return group ? target(rule as string, group) : rule;
+  });
+  // Blocking after everything of the subscription's that claims a kind of traffic, before the broad rules it ends on
+  // (the lists of everything abroad, `GEOIP`, `MATCH`): there it meets what is left. What needs a lookup as late as it
+  // can be, just before the first of those that needs one — where the user's own file had them (§7.7). A converted
+  // subscription ends on `gfw`, `proxy`, `cncidr`, `GEOIP,CN`, `tld-not-cn`, `MATCH`: blocking put before only the last
+  // of them met almost nothing (§7.10).
+  const broad = broadFrom(theirs, config);
+  let lookup = broad;
+  while (lookup < theirs.length && !looksUpRule(theirs[lookup], config)) lookup += 1;
+  config.rules = [...first, ...theirs.slice(0, broad), `RULE-SET,${BLOCK_SET},REJECT`, ...theirs.slice(broad, lookup), `RULE-SET,${DOMESTIC_LOOKUP_SET},${direct}`, ...theirs.slice(lookup)];
   return config;
+}
+
+/** With only AgentSwitch's rules, the groups everything else goes by: `Manual`, picked by hand, and `自动选择`, the
+ *  fastest of every node. Every node is the subscription's own list and its node sets (not AgentSwitch's, which hold
+ *  only some of them again). With no node at all, `Manual` has `DIRECT` alone: a group of nothing the core refuses. */
+function everyNode(config: Record<string, unknown>, sets: readonly string[]): Record<string, unknown>[] {
+  const nodes = (Array.isArray(config.proxies) ? config.proxies : []).map((p) => String(record(p).name ?? "")).filter(Boolean);
+  const use = sets.length ? { use: [...sets] } : {};
+  if (!nodes.length && !sets.length) return [{ name: DEFAULT_GROUP, type: "select", proxies: ["DIRECT"] }];
+  return [
+    { name: DEFAULT_GROUP, type: "select", proxies: [AUTO_GROUP, ...nodes], ...use },
+    { name: AUTO_GROUP, type: "url-test", ...(nodes.length ? { proxies: nodes } : {}), ...use, url: AUTO_PROBE, interval: AUTO_SECONDS },
+  ];
+}
+
+/** What else of the subscription names a group that is left out goes without it: a name server's `#group` (asked
+ *  directly), a node's `dialer-proxy` (dialled directly), a name server for a rule set that is left out (dropped). */
+function unname(config: Record<string, unknown>, gone: ReadonlySet<string>): void {
+  const kept = new Set(Object.keys(record(config["rule-providers"])));
+  const server = (v: unknown): unknown => {
+    if (typeof v !== "string") return Array.isArray(v) ? v.map(server) : v;
+    const hash = v.lastIndexOf("#");
+    return hash > 0 && gone.has(v.slice(hash + 1)) ? v.slice(0, hash) : v;
+  };
+  const dns = record(config.dns);
+  for (const key of ["nameserver", "fallback", "default-nameserver", "proxy-server-nameserver", "direct-nameserver"]) if (key in dns) dns[key] = server(dns[key]);
+  const policy = record(dns["nameserver-policy"]);
+  for (const [key, value] of Object.entries(policy)) {
+    const sets = /^rule-set:/i.test(key) ? key.slice(9).split(",").map((n) => n.trim()) : [];
+    if (sets.some((n) => !kept.has(n))) delete policy[key]; else policy[key] = server(value);
+  }
+  for (const node of Array.isArray(config.proxies) ? config.proxies : []) {
+    const n = record(node);
+    if (typeof n["dialer-proxy"] === "string" && gone.has(n["dialer-proxy"])) delete n["dialer-proxy"];
+  }
 }
 
 export function buildSubscription(document: Record<string, unknown>, nodes: readonly SourceNode[], held: readonly string[], settings: ClashSettings, base: string, token: string): string {
@@ -207,6 +286,89 @@ export function running(expect: { readonly enabled: Readonly<Record<ClashService
     && expect.groups.every((name) => have.has(name)) };
 }
 
+/** The subscription's own group for what goes direct: the hand-picked one its `GEOIP,CN` sends to, where that group
+ *  offers `DIRECT` (a converted subscription's `🎯 直连`). Null for none: what goes direct goes to `DIRECT` itself. */
+export function directGroup(config: Record<string, unknown>, settings?: ClashSettings): string | null {
+  if (settings?.ownRules) return null;
+  const rules = (Array.isArray(config.rules) ? config.rules : []).filter((r): r is string => typeof r === "string");
+  const geoip = rules.map((r) => r.split(",").map((p) => p.trim())).find((p) => p[0]?.toUpperCase() === "GEOIP" && p[1]?.toUpperCase() === "CN");
+  const name = geoip?.[2];
+  const group = name ? groupsOf(config).find((g) => g.name === name) : undefined;
+  return group && group.type === "select" && Array.isArray(group.proxies) && group.proxies.includes("DIRECT") ? name! : null;
+}
+
+/** The words that name the broad lists a subscription ends on: everything abroad, everything at home. */
+const BROAD = new Set(["gfw", "greatfire", "proxy", "proxylite", "cncidr", "cnip", "chnip", "chinaip", "china", "cn", "tld", "geolocation", "global", "lancidr"]);
+const BROAD_SITE = /^(?:cn|!cn|private|gfw|greatfire|geolocation-!?cn|tld-!?cn)$/i;
+
+/** Where the broad rules the subscription ends on begin: counted back from its end, `MATCH`, `GEOIP`, the broad
+ *  `GEOSITE`s and rule sets of the broad lists. Its length when it ends on none. */
+function broadFrom(rules: readonly unknown[], config: Record<string, unknown>): number {
+  let i = rules.length;
+  while (i > 0 && broadRule(rules[i - 1], config)) i -= 1;
+  return i;
+}
+
+function broadRule(rule: unknown, config: Record<string, unknown>): boolean {
+  if (typeof rule !== "string" || rule.includes("(")) return false;
+  const [kind, value = ""] = rule.split(",").map((p) => p.trim());
+  switch (kind?.toUpperCase()) {
+    case "MATCH": case "FINAL": case "GEOIP": return true;
+    case "GEOSITE": return BROAD_SITE.test(value);
+    case "RULE-SET": return [value, providerFile(record(record(config["rule-providers"])[value]))].flatMap((n) => n.toLowerCase().split(/[^a-z0-9]+/)).some((w) => BROAD.has(w));
+    default: return false;
+  }
+}
+
+/** A rule that looks the name up to decide (`GEOIP`, an address rule or a rule set of addresses without
+ *  `no-resolve`), or the one that takes everything left (`MATCH`). */
+function looksUpRule(rule: unknown, config: Record<string, unknown>): boolean {
+  if (typeof rule !== "string" || rule.includes("(")) return false;
+  const parts = rule.split(",").map((p) => p.trim());
+  const kind = parts[0]?.toUpperCase() ?? "";
+  if (kind === "MATCH" || kind === "FINAL") return true;
+  if (parts.some((p) => /^no-resolve$/i.test(p))) return false;
+  if (kind === "GEOIP" || kind === "IP-CIDR" || kind === "IP-CIDR6" || kind === "IP-ASN") return true;
+  return kind === "RULE-SET" && record(record(config["rule-providers"])[parts[1] ?? ""]).behavior === "ipcidr";
+}
+
+/** The service a rule of the subscription's is for: a rule set it names after one service (by the set's name, or by
+ *  the file it comes from), or a `GEOSITE` of one. Null for anything else, and for what names both (one list for
+ *  every AI service stays where the subscription sends it). */
+export function ruleService(rule: unknown, config: Record<string, unknown>): ClashService | null {
+  if (typeof rule !== "string" || rule.includes("(")) return null;
+  const [kind, value] = rule.split(",").map((p) => p.trim());
+  if (!value) return null;
+  const names = kind?.toUpperCase() === "GEOSITE" ? [value]
+    : kind?.toUpperCase() === "RULE-SET" ? [value, providerFile(record(record(config["rule-providers"])[value]))] : [];
+  const words = names.flatMap((n) => n.split(/[^a-z0-9]+/i)).filter(Boolean);
+  const hit = CLASH_SERVICES.filter((s) => words.some((w) => SERVICE[s].own.test(w)));
+  return hit.length === 1 ? hit[0]! : null;
+}
+
+/** A rule provider's file name without its extension (`OpenAI` of `…/rule/Clash/OpenAI/OpenAI.yaml`); "" for none. */
+function providerFile(provider: Record<string, unknown>): string {
+  const at = typeof provider.url === "string" ? provider.url : typeof provider.path === "string" ? provider.path : "";
+  try { return (at.includes("://") ? new URL(at).pathname : at).split("/").pop()!.replace(/\.[^.]*$/, ""); } catch { return ""; }
+}
+
+/** The field of a rule that names where its traffic goes: the last one that is not a flag (`MATCH,Proxy`;
+ *  `IP-CIDR,1.2.3.0/24,Proxy,no-resolve`). -1 for a rule without one. */
+function targetAt(parts: readonly string[]): number {
+  let i = parts.length - 1;
+  while (i > 0 && /^(no-resolve|src)$/i.test(parts[i]!.trim())) i -= 1;
+  return i > 0 ? i : -1;
+}
+
+/** `rule` sending its traffic to `group` instead. */
+function target(rule: string, group: string): string {
+  const parts = rule.split(",");
+  const i = targetAt(parts);
+  if (i < 0) return rule;
+  parts[i] = group;
+  return parts.join(",");
+}
+
 /** A group called `from` is called `to` everywhere: itself, the groups that have it as a member, the rules that
  *  send traffic to it. */
 function rename(config: Record<string, unknown>, from: string, to: string): void {
@@ -217,9 +379,7 @@ function rename(config: Record<string, unknown>, from: string, to: string): void
   const retarget = (rule: unknown): unknown => {
     if (typeof rule !== "string" || rule.includes("(")) return rule;   // a logical rule is left as written
     const parts = rule.split(",");
-    // The target is the last field that is not a flag (`MATCH,Proxy`; `IP-CIDR,1.2.3.0/24,Proxy,no-resolve`).
-    let i = parts.length - 1;
-    while (i > 0 && /^(no-resolve|src)$/i.test(parts[i]!.trim())) i -= 1;
+    const i = targetAt(parts);
     if (i > 0 && parts[i]!.trim() === from) parts[i] = parts[i]!.replace(from, to);
     return parts.join(",");
   };

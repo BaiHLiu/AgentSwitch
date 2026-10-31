@@ -193,6 +193,13 @@ struct TerminalPaneView: View {
                 } else if state?.session == nil {
                     EmptyPane(pane: placed.id, model: model)
                 }
+                // On a terminal's screen, files that may hold a password are asked about over its foot (files-v0 §4).
+                if let state, !record, let ask = state.asking {
+                    FilesAskCard(ask: ask, answer: state.answer)
+                        .frame(maxWidth: 440)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        .padding(16)
+                }
             }
         }
         // A terminal's pane is the terminal's dark block whatever the window around it (a record beside it may be light).
@@ -270,6 +277,22 @@ struct PaneHeader: View {
                 }
                 .buttonStyle(.plain)
                 .help("Open in \(CodeEditor.load(.standard).short)")
+            }
+            // The Files column at this pane's folder (docs/files-v0.md §0), as the bar's icon is for the pane in focus.
+            if info != nil {
+                let shows = model.filesShow(pane: pane)
+                Button { model.toggleFiles(pane: pane) } label: {
+                    Group {
+                        if look.isClassic { Image(systemName: shows ? "folder.fill" : "folder").font(.system(size: 10.5, weight: .medium)) }
+                        else { PixelSprite(rows: PixelArt.toolbarFiles, pixel: 1, color: shows ? Look.ink : Look.ink2) }
+                    }
+                    .foregroundStyle(shows ? (look.isClassic ? Color.signal : Look.ink) : Look.ink2)
+                    .frame(width: 22, height: 20)
+                    .background(shows && !look.isClassic ? Look.ink.opacity(0.14) : Color.clear)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(shows ? "Hide Files ⌘⇧F" : "Show in Files ⌘⇧F")
             }
             // The other view of the same session (docs/simple-view-v0.md §1): each pane has its own.
             if info != nil, let state {

@@ -79,5 +79,5 @@ export function cleanSettings(raw: unknown): ClashSettings {
   const templates = (o.templates && typeof o.templates === "object" ? o.templates : {}) as Record<string, unknown>;
   return { claude: service(o.claude), openai: service(o.openai), direct: strings(o.direct, MAX_DIRECT, true), autoUpdateHours: hours,
     templates: Object.fromEntries(CLASH_TEMPLATES.map((name) => [name, template(templates[name])])) as ClashSettings["templates"], renameDefault: o.renameDefault === true,
-    dns: dns(o.dns) };
+    dns: dns(o.dns), ownRules: o.ownRules === true };
 }

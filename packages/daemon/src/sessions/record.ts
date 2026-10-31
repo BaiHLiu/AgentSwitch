@@ -31,7 +31,9 @@ export type RecordStep = {
 };
 
 export type RecordItem =
-  | { readonly type: "user"; readonly id: string; readonly ts: number; readonly text: string; readonly images?: number; readonly queued?: boolean; readonly clipped?: boolean }
+  // `from`: sent by another session, not typed by you (Claude Code's cross-session messages, docs/talk-v0.md §10.5) —
+  // the name it gave, or "" when it gave none.
+  | { readonly type: "user"; readonly id: string; readonly ts: number; readonly text: string; readonly images?: number; readonly queued?: boolean; readonly clipped?: boolean; readonly from?: string }
   // `thinking`: what the agent thought on the way, where it wrote that down — said like an answer, quieter (a screen
   // that does not know the mark shows it as an answer, which is how the agents' own apps show it).
   // `questions`: what it asks at the end of the message, each with the answers it offers (Codex): to answer is to
@@ -118,7 +120,7 @@ type Step = { kind: StepKind; text: string; tool?: string; note?: string; out?: 
    *  keeps them there), or the file it looked at (Codex). */
   shots?: { at: number; id: string } | { file: string } };
 type Built =
-  | { type: "user"; at: number; ts: number; text: string; images: number; queued?: boolean }
+  | { type: "user"; at: number; ts: number; text: string; images: number; queued?: boolean; from?: string }
   | { type: "answer"; at: number; ts: number; text: string; thinking?: boolean; questions?: readonly RecordQuestion[] }
   | { type: "work"; at: number; ts: number; end: number; steps: Step[] }
   | { type: "note"; at: number; ts: number; text: string };
@@ -130,9 +132,9 @@ class Builder {
   mode: string | null = null;
   private open: Extract<Built, { type: "work" }> | null = null;
 
-  user(at: number, ts: number, text: string, images = 0, queued = false): void {
+  user(at: number, ts: number, text: string, images = 0, queued = false, from?: string): void {
     this.close();
-    this.items.push({ type: "user", at, ts, text, images, ...(queued ? { queued } : {}) });
+    this.items.push({ type: "user", at, ts, text, images, ...(queued ? { queued } : {}), ...(from !== undefined ? { from } : {}) });
   }
 
   /** The agent's words. A run of work before them ends when they come. `thinking`: what it thought on the way. */
@@ -293,6 +295,27 @@ function tokens(n: number): string {
   return `${Math.max(1, Math.round(n / 1000))}k`;
 }
 
+/** The ways Claude Code heads another session's message, and how it ends one with what it tells the model about it
+ *  (2.1.294: the head on a line of its own, the body, then one of its notes). */
+const PEER_HEAD = /^(?:Another Claude session sent a message(?: while you were working)?|A peer session sent a message while you were working):[ \t]*\n?/;
+const PEER_NOTE = /\n+[ \t]*(?:This came from another Claude session|That "other Claude session" is an agent|This is from another Claude session|IMPORTANT: This is NOT from your user)[\s\S]*$/;
+const PEER_ENVELOPE = /^<cross-session-message\b([^>]*)>\n([\s\S]*)\n<\/cross-session-message>$/;
+
+/** Another session's message as it was sent: who it said it was ("" for none) and its body, without Claude Code's head
+ *  and note around it. Its envelope's name and body where Claude Code read them (`origin.name`, `origin.body`), else
+ *  from the text. Null for none. */
+export function peerMessage(origin: Json, said: string): { from: string; text: string } | null {
+  let text = unwrapPastes(said).replace(/\r\n/g, "\n").trim().replace(PEER_HEAD, "").replace(PEER_NOTE, "").trim();
+  let from = str(origin.name);
+  const envelope = PEER_ENVELOPE.exec(text);
+  if (envelope) {
+    text = envelope[2]!.trim();
+    from ||= /\bfrom-name="([^"]*)"/.exec(envelope[1]!)?.[1] ?? "";
+  }
+  if (typeof origin.body === "string" && origin.body.trim()) text = origin.body.trim();
+  return text ? { from, text } : null;
+}
+
 function claudeBuild(lines: readonly Line[]): Builder {
   const b = new Builder();
   const waiting = new Map<string, Step>();
@@ -323,9 +346,13 @@ function claudeBuild(lines: readonly Line[]): Builder {
     // A message typed while it worked and taken in mid-turn is written as an attachment, not as a user line.
     if (line.type === "attachment") {
       const a = obj(line.attachment);
-      if (a.type !== "queued_command" || a.commandMode !== "prompt" || obj(a.origin).kind !== "human") continue;
+      if (a.type !== "queued_command" || a.commandMode !== "prompt") continue;
       const ps = Array.isArray(a.prompt) ? a.prompt.map(obj) : [{ type: "text", text: str(a.prompt) }];
-      const text = unwrapPastes(ps.map((p) => (p.type === "text" ? str(p.text) : "")).join("\n")).trim();
+      const said = ps.map((p) => (p.type === "text" ? str(p.text) : "")).join("\n");
+      const peer = obj(a.origin).kind === "peer" ? peerMessage(obj(a.origin), said) : null;
+      if (peer) { b.user(at, ts, peer.text, 0, false, peer.from); continue; }
+      if (obj(a.origin).kind !== "human") continue;
+      const text = unwrapPastes(said).trim();
       const images = ps.filter((p) => p.type === "image").length;
       if (isTypedText(text) || images) b.user(at, ts, text, images);
       continue;
@@ -343,6 +370,9 @@ function claudeBuild(lines: readonly Line[]): Builder {
         }
         b.touch(ts);
       }
+      // Another session's message: written as the harness's own (`isMeta`), with where it came from.
+      const peer = line.isMeta && obj(line.origin).kind === "peer" ? peerMessage(obj(line.origin), ps.map((p) => (p.type === "text" ? str(p.text) : "")).join("\n")) : null;
+      if (peer) { b.user(at, ts, peer.text, 0, false, peer.from); continue; }
       if (line.isMeta || line.isCompactSummary || line.isVisibleInTranscriptOnly) continue;
       const text = unwrapPastes(ps.map((p) => (p.type === "text" ? str(p.text) : "")).join("\n")).trim();
       if (text.startsWith("[Request interrupted")) { b.note(at, ts, "Interrupted"); continue; }
@@ -549,7 +579,7 @@ function ids(items: readonly Built[]): string[] {
 function shown(it: Built, id: string): RecordItem {
   const long = (text: string) => (text.length > TEXT_CHARS ? { text: text.slice(0, TEXT_CHARS), clipped: true as const } : { text });
   switch (it.type) {
-    case "user": return { type: "user", id, ts: it.ts, ...long(it.text), ...(it.images ? { images: it.images } : {}), ...(it.queued ? { queued: true } : {}) };
+    case "user": return { type: "user", id, ts: it.ts, ...long(it.text), ...(it.images ? { images: it.images } : {}), ...(it.queued ? { queued: true } : {}), ...(it.from !== undefined ? { from: it.from } : {}) };
     case "answer": return { type: "answer", id, ts: it.ts, ...long(it.text), ...(it.thinking ? { thinking: true } : {}), ...(it.questions?.length ? { questions: it.questions } : {}) };
     case "note": return { type: "note", id, ts: it.ts, text: it.text };
     case "work": return {

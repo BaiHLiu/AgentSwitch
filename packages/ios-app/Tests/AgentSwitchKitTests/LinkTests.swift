@@ -36,7 +36,8 @@ final class LinkTests: XCTestCase {
 
         let file = TappedLink.file("/Users/me/Projects/site/index.html")
         XCTAssertEqual(file.target, .path("/Users/me/Projects/site/index.html"))
-        XCTAssertEqual(file.actions.map { $0.label(for: file) }, ["Open in Browser", "Copy Path"], "a file of the Mac's is not Safari's to open")
+        // A tap on a path opens the Files browser (docs/files-v0.md §12.4.2); the browser is the menu's second.
+        XCTAssertEqual(file.actions.map { $0.label(for: file) }, ["Show in Files", "Open in Browser", "Copy Path"], "a file of the Mac's is not Safari's to open")
         XCTAssertEqual(file.display, "~/Projects/site/index.html")
         XCTAssertEqual(file.text, "/Users/me/Projects/site/index.html", "the whole path is what is copied")
         XCTAssertEqual(LinkAction.copied(file), "Path Copied")
@@ -217,6 +218,27 @@ final class LinkTests: XCTestCase {
         XCTAssertEqual(two.map(\.link), [.file("/Users/me/out/index.html")])
         XCTAssertEqual(two[0].spans, [span(0, 8..<32)])
         XCTAssertEqual(two[0].alternates, [.file("/Users/me/out/index.htmldone")])
+    }
+
+    func testTheRestOfAPathCutOverLinesAlsoReadsAsTheWhole() {
+        // The path's row is not the widest of its paragraph (the address above is wider): whether it goes on is not sure,
+        // so it is read alone, the join kept for the Mac to tell. The next row's own word (a relative path) also reads
+        // as the whole, so a tap on either half finds it (files-v0 §12.4.2).
+        let workdir = "/Users/me/Desktop/WorkSpace/Projects/AgentSwitch"
+        let screen = rows([
+            "⏺ 分屏的说明见这一页，也可以直接打开预览：",
+            "  https://code.claude.com/docs/en/agent-teams.md#choo",
+            "  se-a-display-mode",
+            "  ~/Desktop/WorkSpace/Projects/AgentSwitch/docs/desi",
+            "  gn/concepts/split.html",
+        ])
+        let paths = TerminalLinks.find(rows: screen, workdir: workdir).filter { if case .file = $0.link { true } else { false } }
+        XCTAssertEqual(paths.count, 2)
+        let whole = TappedLink.file("~/Desktop/WorkSpace/Projects/AgentSwitch/docs/design/concepts/split.html")
+        XCTAssertEqual(paths.first?.link, .file("~/Desktop/WorkSpace/Projects/AgentSwitch/docs/desi"))
+        XCTAssertEqual(paths.first?.alternates, [whole])
+        XCTAssertEqual(paths.last?.link, .file("\(workdir)/gn/concepts/split.html"))
+        XCTAssertEqual(paths.last?.alternates, [whole])
     }
 
     func testAPathWrappedInItsOwnColumnIsOnePath() {

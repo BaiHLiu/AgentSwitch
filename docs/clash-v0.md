@@ -1,4 +1,4 @@
-# clash-v0：Clash Integration——为 Claude、OpenAI 单独配置代理，配置的代理直连
+# clash-v0：Clash Integration——为 Claude、OpenAI 单独配置代理
 
 2026-10-08 用户：可以和clash进行interactive吗；也就是理论上我可以直接用agentswitch修改配置文件？；需要加一栏 clash-intergration……当前我的clash配置文件中有关于Claude和openai的配置，clash-intergration中要有 “为Claude单独配置代理” 和 “为openai单独配置代理“的功能；可以读取当前订阅文件的所有节点，然后”为Claude配置单独代理” 可以单独按照优先级拖进来几个节点，根据优先级fallback（可以选择自动fallback也可以手动选择节点） openai的同理；设置之后就和我现在的配置文件差不多；然后可以设置claude code profile中添加的代理直接直连（通过agent switch添加的规则必须可逆）然后以后也可以手动删除。
 
@@ -6,7 +6,7 @@
 
 ## 0. 要点
 
-- 设置里新的一页 `Clash Integration`，三样：`Separate Proxy for Claude`、`Separate Proxy for OpenAI`、`Profile Proxies Go Direct`。
+- 设置里新的一页 `Clash Integration`，两样：`Separate Proxy for Claude`、`Separate Proxy for OpenAI`。（原来的第三样“配置的代理直连”2026-10-18 去掉了，见 §3。）
 - **读**走 Clash 自己的控制接口；**写**只写 Clash Verge 为“扩展”准备的那几个文件里 AgentSwitch 自己的条目，带标记，一键撤掉后和没接入过一样。
 - 写之前给你看要加什么、删什么，由你点 `Apply`；加载失败立刻还原。
 
@@ -30,11 +30,19 @@
 - 你已经手写了一套时：页面先认出来并说明（“订阅里已经有 `Claude` 分组和它的规则”），由你选：接着用自己的（AgentSwitch 只显示、只切换选中的节点，不写文件），还是换成 AgentSwitch 管的（它的规则排在前面，优先生效；你原来的不删）。
 - 手动选节点、看延迟走控制接口，不改文件。
 
-## 3. 配置的代理直连
+## 3. 配置的代理直连（2026-10-18 去掉）
+
+**已去掉**（2026-10-18，用户：所以这个给添加的代理加直连的功能是不必要的，删除吧）：配置填了代理，不再自动把它的地址加进 `Go Direct`。`Go Direct` 本身留着，由用户自己加删。下面是原来的设计和去掉它的经过。
+
 
 - Claude Code 的某个配置填了自己的代理（profiles-v0 §4）时，开着 TUN 会让“去那个代理服务器”的连接先绕一遍 Clash 的节点。
 - `Profile Proxies Go Direct` 打开后，AgentSwitch 为每个配置的代理地址加一条直连规则（地址是 IP 用 `IP-CIDR,…/32,DIRECT`，是域名用 `DOMAIN,…,DIRECT`），排在最前。
 - 配置的代理改了、删了，对应的规则跟着改、跟着删。
+- **直连这条路在国内不一定走得通**（2026-10-18，用户：as里添加直连规则之后我的终端可以连通，然后我的sunbrowser就不通了；去除掉直连规则就反过来了）：
+  - 用户在 AdsPower 的一个环境里也用了同一个代理（SOCKS5，美国）。直连规则对所有程序生效，加上后 SunBrowser 去这个代理也改走直连。
+  - 实测：从用户的网络直连这个代理，有一阵子 20 次里 13 次连不上（握手前就超时，和 Clash 日志里的 `dial … i/o timeout` 一样），几分钟后又 12 次全通；同一时间经 `Manual` 的节点去，20 次全通。像是明文的 SOCKS5 被线路一阵一阵地掐断，经节点时它包在节点的加密里，不受影响。SunBrowser 一次开很多连接，碰上掐断的那阵子就不通。
+  - 终端“去掉直连就连不上”是另一件事：那个终端的本机转发口已经没了（见 profiles-v0 §4 “转发口不换”），走哪条路都不通。把直连规则临时拿掉、经节点做出口检查，6 次全通。
+  - 所以对用户这条线路，这个代理经节点比直连可靠；自动加的直连规则反而害了同一台 Mac 上用这个代理的别的程序。用户定：去掉自动加（服务 `api/profiles.ts` 不再调用、`ClashIntegration.addDirect` 删掉；两端 `Go Direct` 的说明不再说“配置的代理会自己加进来”）。已经加进去的那一条也从用户的 `Go Direct` 里删了。
 
 ## 4. 怎么写、怎么撤
 
@@ -80,7 +88,7 @@
 订阅整份更新要 Clash Verge 去重新取（你点更新，或它的定时更新），不是立刻的。所以日常会变的东西不直接写在订阅正文里，而是放进订阅里声明的规则集与节点集，它们同样由 AgentSwitch 在本机提供：
 
 - 换节点、调优先级：改节点集，再让内核只刷新这一个（控制接口）。
-- 配置的代理直连：改规则集，同样只刷新这一个。
+- `Go Direct` 里的地址：改规则集，同样只刷新这一个。
 - 手动选哪个节点：直接走控制接口。
 - 只有结构变了（多了一个分组）才需要重新取订阅，界面提示你去点一次更新。
 
@@ -296,6 +304,81 @@ Clash Verge 没有给外面“更新这个订阅”的入口：它认的链接�
 - 另起的内核上：对代理端口的 `CONNECT` 一律先回 200；连上的连接在 `/connections` 里带 `rule`、`rulePayload`、`chains`（从节点往上数，页面上倒过来写）；直连到一个不通的地址也会列出来；被拒的 1 毫秒内断开且不列出；节点不通的不列出也不断。
 - 在用户正在跑的内核上（当时是他自己的 `tgyun_config.yaml`），1.2 秒跑完：Claude 经 `Claude → Claude自动选择 → 日本家宽-02` 出去，对方看到的是日本的地址，362 毫秒；OpenAI 经 `OpenAI → OpenAI自动选择 → 美国-01`，对方看到美国的地址；`baidu` 按关键词直连；`163` 按 `GeoIP cn` 直连；广告被拒；其它走 `Manual → 新加坡-01`。
 - 没做的验证：按钮在装好的应用里点一遍。
+
+### 7.10 订阅自带 AI 分组时（2026-10-16）
+
+用户：代理的分组现在怎么带上了上游订阅的分组？两个不会打架吗？
+
+**为什么带着**：交给 Clash Verge 的是底本原样加上 AgentSwitch 的那几样（§7.2），底本的分组一个不删。用户现在的底本换成了一份转换出来的配置（ACL4SSR 那一类），自带 20 个分组：`🌐 代理`、`🤖 AI`、`🎬 奈飞`、`✈️ 电报` 等等。以前那份只有两个，所以看不出来。这些分组管着奈飞、电报这类流量，删掉它们这些就没有去处了。
+
+**查实的**（读正在跑的内核和订阅里点名的公开规则表，什么都没改）：
+
+- **名字不打架**：AgentSwitch 的 `Claude`、`OpenAI` 和订阅的 `🤖 AI` 是不同的组。
+- **流量打架**：
+  - 订阅把 `RULE-SET,openai` 和 `RULE-SET,claude`（blackmatrix7 的表）都送进 `🤖 AI`。AgentSwitch 的规则在最前面，但它的表短。
+  - OpenAI 的 35 条里有 23 条 AgentSwitch 没有：`auth0.com`（登录）、`client-api.arkoselabs.com`（人机验证）、`*.livekit.cloud`（语音）、statsig、intercom、stripe、sentry 等。Claude 的 3 条里有 1 条（`cdn.usefathom.com`）。
+  - 当时 `OpenAI` 用 `🇺🇸 美国家庭-03`，`🤖 AI` 经 `🌐 代理`、`🔄 自动选择` 用的是新加坡的节点。同一次 ChatGPT，登录和验证从新加坡出去，对话从美国出去。
+
+**改法（已做，`build.ts` 的 `ruleService`）**：
+
+- **改哪些**：某一项选了节点时，订阅里专门给这一项的规则改为送进 AgentSwitch 的组。“专门给这一项的”指：
+  - 以它命名的规则集，名字或来源文件名是 `openai`、`OpenAI/OpenAI.yaml`、`ChatGPT.list`、`claude`、`anthropic` 这类；
+  - 或者 `GEOSITE,openai` 这类。
+- **位置不动**：订阅在它前面认领的照旧先中，例如它自己的广告拦截 `reject` 拦下 `segment.io`，微软那张表认领的 Azure 地址仍先被 AgentSwitch 的 `openai` 关键词接住。
+- **不改的**：同时点名几家的表，例如 `GEOSITE,category-ai-!cn`，或文件名里 OpenAI、Claude 都有的，照原样，分不开；AgentSwitch 自己的表照样在它们前面。`🤖 AI` 组留着，管 Gemini 这些 AgentSwitch 不管的。
+- **生效**：这是订阅正文的变化，要 Clash Verge 取一次。它每小时自己会来取；页面在那之前写“不是最新”。
+
+**这份订阅和规则模版的重叠（2026-10-16 已改，用户：把那几个bug都修了）**：
+
+- **拦截模版排得太后**：`Block Ads & Trackers`（`as-block`）原来排在订阅自己的规则之后、它收尾的 `GEOIP`、`MATCH` 之前（§7.7）。这份订阅收尾前还有 `gfw`、`proxy`、`cncidr`、`tld-not-cn`，最后一条把所有不是 `.cn` 的都送进 `🌐 代理`，拦截模版几乎碰不到什么。
+  - 改为：从订阅的末尾往前数，`MATCH`、`GEOIP`、宽的 `GEOSITE`（`cn`、`geolocation-!cn` 这类）、宽的规则集（名字或文件名里有 `gfw`、`proxy`、`cncidr`、`china`、`cn`、`tld` 这类词的）都算“收尾的宽规则”，拦截排在它们前面。
+  - `as-domestic-ip` 仍尽量靠后：排在收尾那几条里第一条要查 IP 的前面（`GEOIP`、不带 `no-resolve` 的地址规则或地址规则集）。
+  - 你这份订阅现在是 `… scholar, as-block, gfw, proxy, cncidr, as-domestic-ip, GEOIP,CN, tld-not-cn, MATCH`。只以 `GEOIP,CN`、`MATCH` 收尾的老式订阅，位置和以前一样。
+- **国内模版绕过了订阅自己的直连组**：`as-domestic` 在最前面，原来直接送 `DIRECT`，在 Clash Verge 里把 `🎯 直连` 切到代理，这些名字不受影响。
+  - 改为：订阅有自己的直连组时，两条国内规则都送进它。直连组指订阅的 `GEOIP,CN` 指向的那个手选组，并且组里有 `DIRECT`。
+  - 没有这样的组时照旧送 `DIRECT`。
+  - `Go Direct`（`as-direct`，配置的代理服务器）始终直接 `DIRECT`，不能被切走。
+  - 路由检查跟着改：国内那两行经过这个组就算照规则走了，组里选的是什么都一样。
+- Clash Verge 里 AI 有两处可选：`Claude`、`OpenAI` 管这两家，`🤖 AI` 管其余的。这一处不是错，没改。
+
+**没做的验证**：
+
+- Clash Verge 取到新的一份之后，在正在跑的内核上看一次这些连接。
+- 路由检查只试 `chatgpt.com`，这一处以前也是对的，所以没发现问题。以后可以多试一条订阅自己表里的地址，例如 `client-api.arkoselabs.com`。
+
+### 7.11 只用我的规则（2026-10-17）
+
+用户：我走as的时候上游代理规则这一堆能解决了吗；能不能把它原有的规则都去掉，只用我的；开做吧。
+
+**做什么**：一个开关 `Only My Rules`，默认关。打开后交给 Clash Verge 的那份只留订阅的节点，订阅的分组、规则、规则集全都不要，换成 AgentSwitch 自己的：
+
+- **节点**：订阅里的 `proxies` 原样，`proxy-providers` 原样（带链接的照旧改成从 AgentSwitch 取，§7.2）。
+- **分组**，共六个：
+  - `Claude`、`Claude自动选择`、`OpenAI`、`OpenAI自动选择`：选了节点的那一项才有（§7.2）。名字用 AgentSwitch 的写法，订阅里的写法随订阅的分组一起不要了。
+  - `Manual`：手选，成员是 `自动选择` 和全部节点（`proxies` 里的逐个点名，节点集用 `use`）。
+  - `自动选择`：`url-test`，全部节点里最快的那个，探测 `https://www.gstatic.com/generate_204`，间隔 300 秒。
+  - 一个节点也没有时只有 `Manual`，成员是 `DIRECT`：内核不收空的分组。
+- **规则**，从上到下：`RULE-SET,as-direct,DIRECT`、`RULE-SET,as-claude,Claude`、`RULE-SET,as-openai,OpenAI`、`RULE-SET,as-domestic,DIRECT,no-resolve`、`RULE-SET,as-block,REJECT`、`RULE-SET,as-domestic-ip,DIRECT`、`MATCH,Manual`。
+  - 国内两条直接送 `DIRECT`：订阅的直连组（§7.10）也不在了。
+  - `rule-providers` 只有 AgentSwitch 的六个，`sub-rules` 不要。
+- **国内模版跟着开**：开着这个开关时 `Domestic & Local Direct` 算作打开，页面上它的开关是开着的、不能关。没有它，国内网站会全走 `Manual`。关掉 `Only My Rules`，它回到你原来设的状态。
+- **还提到被去掉的分组的地方**：
+  - DNS 服务器后面的 `#分组`：去掉 `#分组`，直接问。
+  - 节点的 `dialer-proxy`：去掉，直接连。
+  - `nameserver-policy` 里按被去掉的规则集写的那一条：去掉。
+  - 用户现在这份订阅这三样都没有，写进去是为了别的订阅不让内核报错。
+- **不受影响的**：DNS 模版（开着就替换订阅的 `dns:`，关着用订阅自己的）、`Go Direct`、两项各自选的节点、自动更新。`Rename … to Manual` 在开着这个开关时不出现：`Manual` 是 AgentSwitch 自己的。
+- **路由检查**：`Everything Else`（`www.google.com`）这时要求经 `Manual` 出去；其余几行照旧。
+- **生效**：这是订阅正文的变化，要 Clash Verge 取一次，页面在那之前写“不是最新”。关掉后再取一次就回到 §7.2–§7.10 的样子。
+- **代价**：奈飞、油管、电报、Gemini 这些不再各有一组，都走 `Manual`；订阅里那些细分的表（GFW 列表、电报的地址段、苹果与微软的分流）也不用了，判断只剩“国内直连、其余走代理”。
+- **旧的应用**：存设置时不带 `ownRules` 的（这一版之前的 Mac、iPhone），服务保留原来的值，不当作关。
+
+**做了的（2026-10-17）**：
+
+- 服务：`build.ts` 的 `ownRules`、`templateOn`、`everyNode`、`unname`，`groupNames`、`defaultGroup`、`directGroup` 看这个开关；`store.ts`、`api/clash.ts`（可选字段）、`integration.ts`（旧应用不带时保留；路由检查；页面上的模版状态按 `templateOn`）。
+- 测试：`tests/clash.test.ts` 的 `only AgentSwitch's rules (§7.11)` 四条（只留节点、去掉的分组没有一处再被提到、节点集与没有节点、国内模版跟着开与分组的写法），HTTP 一条（打开后要重新取、旧应用不带时保留、关掉后复原）。
+- 真跑：用户现在这份订阅（47 个节点、20 个分组、43 条规则、29 个规则集）加上用户现在的设置，打开后生成的是 `Claude | Claude自动选择 | OpenAI | OpenAI自动选择 | Manual(48) | 自动选择(47)` 和上面那七条规则；Clash Verge 自带的内核 `-t` 通过。
+- Mac：`Rules` 一栏最上面一行 `Only My Rules`，开着时 `Domestic & Local Direct` 显示开着、不能点。iPhone：`Rules` 一栏同样一行。演示页 `docs/design/implemented/phone-proxies.html` 加了这一行。
 
 ## 8. 分步
 

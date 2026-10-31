@@ -241,13 +241,21 @@ export function mountTasks(app: Hono, deps: ApiDeps): void {
       replaying = false;
       const current = deps.store.getTask(id);
       if (ended || !current || TERMINAL.has(current.status)) { unsubscribe(); return; }
-      stream.onAbort(() => { unsubscribe(); done(); });
+      // What its run is writing (docs/simple-view-v0.md §5.14): no `id`, it is in no sequence and never replayed; what is
+      // being written now first. `{done: true}`: nothing is (the part is in the events).
+      const writing = (w: import("../core/writing.js").Writing | null) =>
+        void stream.writeSSE({ event: "writing", data: JSON.stringify(w ? { taskId: id, ...w } : { taskId: id, done: true }) }).catch(() => undefined);
+      const now = deps.bus.writingOf(id);
+      if (now) writing(now);
+      const unwrite = deps.bus.subscribeWriting(id, writing);
+      stream.onAbort(() => { unsubscribe(); unwrite(); done(); });
       const heartbeat = setInterval(() => { void stream.write(": ping\n\n").catch(() => undefined); }, deps.sseHeartbeatMs ?? SSE_HEARTBEAT_MS);
       try {
         await finished;
       } finally {
         clearInterval(heartbeat);
         unsubscribe();
+        unwrite();
       }
     });
   });

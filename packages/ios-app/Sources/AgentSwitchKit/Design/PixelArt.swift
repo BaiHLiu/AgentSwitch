@@ -44,6 +44,10 @@ public enum PixelArt {
     // MARK: sprites (5 × 5 and smaller), "#" lit
 
     public static let square = ["####", "####", "####", "####"]
+    /// Share: a tray with an arrow out of it (the select bar of the Files tab, docs/files-v0.md §12.3).
+    public static let share = ["....#....", "...###...", "..#.#.#..", "....#....", "##..#..##", "#.......#", "#.......#", "#########"]
+    /// The Trash: a can with its lid.
+    public static let trash = ["...###...", "#########", ".#.....#.", ".#.#.#.#.", ".#.#.#.#.", ".#.#.#.#.", ".#.....#.", "..#####.."]
     public static let hollow = ["####", "#..#", "#..#", "####"]
     public static let lock = [".###.", "#...#", "#####", "##.##", "#####"]
     /// A picture (a frame, a hill, the sun): the terminal reply box's photo button.

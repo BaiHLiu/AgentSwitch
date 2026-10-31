@@ -118,6 +118,8 @@ struct TaskPageView: View {
         }
         outcome(task)
         ProcessList(events: page.events, task: task, live: page.live)
+        // What its run is writing now, as its answer will read (docs/simple-view-v0.md §5.14).
+        if task.status.isActive, let writing = page.writing { RecordWriting(writing: writing) }
         if !listedFiles.isEmpty { files }
         facts(task)
         actions(task)

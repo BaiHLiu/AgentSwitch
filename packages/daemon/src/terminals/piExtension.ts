@@ -58,4 +58,44 @@ export default function agentswitch(pi: Pi): void {
   pi.on("agent_settled", say("PiAgentEnd"));
   pi.on("ui_prompt_start", say("PiWaiting"));
   pi.on("ui_prompt_end", say("PiAgentStart"));
+  writing(pi);
+}
+
+/** How often what it is writing goes to the service at most (the service's own `WRITING_MS`). */
+const WRITING_MS = 150;
+
+/** What it is writing (docs/simple-view-v0.md §5.14): pi's own pieces of its answer (`message_update`, `text_delta` and
+ *  `thinking_delta`), as the part's text so far, at most every WRITING_MS; `done` once its message ends (measured
+ *  2026-10-16 with pi 1.1.0, scripts/partial_probe.ts: 90 pieces). */
+function writing(pi: Pi): void {
+  let part: { index: number; thinking: boolean; text: string } | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let last = 0;
+  let sent = false;
+  let ctxNow: PiContext | undefined;
+  const send = () => {
+    timer = null;
+    if (!part) return;
+    last = Date.now();
+    sent = true;
+    void call("PiWriting", { text: part.text, ...(part.thinking ? { thinking: true } : {}), ...session(ctxNow) }).catch(() => undefined);
+  };
+  pi.on("message_update", (event, ctx) => {
+    const e = event.assistantMessageEvent as { type?: string; contentIndex?: number; delta?: unknown } | undefined;
+    if (!e || (e.type !== "text_delta" && e.type !== "thinking_delta") || typeof e.delta !== "string" || !e.delta) return;
+    const thinking = e.type === "thinking_delta", index = Number(e.contentIndex ?? 0);
+    if (!part || part.index !== index || part.thinking !== thinking) part = { index, thinking, text: "" };
+    part.text += e.delta;
+    ctxNow = ctx;
+    if (timer) return;
+    const wait = last + WRITING_MS - Date.now();
+    if (wait <= 0) send(); else timer = setTimeout(send, wait);
+  });
+  pi.on("message_end", (_event, ctx) => {
+    if (timer) { clearTimeout(timer); timer = null; }
+    part = null;
+    if (!sent) return;
+    sent = false;
+    void call("PiWriting", { done: true, ...session(ctx) }).catch(() => undefined);
+  });
 }

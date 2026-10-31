@@ -53,7 +53,7 @@ struct ComposeField: NSViewRepresentable {
         let scroll = NSScrollView()
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
-        scroll.hasVerticalScroller = true
+        scroll.hasVerticalScroller = false
         scroll.autohidesScrollers = true
         let view = ComposeTextView(usingTextLayoutManager: false)
         view.coordinator = context.coordinator
@@ -112,7 +112,7 @@ struct ComposeField: NSViewRepresentable {
             view.needsDisplay = true
             coordinator.measure()
         }
-        if let insert, insert.id != coordinator.inserted {
+        if let insert, insert.id != coordinator.inserted, Self.take(insert.id) {
             coordinator.inserted = insert.id
             view.window?.makeFirstResponder(view)
             let range = view.selectedRange()
@@ -120,7 +120,7 @@ struct ComposeField: NSViewRepresentable {
                 ? (view.string as NSString).substring(with: NSRange(location: range.location - 1, length: 1)).first : nil
             view.insertText(insert.tokens.isEmpty ? insert.text : TerminalDraft.typed(insert.tokens, after: before), replacementRange: range)
         }
-        if let replace, replace.id != coordinator.replaced {
+        if let replace, replace.id != coordinator.replaced, Self.take(replace.id) {
             coordinator.replaced = replace.id
             if NSMaxRange(replace.range) <= (view.string as NSString).length {
                 view.window?.makeFirstResponder(view)
@@ -134,6 +134,18 @@ struct ComposeField: NSViewRepresentable {
             view.wantsFocus = true
             DispatchQueue.main.async { view.takeFocusIfShown() }
         }
+    }
+
+    /// The requests put in so far, by any field. A request stays on its model after it is put in, and a field made
+    /// again (another pane, the other view, the page shown again) has a coordinator that never saw it: it put the
+    /// suggestion taken with Tab in once more each time — the box filled with the same sentence over and over
+    /// (2026-10-16, user: 我这边对话框还在一直自己自己补对话). One asked once is put in once.
+    @MainActor private static var taken: [UUID] = []
+    @MainActor private static func take(_ id: UUID) -> Bool {
+        guard !taken.contains(id) else { return false }
+        taken.append(id)
+        if taken.count > 64 { taken.removeFirst(taken.count - 64) }
+        return true
     }
 
     static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
@@ -205,6 +217,12 @@ struct ComposeField: NSViewRepresentable {
             guard let view, let manager = view.layoutManager, let container = view.textContainer else { return }
             manager.ensureLayout(for: container)
             let used = manager.usedRect(for: container).height
+            // A scroller only for more than the box holds. Where scrollers take room (a mouse, or “always show”), one
+            // shown for a moment — the box a line shorter than the text until its new height comes — narrowed the text,
+            // which wrapped onto a second line and grew the box, which hid the scroller, which let it fit on one again:
+            // the box jumped between one line and two without end (2026-10-16, user: 在简略模式写两行字然后删除的刚好只剩下一行的时候就会触发抽搐动作).
+            let over = ceil(used) > ComposeField.maxHeight
+            if let scroll = view.enclosingScrollView, scroll.hasVerticalScroller != over { scroll.hasVerticalScroller = over }
             let height = min(max(ceil(used), ComposeField.minHeight), ComposeField.maxHeight)
             if abs(height - parent.height) > 0.5 {
                 let binding = parent.$height

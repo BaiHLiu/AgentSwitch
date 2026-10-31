@@ -1,5 +1,6 @@
 /** What every harness adapter implements. The engine owns approvals, events and re-dispatch. */
 
+import type { Writing } from "../core/writing.js";
 import type { UserAnswers, UserQuestion } from "../core/questions.js";
 import type { Attachment } from "../files/uploads.js";
 import type { ExecutionOutcome } from "../core/outcome.js";
@@ -44,6 +45,10 @@ export type ExecutionInput = {
   readonly signal: AbortSignal;
   /** Stream progress; the engine persists and fans out. `agent` = a sub-agent the harness spawned (background-v0 §2). */
   readonly emit: (type: "text" | "tool_call" | "tool_result" | "agent" | "credential_repair" | "transfer_grant", payload: Record<string, unknown>) => void;
+  /** What it is writing at the moment (docs/simple-view-v0.md §5.14): the part of its answer being written, its whole
+   *  text so far; null once that part is in the task's events (`text`) or nothing is being written. Shown while it is
+   *  written, never stored. Absent: nobody watches. */
+  readonly writing?: (writing: Writing | null) => void;
   /** Ask the user; resolves when they answer or the request expires (deny). */
   /** `signal`: this one request's own cancellation (the executor gave up on it); the engine withdraws the card. */
   readonly approve: (action: string, evidence: string, signal?: AbortSignal) => Promise<ApprovalDecision>;

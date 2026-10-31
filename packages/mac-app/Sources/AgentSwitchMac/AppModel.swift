@@ -393,6 +393,8 @@ final class AppModel {
             writeUpdateResult(ok: false, reverted: false, from: from, to: staged, reason: problem)
             return
         }
+        // The windows open now, for the new copy to open again (`UpdateWindows`).
+        keepWindows()
         await shutdown()
         releaseInstance()
         // Off the main thread with a deadline: a move macOS holds must not freeze the app with the services stopped.
@@ -432,6 +434,8 @@ final class AppModel {
     /// Set by the app delegate: frees the single-instance lock for the copy about to start, and quits once the
     /// children are already stopped.
     @ObservationIgnored var releaseInstance: @MainActor () -> Void = {}
+    /// Set by the app delegate: writes down the windows open now, before an update stops this copy.
+    @ObservationIgnored var keepWindows: @MainActor () -> Void = {}
     @ObservationIgnored var exitApp: @MainActor () -> Void = {}
     /// Hides the menu bar item while this copy only waits on the new one.
     private(set) var updating = false

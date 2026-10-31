@@ -295,13 +295,61 @@ code.c { font: 12px var(--code); background: color-mix(in srgb, var(--ink) 8%, t
 .classic .sph { font-family: var(--ui); }
 .classic .spane.focus .sph { box-shadow: inset 0 -2px 0 var(--accent); }
 .classic .tree .row.on { background: var(--raise); border-radius: 7px; margin: 0 6px; padding: 4px 6px; }
+
+/* ---------- 6. carry (talk-v0 §10) ---------- */
+.carry { height: 600px; grid-template-rows: 32px minmax(0, 1fr) auto 24px; }
+.carry .body { grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1fr); }
+.carry .spane .rec { position: relative; }
+.ub { align-self: flex-end; max-width: 82%; background: var(--raise); border: 1px solid var(--ink3); padding: 5px 10px; font: 12.5px/1.55 var(--ui); }
+.cc { border: 1px solid var(--ink3); border-left: 2px solid var(--cyan); padding: 6px 10px 7px; background: var(--panel); font: 12.5px/1.55 var(--ui); }
+.cc .h { display: flex; align-items: center; gap: 7px; font: 11px var(--mono); color: var(--ink2); margin-bottom: 3px; }
+.cc .h b { color: var(--ink); font-weight: 400; }
+.cc .h .t { margin-left: auto; color: var(--ink3); }
+.cc.queued { border-style: dashed; border-left-style: solid; background: transparent; }
+.cc.notice { border-left-color: var(--ink2); }
+.cc.copy { border-left-color: var(--violet); }
+.chip { font: 10.5px var(--mono); border: 1px solid var(--ink3); padding: 0 4px; color: var(--ink2); white-space: nowrap; }
+.chip.notice { color: var(--ink2); } .chip.ask { color: var(--cyan); border-color: var(--cyan); } .chip.stop { color: var(--red); border-color: var(--red); }
+.nl { font: 11.5px var(--mono); color: var(--ink2); padding-left: 14px; }
+.nl b { color: var(--ink); font-weight: 400; }
+.step { font: 11.5px var(--code); color: var(--ink); padding-left: 14px; display: flex; gap: 8px; }
+.step i { font-style: normal; color: var(--ink2); font-family: var(--mono); flex: none; }
+.cmenu { position: absolute; right: 22px; top: 150px; width: 330px; background: var(--bg); border: 1px solid var(--ink); z-index: 2; font: 12px var(--mono); box-shadow: 6px 6px 0 color-mix(in srgb, var(--ink) 18%, transparent); }
+.cmenu .hd { background: var(--ink); color: var(--bg); padding: 3px 10px; }
+.cmenu .it { display: grid; grid-template-columns: 16px 1fr; gap: 2px 8px; padding: 6px 10px; border-bottom: 1px dotted var(--ink4); }
+.cmenu .it.on { background: var(--raise); }
+.cmenu .it .s { grid-column: 2; color: var(--ink2); font: 11px var(--ui); }
+.cmenu .note { margin: 8px 10px; border: 1px solid var(--ink3); padding: 5px 8px; font: 12px var(--ui); color: var(--ink); }
+.cmenu .foot { display: flex; justify-content: flex-end; gap: 12px; padding: 0 10px 8px; }
+.collide { border: 1px solid var(--amber); padding: 6px 10px; font: 12px/1.5 var(--ui); display: flex; gap: 8px; align-items: flex-start; }
+.strip { border-top: 1px solid var(--ink4); padding: 6px 14px 7px 58px; font: 11.5px var(--mono); color: var(--ink2); display: grid; grid-template-columns: auto 1fr auto; gap: 3px 16px; align-items: center; }
+.strip .lnk { color: var(--signal); font-weight: 600; }
+.strip .rows { display: flex; flex-direction: column; gap: 2px; width: auto; margin: 0; background: none; padding: 0; border-radius: 0; font: 11.5px var(--mono); color: var(--ink2); }
+.strip .rows span b { color: var(--ink); font-weight: 400; }
+.strip .acts { display: flex; gap: 12px; }
+.carryshots { display: grid; grid-template-columns: 1fr; gap: 16px; width: 1200px; }
+.carryshots .pane { height: auto; }
+.carryshots .tty { font-size: 11px; line-height: 1.45; margin: 0; white-space: pre; }
+.classic .ub { border: 0; border-radius: 14px; background: color-mix(in srgb, var(--ink) 9%, transparent); }
+.classic .cc { border: 0; border-left: 3px solid var(--accent); border-radius: 10px; background: var(--card); }
+.classic .cc.queued { border: 1px dashed var(--ink3); border-left: 3px solid var(--accent); background: transparent; }
+.classic .cc.notice { border-left-color: var(--ink3); }
+.classic .cc.copy { border-left-color: var(--violet); }
+.classic .chip { border: 0; background: var(--raise); border-radius: 5px; padding: 0 6px; font: 500 10.5px var(--ui); }
+.classic .chip.ask { color: var(--accent); } .classic .chip.stop { color: var(--red); }
+.classic .cmenu { border: 1px solid var(--ink4); border-radius: 10px; overflow: hidden; background: var(--card); box-shadow: 0 14px 40px rgba(0,0,0,.45); font-family: var(--ui); }
+.classic .cmenu .hd { background: transparent; color: var(--ink2); border-bottom: 1px solid var(--ink4); font-weight: 600; }
+.classic .cmenu .it { border-bottom: 0; border-radius: 7px; margin: 2px 6px; }
+.classic .cmenu .note { border-radius: 7px; border-color: var(--ink4); background: var(--bg); }
+.classic .collide { border-radius: 10px; border-color: color-mix(in srgb, var(--amber) 45%, transparent); background: color-mix(in srgb, var(--amber) 8%, transparent); }
+.classic .strip .lnk { color: var(--accent); }
 </style>
 </head>
 <body>
 
 <div class="top">
   <h1>Rooms · 几个 agent 在 AgentSwitch 里互相说话</h1>
-  <p class="lede">配 <code>docs/talk-v0.md</code>。<b style="color:#e9e6df">这一页的对话是真的</b>：2026-10-15 用 <code>packages/daemon/scripts/room_trial.ts</code> 让这台 Mac 上真的 Codex 和 Claude Code，在 AgentSwitch 的终端里谈了两件真事——评审这份设计（Rooms 设计评审），排查“远程接管浏览器后点不动”（远程点击排查）。每段话都是它们原样的回答，时间是回答的时间；第 2 节的图是应用自己画的（真实记录、真实终端屏幕）。试验里没出现过的状态——停下等你、agent 请求拉人、你在打字——是设计示意，标着“示意”。顶上一排是还没定的几件（talk-v0 §8）和外观。</p>
+  <p class="lede">配 <code>docs/talk-v0.md</code>。<b style="color:#e9e6df">这一页的对话是真的</b>：2026-10-15 用 <code>packages/daemon/scripts/room_trial.ts</code> 让这台 Mac 上真的 Codex 和 Claude Code，在 AgentSwitch 的终端里谈了两件真事——评审这份设计（Rooms 设计评审），排查“远程接管浏览器后点不动”（远程点击排查）。每段话都是它们原样的回答，时间是回答的时间；第 2 节的图是应用自己画的（真实记录、真实终端屏幕）。试验里没出现过的状态——停下等你、agent 请求拉人、你在打字——是设计示意，标着“示意”。顶上一排是还没定的几件（talk-v0 §8）和外观。第 6 节是 2026-10-16 加的“搬话”（§10）：前三张是示意，最后一张是探针拍到的、agent 自己的真实屏幕。</p>
   <div class="tools">
     <span>谁建讨论 <span class="seg" data-opt="who"><button data-v="you" class="on">By You</button><button data-v="ask">Agents Ask</button></span></span>
     <span>送达 <span class="seg" data-opt="deliver"><button data-v="typed" class="on">Typed In</button><button data-v="pull">Pull Only</button></span></span>
@@ -335,6 +383,9 @@ code.c { font: 12px var(--code); background: color-mix(in srgb, var(--ink) 8%, t
 <div class="sec">5 · PHONE — 手机上同一个讨论</div>
 <div class="stage"><div class="phones" id="phone"></div></div>
 <div class="cap" id="capPhone"></div>
+<div class="sec">6 · CARRY — 搬话：两个各做一部分的 agent，你在中间传话（§10）</div>
+<div class="stage"><div class="ctl" id="ctlCarry"><button data-carry="send" class="on">① Send To</button><button data-carry="tell">② 让它们自己搬</button><button data-carry="link">③ Link</button><span style="width:14px"></span><button data-carry="real">它们收到时的屏幕（真实）</button></div><div id="carry"></div></div>
+<div class="cap" id="capCarry"></div>
 <div style="height:60px"></div>
 
 <script src="pixel.js"></script>
@@ -350,7 +401,7 @@ const md = (s) => esc(s)
   .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
   .split(/\n{2,}/).map((p) => `<p style="margin:0 0 6px">${p.replace(/\n/g, "<br>")}</p>`).join("");
 
-const S = { who: "you", deliver: "typed", stop: 8, place: "page", look: "pixel", light: false, view: "chat", state: "running", pick: 1, sheet: "terminals", typing: false, room: 0 };
+const S = { carry: "send", who: "you", deliver: "typed", stop: 8, place: "page", look: "pixel", light: false, view: "chat", state: "running", pick: 1, sheet: "terminals", typing: false, room: 0 };
 
 // ---------- the two looks (ui-v0 §7 Pixel, §8 Classic) ----------
 const C = () => S.look === "classic";
@@ -665,8 +716,88 @@ function drawPhone() {
   document.getElementById("capPhone").innerHTML = "手机上从 <code>Terminals</code> 标签顶上进 <code>Rooms</code>：讨论列表，和一个讨论的聊天看法（最近几段，真实的话，长的截短）。";
 }
 
+// ---------- 6. carry (design, talk-v0 §10; the last view is real) ----------
+const CA = { no: "05", a: "codex", name: "Codex", dir: "packages/daemon" };
+const CB = { no: "07", a: "cc", name: "Claude Code", dir: "packages/mac-app" };
+const who2 = (m) => `${agent(m.a)}<b>${m.no} · ${m.name}</b>`;
+const chip = (k) => `<span class="chip ${k}">${{ notice: "Notice", ask: "Question", stop: "Stop", reply: "Reply" }[k]}</span>`;
+const LINKMARK = ["#.....#", ".#...#.", "..###..", ".#...#.", "#.....#"];
+const card = ({ from, kind, at, body, cls = "", note = "" }) => `<div class="cc ${cls}"><div class="h">${from}${kind ? chip(kind) : ""}${note}<span class="t">${at}</span></div>${body}</div>`;
+const taskA = `<div class="ub">给 <code class="c">/api/login</code> 加上续期：返回里带 refresh token，过期前 5 分钟可以换一对新的。</div>`;
+const taskB = `<div class="ub">登录页：登录成功后把 token 存进 Keychain，过期了跳回登录。</div>`;
+const answerA = `<div>改好了：<code class="c">/api/login</code> 现在返回 <code class="c">{ token, refreshToken, expiresAt }</code>；新加 <code class="c">POST /api/refresh</code>，用 <code class="c">refreshToken</code> 换一对新的。<code class="c">tests/auth.test.ts</code> 全过。</div>`;
+function drawCarry() {
+  const el = document.getElementById("carry");
+  const cap = document.getElementById("capCarry");
+  if (S.carry === "real") {
+    const CS = window.CARRY_SCREENS;
+    const pane = (a, title, rows, wide = false) => `<div class="pane ${look()}" style="${wide ? "grid-column: 1 / 3;" : ""}"><div class="ph">${agent(a)}<b>${title}</b></div>
+      <pre class="tty">${rows.map(esc).join("\n")}</pre><div></div></div>`;
+    el.innerHTML = `<div class="carryshots">${pane("cc", "Claude Code 2.1.294 · 手动 · 从收件 socket 送进去的一句", CS.claudeManual)}${pane("codex", "Codex 0.163.0-alpha.5 · 第二个客户端 turn/start", CS.codex)}${pane("cc", "Claude Code · 跳过权限 · 同一句被扣住，等人放行", CS.claudeBypass)}${pane("cc", "Claude Code · 跳过权限 · 用它自己的信封，声明发送方也跳过权限：送到", CS.claudeAttest)}${pane("codex", "Codex · Send To 的两种送法：turn/steer 并进正在做的一轮；turn/interrupt 再 turn/start", CS.codexSteer)}</div>`;
+    cap.innerHTML = `<b>真实的</b>（2026-10-16，<code>scripts/carry_probe.ts</code>，§10.6）：两个 agent 自己的屏幕，探针按行读下来，没有颜色。第一块：Claude Code 从它自己的收件 socket 收到一句，自己标上“Another Claude session sent a message”，加了一段“这不是你的用户打的字”的提醒，接着做了一轮；它的回答里原样写出了钩子在 <code>pwd</code> 之后加的那条知会。第二块：Codex 的私有 app-server 上，第二个客户端 <code>turn/start</code>，它画成一句你打的话（<code>›</code>），没碰输入框。第三块：跳过权限的 Claude Code 把同一句扣住，弹它自己的 <code>Deny</code> / <code>Deliver</code>——探针没有点，结束了它。第四块：同一句包进 Claude Code 自己的信封，写明发信人和“发送方也跳过权限”，它就收下了，屏幕上只是一行 <code>Message from @05-Codex</code>（手动的 agent 这样声明照样被扣，§10.5 的表）。第五块：Codex 在跑 <code>sleep 12</code> 时，<code>turn/steer</code> 并进一句“回答最后加上 STEER-OK”，它照做；下一轮在跑 <code>sleep 40</code> 时被 <code>turn/interrupt</code> 停下（<code>■ Conversation interrupted</code>），接着答了送进去的新一句。`;
+    return;
+  }
+  const mode = S.carry;
+  const linked = mode === "link";
+  const head = (m, end, focus) => `<div class="sph"><span class="dim">${m.no}</span>${agent(m.a)}<b>${m.name}</b><span class="dim" style="font-family:var(--code)">${m.dir}</span>
+      ${linked ? `<span class="tag" style="color:var(--signal)">${C() ? line("rooms", 11) : P.sprite(LINKMARK, { px: 1.5 })} Link</span>` : ""}<span class="end">${end}</span></div>`;
+  let a = "", b = "", ea = "", eb = "";
+  if (mode === "send") {
+    ea = `<span class="flow">→ 07 · 14:31</span>`;
+    eb = `<span class="flow w">1 Queued</span>${B("Interrupt", "warn")}`;
+    a = `${taskA}<div class="work">Worked 2m 10s · Read 4 · Edited 3 · Ran 2</div>${answerA}
+      <div class="back" style="color:var(--ink)">Copy · <span style="background:var(--ink); color:var(--bg); padding:0 4px">Send To ▸</span></div>
+      <div class="cmenu"><div class="hd">Send To</div>
+        <div class="it on"><span>${agent("cc")}</span><span>07 · Claude Code</span><span class="s">packages/mac-app · ${w("busy")} 2m · 在做：把 token 存进 Keychain</span></div>
+        <div class="it"><span>${agent("codex")}</span><span>03 · Codex</span><span class="s">packages/secret-gate · ${w("idle")}</span></div>
+        <div class="note"><span class="faint">你说：</span>看看你那边要不要跟着改</div>
+        <div class="foot">${B("Cancel")}${B("Interrupt", "warn")}${B("Send", "pri")}</div></div>`;
+    b = `${taskB}<div class="work">${spin()} Working 2m 04s · Read 3 · Edited 2</div>
+      ${card({ from: `${who2(CA)}<span>· Carried by You</span>`, at: `<span class="w">Queued</span>`, cls: "queued",
+        body: `${answerA}<div style="margin-top:4px"><span class="faint">你说：</span>看看你那边要不要跟着改</div><div class="back" style="margin-top:4px">Send：不打断，07 做下一步之前读到。要它停下先看这句，点 Interrupt。</div>` })}`;
+    cap.innerHTML = `<b>① Send To</b>（示意，§10.2）：Codex 改完了登录接口，你在它那段回答上点 <code>Send To ▸</code>，选 07，补一句话，再选送法：<code>Send</code> 不打断，07 正在做就并进它这一轮、做下一步之前读到（Claude Code 自己排着；Codex 是 <code>turn/steer</code>，试过）；<code>Interrupt</code> 先停下它手上的这一轮再送（Codex 是 <code>turn/interrupt</code> 再 <code>turn/start</code>，试过）。开头写明从谁、哪个文件夹来、是你搬的。不建讨论、不花额外的 token；第一次搬就有了一个没名字的 <code>05 ↔ 07</code>，往后两边可以用工具互相传话（②）。手机上是长按那段回答。`;
+  } else if (mode === "tell") {
+    const both = `<span class="tag" style="color:var(--amber)">docs/api/login.md ×2</span>`;
+    ea = `<span class="flow">→ 07 · Notice</span>${both}`;
+    eb = `<span class="flow">← 05 · Notice</span>${both}`;
+    a = `${taskA}<div class="work">Worked 2m 10s · Read 4 · Edited 3 · Ran 2</div>
+      <div class="ub">跟 07 说一声字段叫 refreshToken；再问问它登录页现在把 token 存在哪个 key 下——别打断它。</div>
+      <div class="work">Worked 21s</div>
+      <div class="step"><i>peers</i>07 · Claude Code · ${w("busy")} 3m · 3/5 把 token 存进 Keychain · 改过 LoginView.swift、AuthStore.swift</div>
+      <div class="step"><i>send</i>→ 07 · Notice · 登录接口新加的字段定名为 refreshToken</div>
+      <div class="step"><i>ask</i>→ 07 的分身</div>
+      ${card({ from: `<span>←</span>${agent("cc")}<b>07 的分身</b>`, at: "14:36", cls: "copy", body: `<code class="c">AuthStore.tokenKey = "as.login.token"</code>；refresh token 还没存，打算放进同一个 Keychain 条目。<div class="back" style="margin-top:3px">07 本身没被打扰；这是它此刻为止知道的。</div>` })}
+      <div>告诉 07 了。它把 token 存在 <code class="c">as.login.token</code>，refresh token 还没存。</div>`;
+    b = `${taskB}<div class="work">${spin()} Working 3m 12s · Read 4 · Edited 3</div>
+      <div class="nl">⎿ 知会 · <b>05 · Codex</b>：登录接口新加的字段定名为 refreshToken。</div>
+      <div class="collide">${sq("var(--amber)")}<span><b>撞车</b>：05 · Codex 刚改了 <code class="c">docs/api/login.md</code>，你 14:20 也改过它。已知会两位。</span></div>`;
+    cap.innerHTML = `<b>② 让它们自己搬</b>（示意，§10.1、§10.3、§10.4）：你对 Codex 说一句，它用 room 的工具：<code>peers</code> 看 07 在做什么（服务从记录里读，不花 07 的 token），<code>send</code> 发一条知会，<code>ask</code> 问 07 的分身（07 本身不受打扰）。07 不开新的一轮：知会在它下一次调用工具时由钩子加进上下文，简略视图在那段工作里画一小行（两家的钩子都试过，§10.6）。两人都改过同一个文件，服务直接提醒，标题栏标出来。`;
+  } else {
+    ea = `<span class="flow">↩ 07 · Reply</span>`;
+    eb = `${spin()}<span class="flow">← 05 · Reply · 14:34</span>`;
+    a = `${taskA}<div class="work">Worked 2m 10s · Read 4 · Edited 3 · Ran 2</div>
+      ${card({ from: `<span>←</span>${who2(CB)}`, kind: "ask", at: "14:33", body: "登录失败时返回什么状态码？token 过期和密码错能分开吗？" })}
+      <div class="work">Worked 18s · Read 1</div>
+      <div>能分开：都是 401，body 里的 <code class="c">error</code> 分别是 <code class="c">invalid_credentials</code> 和 <code class="c">expired</code>；过期的拿 <code class="c">refreshToken</code> 去 <code class="c">POST /api/refresh</code>。</div>
+      <div class="back">↩ Back to 07 · Reply · 14:34</div>`;
+    b = `${taskB}${card({ from: `<span>←</span>${who2(CA)}`, kind: "notice", at: "14:31", cls: "notice", body: "登录接口新加的字段定名为 refreshToken。" })}
+      <div class="work">Worked 1m 40s · Edited 2 · Sent to 05 (Question)</div>
+      ${card({ from: `<span>←</span>${who2(CA)}`, kind: "reply", at: "14:34", body: `能分开：都是 401，body 里的 <code class="c">error</code> 分别是 <code class="c">invalid_credentials</code> 和 <code class="c">expired</code>…` })}
+      <div class="work">${spin()} Working 40s · Edited 1</div>`;
+    cap.innerHTML = `<b>③ Link</b>（示意，§10.1）：两块之间挂上 <code>Link</code>，一段时间里它们直接来回：07 问，05 答，05 的回答自动带回给 07（就像一个讨论，§4.2）。底下的细条按时间滚着往来；连续 8 轮没有你就停下等你（§4.4）。<code>Unlink</code> 随时关，往来留成 <code>Rooms</code> 里的一个讨论（<code>Open Room</code>）。`;
+  }
+  const pane = (m, body, end, focus) => `<div class="spane ${focus ? "focus" : ""}">${head(m, end, focus)}<div class="rec" style="overflow:hidden">${body}</div><div class="reply">回复</div></div>`;
+  const rail = `<div class="rail">${["dispatch", "terminals", "browser", "rooms", "clash"].map((k) => `<span class="ic ${k === "terminals" ? "on" : ""}">${icon(k)}</span>`).join("")}<span class="gap"></span><span class="ic" style="margin-bottom:12px">${icon("settings")}</span></div>`;
+  const strip = linked ? `<div class="strip"><span class="lnk">Link · 05 ↔ 07</span>
+      <div class="rows"><span>14:31 <b>05 → 07</b> Notice · 登录接口新加的字段定名为 refreshToken</span><span>14:33 <b>07 → 05</b> Question · 登录失败时返回什么状态码？</span><span>14:34 <b>05 → 07</b> Reply · 能分开：都是 401，error 分开…</span></div>
+      <span class="acts"><span class="dim">2 / 8 Rounds Without You</span>${B("Open Room")}${B("Unlink", "warn")}</span></div>` : "<div></div>";
+  el.innerHTML = `<div class="win carry ${look()}"><div class="bar"><div class="lights"><i></i><i></i><i></i></div><span class="ttl">Terminals <small>05 · Codex · 07 · Claude Code</small></span></div>
+    <div class="body">${rail}${pane(CA, a, ea, mode === "send" || mode === "tell")}${pane(CB, b, eb, mode === "link")}</div>${strip}
+    <div class="status"><span>${sq("var(--green)")} ${w("gateway")}</span><span>iPhone Online</span><span class="sp"></span><span>${linked ? "Link · 05 ↔ 07" : "05 ↔ 07 · 1 Carried"}</span></div></div>`;
+}
+
 // ---------- events ----------
-function drawAll() { drawWin(); drawTerm(); drawSplit(); drawSheet(); drawPhone(); }
+function drawAll() { drawWin(); drawTerm(); drawSplit(); drawSheet(); drawPhone(); drawCarry(); }
 document.addEventListener("click", (e) => {
   const opt = e.target.closest(".seg[data-opt] button");
   if (opt) {
@@ -688,7 +819,10 @@ document.addEventListener("click", (e) => {
   const ty = e.target.closest("[data-typing]");
   if (ty) { S.typing = ty.dataset.typing === "yes"; for (const b of document.querySelectorAll("#ctlSplit [data-typing]")) b.classList.toggle("on", b.dataset.typing === ty.dataset.typing); drawSplit(); return; }
   const sh = e.target.closest("[data-sheet]");
-  if (sh) { S.sheet = sh.dataset.sheet; for (const b of document.querySelectorAll("#ctlSheet [data-sheet]")) b.classList.toggle("on", b.dataset.sheet === S.sheet); drawSheet(); return; }
+  if (sh) { S.sheet = sh.dataset.sheet; for (const b of document.querySelectorAll("#ctlSheet [data-sheet]")) b.classList.toggle("on", b.dataset.sheet === S.sheet);
+for (const b of document.querySelectorAll("#ctlCarry [data-carry]")) b.classList.toggle("on", b.dataset.carry === S.carry); drawSheet(); return; }
+  const cy = e.target.closest("[data-carry]");
+  if (cy) { S.carry = cy.dataset.carry; for (const b of document.querySelectorAll("#ctlCarry [data-carry]")) b.classList.toggle("on", b.dataset.carry === S.carry); drawCarry(); return; }
   const pk = e.target.closest("[data-pick]");
   if (pk) { S.pick = +pk.dataset.pick; drawWin(); return; }
 });
@@ -703,6 +837,7 @@ for (const k of ["who", "deliver", "place"]) if (q.get(k)) S[k] = q.get(k);
 if (q.get("stop")) S.stop = +q.get("stop");
 if (q.has("sessions")) S.sheet = "sessions";
 if (q.has("typing")) S.typing = true;
+if (q.get("carry")) S.carry = q.get("carry");
 for (const seg of document.querySelectorAll(".seg[data-opt]")) {
   const k = seg.dataset.opt, v = k === "theme" ? (S.light ? "light" : "dark") : String(S[k]);
   for (const b of seg.children) b.classList.toggle("on", b.dataset.v === v);

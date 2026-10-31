@@ -22,6 +22,8 @@ final class TerminalPaneState: Identifiable {
     /// no stream of its own, no hold on the size — and `record` follows the terminal.
     private(set) var simple = false
     @ObservationIgnored let record = PaneRecord()
+    /// Files that may hold a password, waiting for a yes before they go to the agent (docs/files-v0.md §4).
+    private(set) var asking: FilesAsk?
     @ObservationIgnored private var loadingTask: Task<Void, Never>?
     /// The screen was clicked: the pane takes the focus.
     @ObservationIgnored var onClick: () -> Void = {}
@@ -56,6 +58,29 @@ final class TerminalPaneState: Identifiable {
         }
         screen.onShortcut = { [weak self] key, shift, alt in self?.onShortcut(key, shift, alt) }
         screen.onGrid = { [weak self] cols, rows in self?.grid = (cols, rows) }
+        screen.onFiles = { [weak self] picks in self?.offer(picks) }
+        record.onFiles = { [weak self] picks in self?.offer(picks) }
+    }
+
+    /// Files given to this pane's agent (the Files column, a drop, `Files…`): into its record's reply box, or typed at
+    /// its terminal's cursor. One that may hold a password is asked about first, over the reply box or the screen.
+    func offer(_ picks: [FilesPick]) {
+        guard !picks.isEmpty, session != nil else { return }
+        let sensitive = picks.filter(\.sensitive)
+        guard !sensitive.isEmpty else { return give(picks) }
+        asking = FilesAsk(picks: picks, sensitive: sensitive)
+    }
+
+    /// The question answered: `Add` gives them all, `Cancel` only the others.
+    func answer(add: Bool) {
+        guard let ask = asking else { return }
+        asking = nil
+        give(add ? ask.picks : ask.picks.filter { !$0.sensitive })
+    }
+
+    private func give(_ picks: [FilesPick]) {
+        guard !picks.isEmpty else { return }
+        if simple { record.attach(picks: picks) } else { screen.type(paths: picks.map(\.path)) }
     }
 
     /// The terminal the pane shows (nil: none), with what the list knows of it now; `simple`: as its record.
@@ -95,6 +120,7 @@ final class TerminalPaneState: Identifiable {
     }
 
     private func leave() {
+        asking = nil
         session?.stop()
         session = nil
         say(nil)
@@ -126,4 +152,10 @@ final class TerminalPaneState: Identifiable {
         screen.stop()
         stage.removeFromSuperview()
     }
+}
+
+/// Files waiting for a yes: all that were given, and the ones that may hold a password (files-v0 §4).
+struct FilesAsk: Equatable {
+    let picks: [FilesPick]
+    let sensitive: [FilesPick]
 }

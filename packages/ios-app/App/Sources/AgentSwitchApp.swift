@@ -14,10 +14,12 @@ struct AgentSwitchApp: App {
         #if DEBUG
         // Screens with sample data and no Mac: `-uiDemo YES`, optionally `-uiDemoScreen settings|task|done|onboarding|
         // stale|interrupted|mac|offline|offlinemac|tasks|search|sessions|transcript|terminals|terminal|terminalsealed|
-        // terminalslash|terminalclose|terminalmenu|terminaldelete|terminalsearch|terminalquestion|terminallink|newterminal|newterminalbypass|
+        // terminalslash|terminalclose|terminalmenu|terminaldelete|terminalsearch|terminalsmany|terminalquestion|terminallink|newterminal|newterminalbypass|
         // browser|browserpage|browsertook|browserfile|browserlocal|browserdenied|browsernew|browserclose|browserzoom|
         // browserzoomwatch|linkedpage|proxies|clash|clashservice|clashrules|clashcheck|clashnodes|clashtext|clashsource|
-        // proxybrowser|proxyprofile`.
+        // proxybrowser|proxyprofile|files|fileshome|filesopen|filespreview|filespreviewlong|filesimage|filesselect|fileschoose|filessensitive|
+        // filesscoped|filessheet|filesreply|filesnew|filesnameerror|filestrash|filestrashbusy|filesselectbar|filesshare|filesupload|
+        // filesclash|filesgone|transcriptfiles|terminalpath`.
         if let hosts = UserDefaults.standard.string(forKey: "tlsProbe"), let pin = UserDefaults.standard.string(forKey: "tlsProbePin") {
             TLSProbe.run(hosts: hosts.split(separator: ",").map(String.init), pin: pin)
         }
@@ -28,7 +30,7 @@ struct AgentSwitchApp: App {
             let screen = UserDefaults.standard.string(forKey: "uiDemoScreen")
             let model = AppModel.demo(offline: screen == "offline" || screen == "offlinemac")
             switch screen {
-            case "settings", "mac", "offlinemac", "tasks", "search", "sessions", "transcript",
+            case "settings", "mac", "offlinemac", "tasks", "search", "sessions", "transcript", "transcriptfiles",
                  "proxies", "clash", "clashservice", "clashrules", "clashcheck", "clashnodes", "clashtext", "clashsource", "proxybrowser", "proxyprofile": model.tab = .settings
             case "task": model.tab = .tasks; model.openTaskRequest = "t2"
             case "done": model.tab = .tasks; model.openTaskRequest = "t3"
@@ -38,10 +40,27 @@ struct AgentSwitchApp: App {
             // The Dispatch page itself (the app opens on the terminals).
             case "home", "offline": model.tab = .tasks
             case "terminals", "terminalmenu", "terminalmenuprofile", "terminaldelete", "terminalsearch", "terminalprofiles": model.tab = .terminals
-            case "terminal", "terminalsealed", "terminalslash", "terminalclose", "terminalkeyboard", "terminalquestion", "terminallink",
+            // A long tree read again as the Mac's is (TerminalsListProbe).
+            case "terminalsmany": model.tab = .terminals; TerminalsListProbe.start(model)
+            case "terminal", "terminalsealed", "terminalslash", "terminalclose", "terminalkeyboard", "terminalquestion", "terminallink", "terminalpath",
                  "simple", "simplebusy", "simplecompact", "simpledaybreak", "simpledaybreakclash", "simpleidle", "simpleeffort", "simplepaste", "simplestep", "simplesuggest", "simplequestion", "simpleprompt", "simplechanges":
                 model.tab = .terminals; model.openTerminalRequest = "a1b2c3d4"
             case "newterminal", "newterminalbypass", "newterminalprofile": model.tab = .terminals; model.openTerminalRequest = "new"
+            // The Files tab (docs/files-v0.md §5) on the made-up disk (DemoFiles): its pages in FilesTab.demo.
+            case "files", "filesopen", "filespreview", "filespreviewlong", "filesimage", "filesselect", "fileschoose", "filessensitive",
+                 "filesnew", "filesnameerror", "filestrash", "filestrashbusy", "filesselectbar", "filesshare", "filesupload", "filesclash":
+                model.tab = .files; model.files.openRequest = DemoFiles.project
+            case "fileshome", "filesscoped": model.tab = .files; model.files.openRequest = DemoFiles.home
+            // `Show in Files` for a session whose folder is gone: its nearest level still there (files-v0 §12.4).
+            case "filesgone": model.tab = .files; model.files.openRequest = "\(DemoFiles.project)/packages/gone"
+            // `+` › Files on Mac over the terminal; the Mac's files in its reply box.
+            case "filessheet": model.tab = .terminals; model.openTerminalRequest = "a1b2c3d4"
+            case "filesreply":
+                // As the Files tab hands them over, to a reply begun before (kept as a draft is).
+                model.tab = .terminals; model.openTerminalRequest = "a1b2c3d4"
+                ReplyDrafts.shared.text["a1b2c3d4"] = "对照一下 "
+                model.files.handoff = .init(terminal: "a1b2c3d4", picks: [MacPick(path: "\(DemoFiles.project)/src/app.ts", isFolder: false),
+                                                                          MacPick(path: "\(DemoFiles.project)/.env", isFolder: false, sensitive: true)])
             case let s? where s.hasPrefix("browser"): model.tab = .browser; model.openBrowserRequest = DemoBrowser.openRequest(s)
             // A link tapped on a terminal's screen: its page over the terminal, `Done` back to it.
             case "linkedpage":

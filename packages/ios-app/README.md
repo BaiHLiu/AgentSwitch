@@ -50,7 +50,11 @@ AgentSwitchKit, by folder:
   written whole in one field taken apart, and a typed password as the payload to seal: for the proxy's own
   `host:port`, uses `http` + `fill` — `BrowserProxyState`), `ProxyRoutes` (`/clash…`, `/profiles/:agent/:id/proxy`
   and `/check`, `/browser/identity`; a Mac from before these were a phone's answers 403 or 404, read as nothing to
-  show).
+  show). The Mac's files (docs/files-v0.md §7): `FileModels` (a level, an entry's details, a text preview, the Mac's
+  refusals and what the phone says for each, `MacPath`, the orders of `Sort By`, short sizes and times, a pick and the
+  question before one that may hold a password) and `FileRoutes` (`/files` sent with the version the page has — a 304
+  is nothing new —, `/files/stat`, `/files/preview`, `/files/thumbnail`, `/files/content` written to a file as it
+  comes, with its progress); a reply's attachment names a Mac file by its `path`.
 - `Connection/` — `EndpointSelector` (Bonjour with matching `fp` prefix → LAN addresses → Tailscale; probe `/healthz`
   then `/me`), `ConnectionManager` (actor; re-selects on failure and on `NWPathMonitor` changes, checks the address
   in use with `/healthz` on returning to the foreground, retries on its own while unreachable — 2 s doubling to
@@ -191,6 +195,16 @@ Signing & Capabilities and press Run — but `xcodegen generate` (also run by th
   proxy's form is one for both: `Server`, `User Name`, `Password`, its exit; the password is sealed on the phone
   with the Mac's gate key as it is now and never leaves in the clear. Adding AgentSwitch's subscription to Clash
   Verge, a browser's fingerprint, and making or removing a profile stay on the Mac.
+- **Files** (tab, docs/files-v0.md §5) — the Mac's files, one level a page: the folder in the bar with the Mac under
+  it, its whole path under the bar (every level a button; the middle folds into `…`, a menu of those levels), iOS
+  Files' list in the classic look and tree lines in the pixel look (a folder's `▸` opens it in place), `Select` and `⋯`
+  (hidden files, the order, home). It opens where it was last on that Mac (first, the Mac's home folder), or at a
+  terminal's folder from the row's `Show in Files`. A file opens its preview: a text file's first 64 KB, a picture's
+  small copy, `Open Preview` for Quick Look (fetched first; over 25 MB it is not). `Add to Reply…` asks which terminal,
+  then opens it with the files in its reply box as `[File #n]` marked `on Mac` — their paths go with the reply, nothing
+  is copied. A file the Mac thinks may hold a password is asked about first (`Add to Reply?`) and marked with an amber
+  `!`. The same browser is a terminal's `+` › `Files on Mac`, over its page at its folder. Locked places, a level
+  narrowed to this phone's scope and the Mac's refusals say why (`FileRefusal`).
 - **Terminals** and **Browser** (tabs) — docs/terminal-v0.md, docs/simple-view-v0.md, docs/browser-v0.md. A terminal
   under a profile carries its colour as a lit dot; the new-terminal sheet has a `Profile` row when the agent has more
   than one, and a conversation's menu has `Resume As <name>` (profiles-v0 §3.2, §3.3). The Browser tab lists the
@@ -209,7 +223,10 @@ changed), `newterminal`, `settings`, `task`, `done`, `running`, `stale`,
 `transcript`; profiles as `terminalprofiles` (a terminal's dot), `newterminalprofile` and `terminalmenuprofile`
 (`Resume As`); proxies as `proxies` (Settings scrolled to the section), `clash`, `clashservice`, `clashrules`,
 `clashcheck` (parts of the Clash page), `clashnodes`, `clashtext`, `clashsource` (the pages behind it),
-`proxybrowser` and `proxyprofile` (the form); the Browser tab's `browser` (the list), `browserpage` (watching codex, its last action outlined),
+`proxybrowser` and `proxyprofile` (the form); the Files tab on a made-up disk (`DemoFiles`) as `files`, `fileshome`, `filesopen`
+(`src` opened in place), `filespreview`, `filesimage`, `filesselect`, `fileschoose` (`Add to Reply…`'s terminals),
+`filessensitive` (the question), `filesscoped` (the levels above a scope), `filessheet` (`+` › Files on Mac) and
+`filesreply` (the Mac's files in a reply box); the Browser tab's `browser` (the list), `browserpage` (watching codex, its last action outlined),
 `browsertook` (taken over, the keyboard and key bar up), `browserfile`, `browserlocal`, `browserdenied`, `browsernew`,
 `browserclose`, `browserzoom` (your dev server's page at 50%, the zoom row open; its `−` `+` draw the mock page
 again) and `browserzoomwatch` (watching codex, the row stepping the picture on the phone, at 150%) — mock pages drawn

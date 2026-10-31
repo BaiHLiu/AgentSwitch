@@ -12,7 +12,7 @@ import { parse } from "yaml";
 import { mountClash } from "../src/api/clash.js";
 import { LocalAuth } from "../src/api/localAuth.js";
 import type { ApiDeps } from "../src/api/shared.js";
-import { BUILT_IN, buildSubscription, defaultGroup, directRule, dnsSection, dnsText, EMPTY_SETTINGS, groupNames, nodeSet, RULE_SETS, ruleSet, running, type ClashSettings } from "../src/clash/build.js";
+import { BUILT_IN, buildSubscription, defaultGroup, directGroup, directRule, dnsSection, dnsText, EMPTY_SETTINGS, groupNames, nodeSet, RULE_SETS, ruleSet, running, type ClashSettings } from "../src/clash/build.js";
 import { looksUp, ruleLine, rulesFrom } from "../src/clash/rules.js";
 import { observe, parseTrace } from "../src/clash/check.js";
 import { ClashController } from "../src/clash/controller.js";
@@ -129,6 +129,73 @@ describe("the subscription AgentSwitch makes", () => {
     expect(out["proxy-groups"].slice(0, 2)).toEqual([
       { name: "Claude 自动选择", type: "fallback", use: ["as-claude"], url: "https://api.anthropic.com/", interval: 180 },
       { name: "Claude", type: "select", proxies: ["Claude 自动选择"], use: ["as-claude"] }]);
+  });
+
+  it("sends the subscription's own rules for a service it has nodes for to its group, where they stand", () => {
+    // As subscription converters write them (2026-10-16, the user's): a group for every AI service, fed by lists
+    // longer than AgentSwitch's — ChatGPT's sign-in and human check went out by `🤖 AI` while the rest went by `OpenAI`.
+    const lists = "https://cdn.example/blackmatrix7/ios_rule_script/master/rule/Clash";
+    const source = `${PLAIN.replace("rules:\n  - DOMAIN-SUFFIX,claude.ai,Proxy\n  - MATCH,Proxy\n", "")}  - { name: 🤖 AI, type: select, proxies: [Proxy, HK 01] }
+rule-providers:
+  openai: { type: http, behavior: classical, url: "${lists}/OpenAI/OpenAI.yaml", path: ./ruleset/openai.yaml, interval: 86400 }
+  claude: { type: http, behavior: classical, url: "${lists}/Claude/Claude.yaml", path: ./ruleset/claude.yaml, interval: 86400 }
+  gemini: { type: http, behavior: classical, url: "${lists}/Gemini/Gemini.yaml", path: ./ruleset/gemini.yaml, interval: 86400 }
+  gpt: { type: http, behavior: classical, url: "https://rules.example/ChatGPT.list", path: ./ruleset/gpt.list, interval: 86400 }
+  every-ai: { type: http, behavior: classical, url: "https://rules.example/OpenAI-Claude-Gemini.yaml", path: ./ruleset/ai.yaml, interval: 86400 }
+rules:
+  - RULE-SET,openai,🤖 AI
+  - RULE-SET,claude,🤖 AI
+  - RULE-SET,gemini,🤖 AI
+  - RULE-SET,gpt,Proxy,no-resolve
+  - RULE-SET,every-ai,🤖 AI
+  - GEOSITE,openai,🤖 AI
+  - GEOSITE,category-ai-!cn,🤖 AI
+  - AND,((RULE-SET,openai),(NETWORK,UDP)),REJECT
+  - DOMAIN-SUFFIX,openai.com,🤖 AI
+  - MATCH,Proxy
+`;
+    const plain: SourceNode[] = ["HK 01", "SG 01"].map((name) => ({ name, from: null, definition: node(name) }));
+    const out = made(source, plain, [], { openai: { nodes: ["SG 01"] } });
+    expect(out.rules).toEqual(["RULE-SET,as-direct,DIRECT", "RULE-SET,as-openai,OpenAI", "RULE-SET,as-domestic,DIRECT,no-resolve",
+      "RULE-SET,openai,OpenAI", "RULE-SET,claude,🤖 AI", "RULE-SET,gemini,🤖 AI", "RULE-SET,gpt,OpenAI,no-resolve", "RULE-SET,every-ai,🤖 AI",
+      "GEOSITE,openai,OpenAI", "GEOSITE,category-ai-!cn,🤖 AI", "AND,((RULE-SET,openai),(NETWORK,UDP)),REJECT", "DOMAIN-SUFFIX,openai.com,🤖 AI",
+      "RULE-SET,as-block,REJECT", "RULE-SET,as-domestic-ip,DIRECT", "MATCH,Proxy"]);
+    // Its group stays, for what AgentSwitch does not decide (Gemini, and Claude while it has no nodes here).
+    expect(out["proxy-groups"].map((g: { name: string }) => g.name)).toContain("🤖 AI");
+    const both = made(source, plain, [], { openai: { nodes: ["SG 01"] }, claude: { nodes: ["HK 01"] } });
+    expect(both.rules.filter((r: string) => r.startsWith("RULE-SET,claude,"))).toEqual(["RULE-SET,claude,Claude"]);
+    // Nothing chosen: the subscription's rules as written.
+    expect(made(source, plain, [], {}).rules.filter((r: string) => !r.includes(",as-"))).toEqual((parse(source) as { rules: string[] }).rules);
+  });
+
+  it("puts blocking before a converted subscription's broad rules, and sends the domestic template by its own group for what goes direct", () => {
+    // As subscription converters end theirs (2026-10-16, the user's): every list abroad, the addresses at home, GEOIP,
+    // every name not under .cn, MATCH; and a group for what goes direct that the person can switch to a proxy.
+    const lists = "https://cdn.example/rules";
+    const set = (name: string, behavior = "domain") => `  ${name}: { type: http, behavior: ${behavior}, url: "${lists}/${name}.list", path: ./ruleset/${name}.yaml, interval: 86400 }`;
+    const source = `${PLAIN.replace("rules:\n  - DOMAIN-SUFFIX,claude.ai,Proxy\n  - MATCH,Proxy\n", "")}  - { name: 🎯 直连, type: select, proxies: [DIRECT, Proxy] }
+rule-providers:
+${["private", "scholar", "gfw", "proxy", "tld-not-cn"].map((n) => set(n)).join("\n")}
+${set("cncidr", "ipcidr")}
+rules:
+  - RULE-SET,private,🎯 直连
+  - RULE-SET,scholar,Proxy
+  - RULE-SET,gfw,Proxy
+  - RULE-SET,proxy,Proxy
+  - RULE-SET,cncidr,🎯 直连,no-resolve
+  - GEOIP,CN,🎯 直连
+  - RULE-SET,tld-not-cn,Proxy
+  - MATCH,Proxy
+`;
+    const plain: SourceNode[] = ["HK 01", "SG 01"].map((name) => ({ name, from: null, definition: node(name) }));
+    const doc = parse(source) as Record<string, unknown>;
+    expect(directGroup(doc)).toBe("🎯 直连");
+    expect(made(source, plain, [], {}).rules).toEqual(["RULE-SET,as-direct,DIRECT", "RULE-SET,as-domestic,🎯 直连,no-resolve",
+      "RULE-SET,private,🎯 直连", "RULE-SET,scholar,Proxy", "RULE-SET,as-block,REJECT", "RULE-SET,gfw,Proxy", "RULE-SET,proxy,Proxy",
+      "RULE-SET,cncidr,🎯 直连,no-resolve", "RULE-SET,as-domestic-ip,🎯 直连", "GEOIP,CN,🎯 直连", "RULE-SET,tld-not-cn,Proxy", "MATCH,Proxy"]);
+    // A subscription without such a group: what goes direct goes to DIRECT itself, as before.
+    expect(directGroup(parse(OWN) as Record<string, unknown>)).toBeNull();
+    expect(made(PLAIN, plain, [], {}).rules).toContain("RULE-SET,as-domestic,DIRECT,no-resolve");
   });
 
   it("writes a node set in the chosen order with all a node needs, and no empty one", () => {
@@ -260,6 +327,80 @@ rules:
 });
 
 /** A subscription service: what each address answers, and what was asked of it. */
+/** A converted subscription (ACL4SSR's kind): a group for each kind of traffic, lists for them, a DNS server and a
+ *  node that go by its groups. */
+const CONVERTED = `proxies:
+  - ${JSON.stringify(node("HK 01"))}
+  - ${JSON.stringify({ ...node("SG 01"), "dialer-proxy": "🌐 代理" })}
+  - ${JSON.stringify(node("🇯🇵 日本家宽-02"))}
+proxy-groups:
+  - { name: 🌐 代理, type: select, proxies: [🔄 自动选择, HK 01, SG 01] }
+  - { name: 🔄 自动选择, type: url-test, proxies: [HK 01, SG 01], url: "https://www.gstatic.com/generate_204", interval: 300 }
+  - { name: 🎬 奈飞, type: select, proxies: [🌐 代理] }
+  - { name: 🎯 直连, type: select, proxies: [DIRECT, 🌐 代理] }
+rule-providers:
+  netflix: { type: http, behavior: classical, url: "https://rules.example/Netflix.yaml", path: ./ruleset/netflix.yaml, interval: 86400 }
+  cn: { type: http, behavior: domain, url: "https://rules.example/cn.yaml", path: ./ruleset/cn.yaml, interval: 86400 }
+dns:
+  enable: true
+  nameserver: ["https://1.1.1.1/dns-query#🌐 代理", "223.5.5.5"]
+  nameserver-policy:
+    "rule-set:cn": ["223.5.5.5"]
+    "+.example.com": ["https://8.8.8.8/dns-query#🌐 代理"]
+rules:
+  - RULE-SET,netflix,🎬 奈飞
+  - RULE-SET,cn,🎯 直连
+  - GEOIP,CN,🎯 直连
+  - MATCH,🌐 代理
+`;
+
+describe("only AgentSwitch's rules (§7.11)", () => {
+  const made = (source: string, over: Partial<ClashSettings>, nodes: SourceNode[] = []) =>
+    parse(buildSubscription(parse(source) as Record<string, unknown>, nodes, [], settings({ ownRules: true, ...over }), "http://127.0.0.1:4711/clash", "tok")) as Record<string, any>;
+  const japan: SourceNode[] = [{ name: "🇯🇵 日本家宽-02", from: "", definition: node("🇯🇵 日本家宽-02") }];
+
+  it("keeps the subscription's nodes and nothing else of its routing", () => {
+    const out = made(CONVERTED, { claude: { nodes: ["🇯🇵 日本家宽-02"] } }, japan);
+    expect(out.proxies.map((p: { name: string }) => p.name)).toEqual(["HK 01", "SG 01", "🇯🇵 日本家宽-02"]);
+    expect(out["proxy-groups"].map((g: { name: string }) => g.name)).toEqual(["Claude", "Claude自动选择", "Manual", "自动选择"]);
+    expect(out["proxy-groups"][2]).toEqual({ name: "Manual", type: "select", proxies: ["自动选择", "HK 01", "SG 01", "🇯🇵 日本家宽-02"] });
+    expect(out["proxy-groups"][3]).toMatchObject({ type: "url-test", proxies: ["HK 01", "SG 01", "🇯🇵 日本家宽-02"] });
+    expect(Object.keys(out["rule-providers"]).sort()).toEqual([...RULE_SETS].sort());
+    expect(out.rules).toEqual(["RULE-SET,as-direct,DIRECT", "RULE-SET,as-claude,Claude", "RULE-SET,as-domestic,DIRECT,no-resolve",
+      "RULE-SET,as-block,REJECT", "RULE-SET,as-domestic-ip,DIRECT", "MATCH,Manual"]);
+    // Nothing anywhere still names a group that is gone.
+    expect(JSON.stringify(out)).not.toMatch(/🌐 代理|🎬 奈飞|🎯 直连|🔄 自动选择/);
+  });
+
+  it("lets what named a group that is gone go without it, and drops a name server for a list that is gone", () => {
+    const out = made(CONVERTED, {});
+    expect(out.dns.nameserver).toEqual(["https://1.1.1.1/dns-query", "223.5.5.5"]);
+    expect(out.dns["nameserver-policy"]).toEqual({ "+.example.com": ["https://8.8.8.8/dns-query"] });
+    expect(out.proxies[1]["dialer-proxy"]).toBeUndefined();
+    expect(out.proxies[1].server).toBe("n.example");
+  });
+
+  it("takes every node of the subscription's node sets too, and has Manual go direct when there is no node", () => {
+    const own = made(OWN, {});
+    expect(own["proxy-groups"].find((g: { name: string }) => g.name === "Manual")).toEqual({ name: "Manual", type: "select", proxies: ["自动选择"], use: ["tgyun"] });
+    expect(own["proxy-groups"].find((g: { name: string }) => g.name === "自动选择")).toMatchObject({ use: ["tgyun"] });
+    expect(own["proxy-groups"].find((g: { name: string }) => g.name === "自动选择").proxies).toBeUndefined();
+    const none = made("rules: [ MATCH,DIRECT ]\n", {});
+    expect(none["proxy-groups"]).toEqual([{ name: "Manual", type: "select", proxies: ["DIRECT"] }]);
+  });
+
+  it("has the domestic template on while it is, and names AgentSwitch's groups by its own names", () => {
+    const off = settings({ ownRules: true });
+    expect(parse(ruleSet("as-domestic", off, [])!).payload.length).toBeGreaterThan(100);
+    expect(parse(ruleSet("as-domestic-ip", off, [])!).payload).toContain("GEOIP,CN");
+    expect(parse(ruleSet("as-domestic", EMPTY_SETTINGS, [])!).payload).toEqual(["DOMAIN,agentswitch-nothing.invalid"]);
+    const doc = parse(OWN.replace(/Claude自动选择/g, "Claude 自动选择")) as Record<string, unknown>;
+    expect(groupNames(doc, "claude", off)).toEqual({ group: "Claude", auto: "Claude自动选择" });
+    expect(groupNames(doc, "claude")).toEqual({ group: "Claude", auto: "Claude 自动选择" });
+    expect([defaultGroup(parse(PLAIN) as Record<string, unknown>, off), directGroup(parse(CONVERTED) as Record<string, unknown>, off)]).toEqual([null, null]);
+  });
+});
+
 function service(answers: Record<string, Partial<Fetched> | (() => Partial<Fetched>)>) {
   const asked: string[] = [];
   const fetcher = async (url: string, agent: string): Promise<Fetched> => {
@@ -671,22 +812,6 @@ describe("Clash Integration over HTTP", () => {
     expect((await call("GET", "/clash")).json.settings.claude.nodes).toHaveLength(2);
   });
 
-  it("sends an address direct when asked to (a profile's proxy server), once, and the core has it at once", async () => {
-    const { call, calls, clash } = await served();
-    await call("POST", "/clash/source", { verge: "Lbw7BJYzpand" });
-    await call("PUT", "/clash/settings", chosen);
-    calls.length = 0;
-    await clash.addDirect(" Proxy.Example.com ");
-    await clash.addDirect("proxy.example.com");
-    await clash.addDirect("5.102.107.254");                    // there already
-    expect((await call("GET", "/clash")).json.settings.direct).toEqual(["5.102.107.254", "proxy.example.com"]);
-    expect(calls.filter((c) => c === "PUT /providers/rules/as-direct")).toHaveLength(1);
-    const k = clash.token();
-    expect(parse((await call("GET", `/clash/rules/as-direct.yaml?k=${k}`)).text)).toEqual({ payload: ["IP-CIDR,5.102.107.254/32,no-resolve", "DOMAIN,proxy.example.com"] });
-    await clash.addDirect("");
-    expect((await call("GET", "/clash")).json.settings.direct).toHaveLength(2);
-  });
-
   it("tries a proxy server that goes direct on the port it listens on, and says nothing when it does not answer", async () => {
     const { call, routes, proxyPorts, state } = await served();
     await call("POST", "/clash/source", { verge: "Lbw7BJYzpand" });
@@ -788,6 +913,19 @@ describe("Clash Integration over HTTP", () => {
     // A change that lives in a set leaves the subscription as fetched: still the newest once it is fetched again.
     await call("GET", `/clash/sub.yaml?k=${k}`);
     expect((await call("PUT", "/clash/settings", { ...chosen, dns: { on: true, text: "enable: true\nnameserver:\n  - 223.5.5.5\n" }, direct: ["1.2.3.4"], templates: { domestic: { on: true, rules: null }, block: { on: false, rules: null } } })).json.upToDate).toBe(true);
+  });
+
+  it("keeps only AgentSwitch's rules when asked, which Clash Verge has to fetch, and an app that does not know of it leaves it on", async () => {
+    const { call, clash } = await served({ nodeSets: {}, groups: ["Proxy"] });
+    await clash.setSource({ yaml: PLAIN, name: "plain.yaml" });
+    const on = await call("PUT", "/clash/settings", { ...chosen, claude: { nodes: [] }, ownRules: true });
+    expect(on.json).toMatchObject({ settings: { ownRules: true }, templates: { domestic: { on: true } }, defaultGroup: null, upToDate: false });
+    const made = parse((await call("GET", `/clash/sub.yaml?k=${clash.token()}`)).text) as Record<string, any>;
+    expect([made["proxy-groups"].map((g: { name: string }) => g.name), made.rules.at(-1)]).toEqual([["Manual", "自动选择"], "MATCH,Manual"]);
+    // Settings from before §7.11 carry no `ownRules`.
+    const { ownRules: _, ...old } = on.json.settings;
+    expect((await call("PUT", "/clash/settings", { ...old, direct: ["1.2.3.4"] })).json.settings).toMatchObject({ ownRules: true, direct: ["1.2.3.4"] });
+    expect((await call("PUT", "/clash/settings", { ...old, ownRules: false })).json).toMatchObject({ settings: { ownRules: false }, templates: { domestic: { on: false } }, defaultGroup: "Proxy" });
   });
 
   it("offers to call a subscription's default group Manual, which Clash Verge has to fetch", async () => {

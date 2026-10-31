@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { which } from "../util/which.js";
 import { fileURLToPath } from "node:url";
 import { withoutCredentialRepair } from "../executors/gate.js";
+import { CODEX_FILE_STORE } from "./signIn.js";
 import { protectedDeny } from "../executors/opencodeShared.js";
 import { rootSpellings, type ProtectedPaths } from "../executors/protected.js";
 import type { LaunchPlan, LaunchRequest, Launcher, TerminalHarness } from "./host.js";
@@ -42,8 +43,9 @@ export type LauncherOptions = {
    *  own way (docs/terminal-v0.md §3). */
   readonly protected?: ProtectedPaths;
   /** Codex gets AgentSwitch's hooks (status, permission requests, the protected-path check), once the user's Codex
-   *  trusts them (codexHooks.ts); until then it goes without and its status is guessed. */
-  readonly codexHooks?: () => boolean;
+   *  trusts them (codexHooks.ts) — in the folder it runs in: a profile's (`home`) or the Mac's own; until then it goes
+   *  without and its status is guessed. */
+  readonly codexHooks?: (home?: string) => boolean;
   /** OpenCode's TUI attaches to a private server the service starts and watches (status, permission requests;
    *  opencodeTerminal.ts); without it, or when that server does not start, it runs `--standalone` and its status is
    *  guessed. */
@@ -279,19 +281,22 @@ export function agentLauncher(opts: LauncherOptions): Launcher {
         // The same session goes on (one record, docs/terminal-v0.md §5); a fork is a new session with the whole history.
         if (req.resume) args.push("--resume", req.resume, ...(req.fork ? ["--fork-session"] : []));
         // Its first input, as if typed: `/login` where nobody is signed in (it opens at the sign-in's choices).
-        if (req.firstInput) args.push(req.firstInput);
+        if (req.signIn) args.push("/login");
         return { file, args, env, hooks: true };
       }
       case "codex": {
+        // A profile that signs in with an account (docs/profiles-v0.md §6.2): a folder of its own, its sign-in kept in
+        // a file there, and OpenAI's own provider whatever the user's config.toml (linked in) names.
+        if (req.configHome) env.CODEX_HOME = req.configHome;
         // `notify` runs a program with the event JSON as its last argument when a turn ends.
-        const args = ["-c", `notify=${JSON.stringify([node, script, "codex"])}`];
-        const hooked = opts.codexHooks?.() ?? false;
+        const args = [...(req.configHome ? [...CODEX_FILE_STORE, "-c", 'model_provider="openai"'] : []), "-c", `notify=${JSON.stringify([node, script, "codex"])}`];
+        const hooked = opts.codexHooks?.(req.configHome) ?? false;
         if (hooked) args.push(...codexHookArgs(hookCommand, QUICK_HOOK_TIMEOUT_S, PERMISSION_HOOK_TIMEOUT_S));
         // Codex's own "needs you" notifications, as terminal notifications (OSC 9) whether or not its window has focus:
         // the host reads them as waiting. They cover what no hook does (an app tool's approval form, a question).
         args.push(...CODEX_ATTENTION);
         if (browser) args.push(...codexBrowserArgs(browser));
-        if (browser && !codexHasOwnInstructions(opts.env ?? process.env)) args.push("-c", `developer_instructions=${JSON.stringify(BROWSER_GUIDANCE)}`);
+        if (browser && !codexHasOwnInstructions(env)) args.push("-c", `developer_instructions=${JSON.stringify(BROWSER_GUIDANCE)}`);
         // Its Daybreak switch, where it has one: the feature it is kept under is off unless enabled (0.162), and
         // without it `/daybreak` is no command and the user's own default does nothing. For this terminal alone.
         const daybreak = opts.codexDaybreak?.() ?? false;
@@ -309,6 +314,14 @@ export function agentLauncher(opts: LauncherOptions): Launcher {
         // The folder is named (`-C`, the terminal's own): Codex does not ask whether to use the one the session ran in,
         // which may be gone (docs/terminal-v0.md §5).
         if (req.resume) args.unshift(req.fork ? "fork" : "resume", "-C", req.cwd, req.resume);
+        // Nobody signed in to its profile: Codex's device-code sign-in first, in the same terminal, then Codex itself
+        // (the same process: `exec`). Its sign-in page opens in the profile's own browser, which leaves this Mac as the
+        // agent will; the code to type there is on the terminal's screen. Not Codex's own first screen: its `Sign in
+        // with ChatGPT` opens the system's browser, past the `open` above (seen on 0.163).
+        if (req.signIn) {
+          return { file: "/bin/sh", args: ["-c", CODEX_SIGN_IN, "agentswitch-codex-sign-in", file, ...args], hooks: hooked,
+            env: { ...env, ...(req.browserKey ? { AGENTSWITCH_SIGN_IN_PAGE: CODEX_DEVICE_PAGE } : {}) } };
+        }
         const companion = opts.codexServer ? new CodexCompanion({ binary: file, cwd: req.cwd, env, args, dir, daybreak }) : undefined;
         return { file, args, env, hooks: hooked, ...(companion ? { companion } : {}) };
       }
@@ -361,6 +374,17 @@ const tomlInline = (table: Record<string, string>): string => {
   const pairs = Object.entries(table).map(([k, v]) => `${JSON.stringify(k)} = ${JSON.stringify(v)}`);
   return pairs.length ? `{ ${pairs.join(", ")} }` : "{}";
 };
+
+/** Where Codex's device-code sign-in is finished: the page asks for the account, then for the code Codex shows. */
+export const CODEX_DEVICE_PAGE = "https://auth.openai.com/codex/device";
+
+/** `sh -c` for a Codex terminal whose profile nobody is signed in to: `$1` is Codex, the rest its arguments. The page
+ *  goes to the profile's browser through the terminal's `BROWSER` (openInProfileBrowser), when it has one. A sign-in
+ *  that does not finish ends the terminal, saying so: Codex's own first screen would offer the system's browser. */
+export const CODEX_SIGN_IN = `codex="$1"; shift
+if [ -n "$AGENTSWITCH_SIGN_IN_PAGE" ]; then "$BROWSER" "$AGENTSWITCH_SIGN_IN_PAGE" >/dev/null 2>&1 & fi
+"$codex" -c 'cli_auth_credentials_store="file"' login --device-auth || { printf '\\n%s\\n' "AgentSwitch：没有登录上。关掉这个终端，在这个配置名下再开一个，会重新开始登录。" >&2; exit 1; }
+exec "$codex" "$@"`;
 
 /** The TUI's notifications Codex sends for what waits for you (not for a finished turn), as OSC 9. */
 export const CODEX_ATTENTION = ["-c", 'tui.notifications=["approval-requested","async-question","plan-mode-prompt"]', "-c", 'tui.notification_method="osc9"', "-c", 'tui.notification_condition="always"'];

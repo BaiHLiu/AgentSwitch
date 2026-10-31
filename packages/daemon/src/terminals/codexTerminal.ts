@@ -15,6 +15,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
+import { WritingFeed, WritingText } from "../core/writing.js";
 import { AppServerClient, type Json } from "../harness/appserver.js";
 import { spawnOwned, terminateProcess } from "../harness/processes.js";
 import { connectWsLines, type WsLines } from "../harness/wsLines.js";
@@ -27,6 +28,8 @@ const CALL_TIMEOUT_MS = 10_000;
 const STOP_GRACE_MS = 1_500;
 /** How long a change waits for the TUI to have made its thread. */
 const THREAD_WAIT_MS = 8_000;
+/** How often the companion looks which thread the TUI is on, to follow what it writes. */
+const FOLLOW_MS = 1_500;
 
 /** A Codex terminal's command line, split for a server and a TUI attached to it. Configuration (`-c key=value`) goes
  *  to the server; the hooks to the server alone (a TUI attached to a server runs none); `tui.*` and the reasoning
@@ -122,6 +125,10 @@ export class CodexCompanion implements Companion {
   private server: CodexServer | null = null;
   private stopped = false;
   private client: { rpc: AppServerClient; ws: WsLines } | null = null;
+  /** The thread this client follows for what is written, and what it does with what it is told. */
+  private followed: string | null = null;
+  private onNote: ((method: string, params: Json) => void) | null = null;
+  private following: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly o: CodexCompanionOptions) {
     if (o.daybreak) this.daybreak = (session) => this.daybreakNow(session ?? null);
@@ -170,11 +177,42 @@ export class CodexCompanion implements Companion {
     return { args: [...tui, "--remote", this.server.url, "--remote-auth-token-env", CODEX_REMOTE_TOKEN_ENV], env: { ...this.o.env, [CODEX_REMOTE_TOKEN_ENV]: this.server.token } };
   }
 
-  attach(_link: CompanionLink): void { /* the hooks report */ }
+  /** The hooks report its status and its cards; what it is writing comes from here (docs/simple-view-v0.md §5.14):
+   *  this client follows the thread the TUI is on (`thread/resume` — which a thread refuses until its first turn has
+   *  begun, so it is tried again) and is sent the pieces of its answer. The TUI made another thread (`/new`, a resume):
+   *  that one is followed instead. */
+  attach(link: CompanionLink): void {
+    if (!link.writing) return;
+    const feed = new WritingFeed((w) => link.writing!(w));
+    const written = new WritingText();
+    this.onNote = (method, params) => {
+      if (params.threadId !== undefined && params.threadId !== this.followed) return;
+      const piece = typeof params.delta === "string" ? params.delta : "";
+      if (method === "item/agentMessage/delta" && piece) feed.set(written.add(String(params.itemId ?? ""), piece));
+      else if (method === "item/reasoning/summaryTextDelta" && piece) feed.set(written.add(`reasoning:${String(params.itemId ?? "")}`, piece, true));
+      // The part is written (its record has it), or the turn is over.
+      else if ((method === "item/completed" && ["agentMessage", "reasoning"].includes(String((params.item as Json | undefined)?.type))) || method === "turn/completed") { feed.clear(); written.reset(); }
+    };
+    const look = async () => {
+      if (this.stopped) return;
+      try {
+        const rpc = await this.rpc();
+        const { thread } = await this.thread(rpc, null, 0);
+        if (thread && thread !== this.followed) {
+          await rpc.request("thread/resume", { threadId: thread }, CALL_TIMEOUT_MS);
+          this.followed = thread;
+          feed.clear(); written.reset();
+        }
+      } catch { /* no thread yet, or one not begun: looked at again */ }
+      if (!this.stopped) this.following = setTimeout(() => void look(), FOLLOW_MS);
+    };
+    void look();
+  }
 
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
+    if (this.following) clearTimeout(this.following);
     this.client?.ws.close();
     this.client = null;
     if (this.server) void terminateProcess(this.server.child, STOP_GRACE_MS);
@@ -185,8 +223,9 @@ export class CodexCompanion implements Companion {
     if (this.client) return this.client.rpc;
     if (!this.server || this.stopped) throw new Error("its server is not running");
     const ws = await connectWsLines(this.server.url, { token: this.server.token, timeoutMs: CALL_TIMEOUT_MS });
-    const rpc = new AppServerClient(ws.input, ws.output, async () => ({}), () => undefined);
-    ws.output.once("end", () => { if (this.client?.ws === ws) this.client = null; });
+    const rpc = new AppServerClient(ws.input, ws.output, async () => ({}), (method, params) => this.onNote?.(method, (params ?? {}) as Json));
+    // A new connection follows no thread yet.
+    ws.output.once("end", () => { if (this.client?.ws === ws) { this.client = null; this.followed = null; } });
     await rpc.request("initialize", { clientInfo: { name: "agentswitch", version: "0.1.0" }, capabilities: { experimentalApi: true } }, CALL_TIMEOUT_MS);
     rpc.notify("initialized");
     this.client = { rpc, ws };

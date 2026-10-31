@@ -88,7 +88,8 @@ enum DemoData {
 
     static func devices(now: Date) -> [Device] {
         [Device(id: "dev-1", name: "小林的 iPhone", platform: "ios", createdAt: now.addingTimeInterval(-5 * 86_400),
-                lastSeenAt: now.addingTimeInterval(-120), revokedAt: nil, online: true),
+                lastSeenAt: now.addingTimeInterval(-120), revokedAt: nil, online: true,
+                files: FileScope(mode: .folders, folders: ["\(NSHomeDirectory())/Projects/lumen", "\(NSHomeDirectory())/Documents"])),
          Device(id: "dev-2", name: "旧 iPhone 13", platform: "ios", createdAt: now.addingTimeInterval(-40 * 86_400),
                 lastSeenAt: now.addingTimeInterval(-21 * 86_400), revokedAt: now.addingTimeInterval(-20 * 86_400), online: false)]
     }
@@ -104,7 +105,7 @@ enum DemoData {
 
     static func nodeDevices(now: Date) -> [Device] {
         [Device(id: "dev-3", name: "Mac mini", platform: "macos", createdAt: now.addingTimeInterval(-2 * 86_400),
-                lastSeenAt: now.addingTimeInterval(-20), revokedAt: nil, online: true)] + devices(now: now)
+                lastSeenAt: now.addingTimeInterval(-20), revokedAt: nil, online: true, files: .home)] + devices(now: now)
     }
 
     static func path(home: String) -> String {
@@ -334,7 +335,7 @@ struct DemoTransport: HTTPTransport {
                     "playwright": ["active": "bundled", "version": "1.64.0"], "update": ["running": false]]
         case ("GET", "/devices"): body = backend.hasNodes ? DemoData.nodeDevices(now: now).map(Self.json) : backend.hasPairedDevices ? DemoData.devices(now: now).map(Self.json) : []
         case ("GET", "/nodes"): body = Self.nodes(backend.hasNodes ? DemoData.nodeList.nodes : [])
-        case ("GET", "/settings/mesh"), ("PUT", "/settings/mesh"): body = ["keyboard": sent["keyboard"] as? Bool ?? true]
+        case ("GET", "/settings/mesh"), ("PUT", "/settings/mesh"): body = ["keyboard": sent["keyboard"] as? Bool ?? true, "files": sent["files"] as? Bool ?? true]
         case ("GET", "/settings/models"): body = DemoData.modelSettings
         // A fresh Mac has no paired phone; its usage has no readings either.
         case ("GET", "/quota"): body = DemoData.quotaJSON(now: now, fresh: !backend.hasPairedDevices)
@@ -354,8 +355,10 @@ struct DemoTransport: HTTPTransport {
 
     private static func json(_ d: Device) -> [String: Any] {
         func ms(_ date: Date?) -> Any { date.map { $0.timeIntervalSince1970 * 1000 } ?? NSNull() }
-        return ["id": d.id, "name": d.name, "platform": d.platform, "createdAt": ms(d.createdAt), "lastSeenAt": ms(d.lastSeenAt),
-                "revokedAt": ms(d.revokedAt), "online": d.online ?? false]
+        var out: [String: Any] = ["id": d.id, "name": d.name, "platform": d.platform, "createdAt": ms(d.createdAt), "lastSeenAt": ms(d.lastSeenAt),
+                                  "revokedAt": ms(d.revokedAt), "online": d.online ?? false]
+        if let files = d.files { out["files"] = ["mode": files.mode.rawValue, "folders": files.folders] }
+        return out
     }
 
     private static func nodes(_ list: [NodeStatus]) -> [String: Any] {

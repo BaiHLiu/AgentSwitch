@@ -22,7 +22,9 @@ const Template = z.object({ on: z.boolean(), rules: z.array(z.string().max(1000)
 const Settings = z.object({ claude: Service, openai: Service, direct: z.array(z.string().min(1).max(200)).max(64),
   autoUpdateHours: z.number().refine((n) => (UPDATE_HOURS as readonly number[]).includes(n)),
   templates: z.object({ domestic: Template, block: Template }), renameDefault: z.boolean(),
-  dns: z.object({ on: z.boolean(), text: z.string().max(64 * 1024).nullable() }) });
+  dns: z.object({ on: z.boolean(), text: z.string().max(64 * 1024).nullable() }),
+  // Optional: an app from before §7.11 sends settings without it, and is taken to leave it as it is.
+  ownRules: z.boolean().optional() });
 const Source = z.union([
   z.object({ link: z.string().min(8).max(4000) }).strict(),
   z.object({ yaml: z.string().min(1).max(8_000_000), name: z.string().max(200) }).strict(),
