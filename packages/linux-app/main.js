@@ -26,7 +26,8 @@ app.setName("AgentSwitch");
 app.commandLine.appendSwitch("ozone-platform-hint", "auto");
 app.commandLine.appendSwitch("enable-wayland-ime");
 
-if (!app.requestSingleInstanceLock()) app.quit();
+// A probe runs beside a window that is open (it takes no lock and leaves that window alone).
+if (!PROBE && !app.requestSingleInstanceLock()) app.quit();
 
 /** @type {BrowserWindow | null} */
 let win = null;
